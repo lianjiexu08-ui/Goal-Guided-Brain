@@ -1,0 +1,9 @@
+{
+  "name": "linux-node",
+  "controlUrl": "https://workbench.example.com",
+  "dataDir": "/var/lib/dsh-node",
+  "maxConcurrent": 3,
+  "workspaces": {
+    "default": "/srv/dsh-projects/main"
+  }
+}

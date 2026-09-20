@@ -1,0 +1,15 @@
+{$WORKBENCH_DOMAIN} {
+    encode zstd gzip
+    @api path /api/*
+    handle @api {
+        reverse_proxy 127.0.0.1:3089
+    }
+    handle {
+        reverse_proxy 127.0.0.1:3088
+    }
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy same-origin
+        -Server
+    }
+}
