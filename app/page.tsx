@@ -150,6 +150,34 @@ type TeamMessage = {
   status: string;
   createdAt: string;
 };
+type TeamRecruitmentMember = {
+  roleId: string;
+  name: string;
+  responsibility: string;
+  deliverables?: string[];
+  skills?: string[];
+  tools?: string[];
+  modelHint?: string;
+  dependencies?: string[];
+};
+type TeamRecruitmentProposal = {
+  version?: number;
+  teamName: string;
+  goal: string;
+  purpose?: string;
+  size: number;
+  members: TeamRecruitmentMember[];
+  openQuestions?: string[];
+  ready?: boolean;
+};
+type TeamRecruitment = {
+  phase: string;
+  sessionId?: string | null;
+  turns?: number;
+  brief?: string;
+  proposal?: TeamRecruitmentProposal | null;
+  confirmedAt?: string | null;
+};
 type TeamSpace = {
   id: string;
   name: string;
@@ -164,6 +192,7 @@ type TeamSpace = {
   teamType?: string;
   purpose?: string;
   collaboration?: { autoHandoff?: boolean; sharedBoard?: boolean; allowedTeamIds?: string[] };
+  recruitment?: TeamRecruitment;
   messages: TeamMessage[];
 };
 type TeamForm = {
@@ -293,8 +322,7 @@ export default function Home() {
 }
 function Workbench() {
   const { isMobile, setOpenMobile } = useSidebar();
-  // Chat is the primary entry point. The project manager is selected once the
-  // workspace state arrives; individual roles remain implementation details.
+  // 团队招募是主入口。工作空间载入后默认选中项目经理，具体角色由团队招募过程决定。
   const [role, setRole] = useState<RoleId>('__router__');
   const [view, setView] = useState('workspace');
   const [data, setData] = useState<State | null>(null);
@@ -393,6 +421,8 @@ function Workbench() {
   const teamTasks = tasks.filter((task) => task.spaceId === teamSpace?.id);
   const teamOpenTasks = teamTasks.filter(isActive);
   const projectManager = roles.find((item) => item.id === teamSpace?.pmRoleId);
+  const recruitment = teamSpace?.recruitment;
+  const recruitmentProposal = recruitment?.proposal;
   const modelOptions = (data?.providers || [])
     .filter((provider) => provider.enabled)
     .flatMap((provider) =>
@@ -522,7 +552,7 @@ function Workbench() {
   async function submit() {
     if (!drafts[role]?.trim() || assistant.archived || !assistant.id) return;
     await action(async () => {
-      // The single Chat entry is the team's front door. Keep its messages in
+      // The single team-recruitment entry is the team's front door. Keep its messages in
       // the same space timeline so PM replies and delegated work stay linked.
       if (teamSpace?.pmRoleId === role) {
         const message = await api<TeamMessage & { sessionId?: string }>(
@@ -572,6 +602,20 @@ function Workbench() {
         providerId: option.providerId,
       });
       setNotice(`已切换到 ${option.providerName} · ${option.model.name}`);
+    });
+  }
+  async function confirmTeamRecruitment() {
+    if (!teamSpace?.recruitment?.proposal) return;
+    await action(async () => {
+      const saved = await api<TeamSpace>(
+        `spaces/${teamSpace.id}/recruitment/confirm`,
+        'POST',
+      );
+      await refresh();
+      setSelectedSpaceId(saved.id);
+      setRole(saved.pmRoleId);
+      setSelected((current) => ({ ...current, [saved.pmRoleId]: undefined }));
+      setNotice(`团队“${saved.name}”已确认，项目经理可以开始安排任务`);
     });
   }
   function openSettings() {
@@ -689,8 +733,8 @@ function Workbench() {
               >
                 <span className="role-letter chat-entry-icon"><MessageSquare size={18} /></span>
                 <span>
-                  <strong>Chat</strong>
-                  <small>智能路由 · 直接描述你的目标</small>
+                  <strong>团队招募</strong>
+                  <small>多轮澄清 · 一起组建合适的团队</small>
                 </span>
                 {running.length > 0 ? <span className="live-dot" /> : <ArrowRight className="nav-icon" />}
               </SidebarMenuButton>
@@ -762,7 +806,7 @@ function Workbench() {
           <div className="sidebar-note">
             <span className="live-dot" />
             <p>
-              你只需要和 Chat 讨论。<small>团队会在后台选择角色、模型并推进任务。</small>
+              先把目标告诉团队招募。<small>AI 会先澄清，再给出团队规模、职责和推进方式。</small>
             </p>
           </div>
         </SidebarContent>
@@ -788,7 +832,7 @@ function Workbench() {
             <span className="slash">/</span>
             <strong>
               {view === 'workspace'
-                ? 'Chat'
+                ? '团队招募'
                 : view === 'tasks'
                   ? '后台任务'
               : view === 'assistants'
@@ -836,7 +880,7 @@ function Workbench() {
               <div>
                 <span className="section-kicker">TEAM ACTIVITY</span>
                 <h1>{teamSpace?.name || '查看团队如何推进。'}</h1>
-                <p>{teamSpace?.goal || '项目经理会在后台选择成员、分派任务并汇总进展。新的需求请从主 Chat 发起。'}</p>
+                <p>{teamSpace?.goal || '项目经理会在后台选择成员、分派任务并汇总进展。新的需求请从团队招募发起。'}</p>
               </div>
               <div className="team-heading-actions">
                 {teamSpace && (data?.spaces || []).length > 0 ? (
@@ -861,8 +905,8 @@ function Workbench() {
                 <div className="team-chat-stream">
                   <div className="team-intro-message">
                     <span className="message-label"><span className="mini-role pm">PM</span> 项目经理</span>
-                    <p>把你的目标、问题或一段模糊需求直接丢进来。我会先判断需要哪些角色，再把工作拆开并同步结果。</p>
-                    <div className="pm-flow"><span>理解需求</span><ArrowRight size={13} /><span>选择成员</span><ArrowRight size={13} /><span>汇总交付</span></div>
+                    <p>把目标、问题或一段模糊需求直接丢进来。我会先和你澄清，再给出团队规模、职责和推进方式。</p>
+                    <div className="pm-flow"><span>多轮澄清</span><ArrowRight size={13} /><span>Team Charter</span><ArrowRight size={13} /><span>确认创建</span></div>
                   </div>
                   {teamMessages.map((message) => {
                     const author = message.senderType === 'owner'
@@ -896,11 +940,11 @@ function Workbench() {
                 <div className="team-readonly-note">
                   <div className="team-readonly-icon"><MessageSquare size={16} /></div>
                   <div>
-                    <strong>新的需求从主 Chat 发起</strong>
+                    <strong>新的需求从团队招募发起</strong>
                     <p>这里专门查看项目经理的拆解、成员状态和任务结果。</p>
                   </div>
                   <button className="text-button" onClick={() => setView('workspace')}>
-                    回到主 Chat <ArrowRight size={13} />
+                    回到团队招募 <ArrowRight size={13} />
                   </button>
                 </div>
               </section>
@@ -923,14 +967,14 @@ function Workbench() {
             <section className="conversation">
               <div className="conversation-top">
                 <div>
-                  <span className="section-kicker">CHAT · 智能路由</span>
+                  <span className="section-kicker">TEAM RECRUITMENT · 多轮澄清</span>
                   <h1>
-                    和{teamSpace?.name || '你的智能团队'}聊天
+                    招募{teamSpace?.name || '你的智能团队'}
                     <span className="quiet-badge">
                       {tasks.some((t) => t.role === role && isActive(t)) ? '工作中' : '随时开始'}
                     </span>
                   </h1>
-                  <p className="conversation-subtitle">{teamSpace?.goal || '把目标交给项目经理，由团队协作推进。'}</p>
+                  <p className="conversation-subtitle">{teamSpace?.goal || '先说目标，AI 会和你一起确定团队规模、职责和推进方式。'}</p>
                 </div>
                 <div className="conversation-controls">
                   {teamSpace && (data?.spaces || []).length > 0 ? (
@@ -942,7 +986,7 @@ function Workbench() {
                     />
                   ) : null}
                   <button className="secondary-button" type="button" onClick={openTeamCreate}>
-                    <Plus size={15} /> 新建团队
+                    <Plus size={15} /> 手动创建团队
                   </button>
                   <button
                     className="icon-button"
@@ -980,9 +1024,73 @@ function Workbench() {
                 )}
                 <span>
                   <MessageSquare size={14} />
-                  独立上下文
+                  团队招募上下文
                 </span>
               </div>
+              {recruitmentProposal && (
+                <section
+                  className={`recruitment-proposal-card${recruitment?.phase === 'confirmed' ? ' is-confirmed' : ''}`}
+                  aria-label="团队招募方案"
+                >
+                  <div className="recruitment-proposal-head">
+                    <div>
+                      <span className="section-kicker">TEAM CHARTER</span>
+                      <h2>{recruitmentProposal.teamName || teamSpace?.name || '团队方案'}</h2>
+                    </div>
+                    <span className="recruitment-phase">
+                      {recruitment?.phase === 'confirmed' ? '已确认' : '待你确认'}
+                    </span>
+                  </div>
+                  <p className="recruitment-proposal-goal">{recruitmentProposal.goal}</p>
+                  <div className="recruitment-proposal-meta">
+                    <span><Users size={14} />建议 {recruitmentProposal.size || recruitmentProposal.members.length} 位智能体</span>
+                    {recruitmentProposal.purpose && <span>{recruitmentProposal.purpose}</span>}
+                  </div>
+                  <div className="recruitment-member-list">
+                    {recruitmentProposal.members.map((member) => (
+                      <div className="recruitment-member" key={`${member.roleId}-${member.name}`}>
+                        <div className="recruitment-member-index">{member.name.slice(0, 1)}</div>
+                        <div className="recruitment-member-copy">
+                          <strong>{member.name}</strong>
+                          <p>{member.responsibility}</p>
+                          {!!member.deliverables?.length && (
+                            <small>交付：{member.deliverables.slice(0, 2).join(' · ')}</small>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {!!recruitmentProposal.openQuestions?.length && (
+                    <div className="recruitment-open-questions">
+                      <strong>还需要你确认</strong>
+                      <ul>
+                        {recruitmentProposal.openQuestions.map((question) => <li key={question}>{question}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  <div className="recruitment-proposal-actions">
+                    {recruitment?.phase === 'confirmed' ? (
+                      <span className="recruitment-confirmed"><Check size={15} />团队已创建，下一轮可以直接安排任务</span>
+                    ) : (
+                      <button
+                        className="primary-button"
+                        type="button"
+                        disabled={busy || !!recruitmentProposal.openQuestions?.length}
+                        onClick={() => void confirmTeamRecruitment()}
+                      >
+                        <Check size={16} />{recruitmentProposal.openQuestions?.length ? '先补充信息' : '确认创建团队'}
+                      </button>
+                    )}
+                    <button
+                      className="text-button"
+                      type="button"
+                      onClick={() => setNotice('继续在下方补充需求，项目经理会据此调整团队方案')}
+                    >
+                      继续补充需求 <ArrowRight size={13} />
+                    </button>
+                  </div>
+                </section>
+              )}
               <div className="message-area">
                 {currentTasks.length === 0 ? (
                   <div className="welcome">
@@ -996,8 +1104,8 @@ function Workbench() {
                     >
                       <Icon size={31} />
                     </div>
-                    <h2>{assistant.greeting || assistant.name}</h2>
-                    <p>{assistant.desc}</p>
+                    <h2>{teamSpace?.pmRoleId === role ? '开始团队招募' : assistant.greeting || assistant.name}</h2>
+                    <p>{teamSpace?.pmRoleId === role ? '描述你想达成的目标、交付物和限制条件。我会和你多轮澄清，再判断需要几个智能体以及每个智能体的职责。' : assistant.desc}</p>
                     {!assistant.id && data && (
                       <button
                         className="primary-button"
@@ -1137,7 +1245,7 @@ function Workbench() {
                 <div className="composer">
                   <textarea
                     aria-label={`发送给${assistant.name}`}
-                    placeholder={`告诉${assistant.name}，你想完成什么…`}
+                    placeholder={teamSpace?.pmRoleId === role ? '描述你想完成的事，先不用决定要几个智能体…' : `告诉${assistant.name}，你想完成什么…`}
                     value={drafts[role] || ''}
                     disabled={!assistant.id || assistant.archived}
                     onChange={(e) =>
@@ -1166,7 +1274,7 @@ function Workbench() {
                     </button>
                     <div>
                       {selectedModelOption ? (
-                        <label className="model-switcher" title="切换本次 Chat 使用的模型">
+                        <label className="model-switcher" title="切换本次团队招募使用的模型">
                           <span className="sr-only">选择模型</span>
                           <select
                             aria-label="选择模型"
@@ -1210,13 +1318,13 @@ function Workbench() {
                   </div>
                 </div>
                 <p className="composer-hint">
-                  Enter 发送 · Shift + Enter 换行<span>任务在后台执行</span>
+                  Enter 发送 · Shift + Enter 换行<span>{teamSpace?.pmRoleId === role ? '先澄清需求，再确认团队方案' : '任务在后台执行'}</span>
                 </p>
               </div>
             </section>
             <aside className="context-panel">
               <div className="context-header">
-                  <span>本次会话</span>
+                  <span>本次招募</span>
                 <button
                   className="icon-button"
                   aria-label="编辑助手配置"
@@ -1229,7 +1337,7 @@ function Workbench() {
               <div className="capability-card">
                 <div className="capability-title">
                   <Icon size={18} style={{ color: assistant.color }} />
-                    <strong>智能路由能力</strong>
+                    <strong>团队招募能力</strong>
                 </div>
                 <div className="skill-tags">
                   {(data?.skillCatalog || [])
@@ -1684,7 +1792,7 @@ function Workbench() {
                 ? '编辑知识'
                 : modal === 'handoff'
                   ? '交给其他助手'
-                  : '新建团队'}
+              : '手动创建团队'}
           </DialogTitle>
           <DialogDescription>
             {modal === 'settings'
@@ -1693,7 +1801,7 @@ function Workbench() {
                 ? '保存到本地，后续任务会按相关性读取。'
                 : modal === 'handoff'
                   ? '将目标、成果和补充要求传给目标助手，创建独立会话。'
-                  : '每个团队拥有自己的职责、成员和工作目录。你可以在 Chat 中切换团队，团队也可以通过项目经理互相协作。'}
+                  : '每个团队拥有自己的职责、成员和工作目录。你可以在团队招募中切换团队，团队也可以通过项目经理互相协作。'}
           </DialogDescription>
           {modal === 'settings' && (
             <form

@@ -1,5 +1,6 @@
 export const SKILLS = [
   { id: 'team-orchestration', name: '团队编排', role: 'project_manager' },
+  { id: 'team-recruitment', name: '团队招募', role: 'project_manager' },
   { id: 'product-planning', name: '产品规划', role: 'product' },
   { id: 'development-workflow', name: '开发验证', role: 'developer' },
   { id: 'personal-workflow', name: '资料与行动计划', role: 'assistant' },

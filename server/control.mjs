@@ -305,6 +305,107 @@ export class ControlPlane {
     if (!team || team.status !== 'active') throw fail('当前执行实例不属于可协作的活动团队。', 403);
     return { task, meta, team };
   }
+  recruitmentContext(principal) {
+    const context = this.currentTeam(principal);
+    if (context.task.role !== context.team.pmRoleId)
+      throw fail('只有团队项目经理可以维护团队招募方案。', 403);
+    return context;
+  }
+  proposeTeam(body, principal) {
+    const { team } = this.recruitmentContext(principal);
+    const teamName = required(body.teamName || body.name, '团队名称', 80);
+    const goal = required(body.goal, '团队目标', 2000);
+    const purpose = required(body.purpose || body.responsibility || goal, '团队职责', 2000);
+    if (!Array.isArray(body.members) || body.members.length < 1 || body.members.length > 8)
+      throw fail('团队成员需要在 1 至 8 个之间。');
+    const seen = new Set();
+    const members = body.members.map((member, index) => {
+      if (!member || typeof member !== 'object' || Array.isArray(member)) throw fail(`第 ${index + 1} 个成员无效。`);
+      const roleId = required(member.roleId, `第 ${index + 1} 个成员的助手`, 150);
+      const role = this.store.role(roleId);
+      if (!role || role.archived) throw fail(`成员助手 ${roleId} 不存在或已归档。`);
+      if (seen.has(roleId)) throw fail(`成员助手 ${roleId} 重复。`);
+      seen.add(roleId);
+      const responsibility = required(member.responsibility, `${role.name || roleId} 的职责`, 1000);
+      const list = value => Array.isArray(value)
+        ? [...new Set(value.filter(item => typeof item === 'string' && item.trim()).map(item => item.trim().slice(0, 500)).slice(0, 12))]
+        : [];
+      return {
+        roleId,
+        name: typeof member.name === 'string' && member.name.trim() ? member.name.trim().slice(0, 120) : role.name || roleId,
+        responsibility,
+        deliverables: list(member.deliverables),
+        skills: list(member.skills),
+        tools: list(member.tools),
+        modelHint: typeof member.modelHint === 'string' ? member.modelHint.trim().slice(0, 160) : '',
+        dependencies: list(member.dependencies),
+      };
+    });
+    if (!seen.has(team.pmRoleId)) {
+      const pm = this.store.role(team.pmRoleId);
+      members.unshift({ roleId: team.pmRoleId, name: pm?.name || team.pmRoleId,
+        responsibility: '持续澄清目标、协调成员、跟踪风险并汇总交付。', deliverables: ['Team Charter 和阶段性结论'], skills: [], tools: [], modelHint: '', dependencies: [] });
+    }
+    if (members.length > 8) throw fail('团队成员（含项目经理）不能超过 8 个。');
+    const openQuestions = Array.isArray(body.openQuestions)
+      ? [...new Set(body.openQuestions.filter(item => typeof item === 'string' && item.trim()).map(item => item.trim().slice(0, 1000)).slice(0, 20))]
+      : [];
+    const proposal = {
+      version: Number.isSafeInteger(team.recruitment?.proposal?.version)
+        ? team.recruitment.proposal.version + 1
+        : 1,
+      teamName,
+      goal,
+      purpose,
+      size: members.length,
+      members,
+      openQuestions,
+      ready: openQuestions.length === 0,
+      createdAt: new Date().toISOString(),
+    };
+    const saved = this.store.saveTeamSpace({
+      ...team,
+      name: team.name,
+      recruitment: { ...team.recruitment, phase: 'proposed', proposal },
+    }, team.id);
+    return { teamId: saved.id, phase: saved.recruitment.phase, proposal: saved.recruitment.proposal };
+  }
+  confirmTeamRecruitment(spaceId) {
+    const team = this.store.teamSpace(spaceId);
+    if (!team) throw fail('团队空间不存在。', 404);
+    const recruitment = team.recruitment || {};
+    if (recruitment.phase === 'confirmed') return team;
+    const proposal = recruitment.proposal;
+    if (!proposal || !Array.isArray(proposal.members) || !proposal.members.length)
+      throw fail('团队还没有可确认的招募方案。');
+    if (proposal.openQuestions?.length) throw fail('请先回答 Team Charter 中的待确认问题。');
+    const unavailable = proposal.members
+      .map(member => member.roleId)
+      .filter(roleId => {
+        const role = this.store.role(roleId);
+        return !role || role.archived;
+      });
+    if (unavailable.length) throw fail(`招募方案中的助手不可用：${[...new Set(unavailable)].join('、')}`);
+    const memberRoleIds = [...new Set(proposal.members.map(member => member.roleId))];
+    if (!memberRoleIds.includes(team.pmRoleId)) memberRoleIds.unshift(team.pmRoleId);
+    const responsibilities = Object.fromEntries(proposal.members
+      .filter(member => memberRoleIds.includes(member.roleId))
+      .map(member => [member.roleId, member.responsibility]));
+    const memberSettings = Object.fromEntries(proposal.members.map(member => [member.roleId, {
+      label: member.name,
+      responsibility: member.responsibility,
+    }]));
+    return this.store.saveTeamSpace({
+      ...team,
+      name: proposal.teamName,
+      goal: proposal.goal,
+      purpose: proposal.purpose,
+      memberRoleIds,
+      responsibilities,
+      memberSettings,
+      recruitment: { ...recruitment, phase: 'confirmed', confirmedAt: new Date().toISOString() },
+    }, team.id);
+  }
   collaborationAllowed(source, target) {
     const allowed = Array.isArray(source.collaboration?.allowedTeamIds)
       ? source.collaboration.allowedTeamIds

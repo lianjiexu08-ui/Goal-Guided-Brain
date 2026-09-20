@@ -19,10 +19,10 @@ export const ROLES = {
       '先和我确认目标，再安排合适的助手推进',
       '查看团队当前进展，告诉我下一步最重要的事',
     ],
-    skillIds: ['team-orchestration'],
+    skillIds: ['team-orchestration', 'team-recruitment'],
     tools: { files: true, web: true, terminal: false },
     instructions:
-      '你是项目经理，也是用户在团队空间中的主要协作对象。用中文沟通，先理解用户真正想达成的结果、约束、优先级和验收方式；信息不足时提出少量关键问题。目标明确后，自主把工作拆成有清晰交付物的子任务，使用工作台协作工具 delegate_task 分派给最适合的助手：产品助手负责需求、调研和验收标准，开发助手负责代码和验证，智能助手负责资料与行动计划。根据子任务的进展主动同步风险、依赖和需要用户决策的事项；所有成员完成后，核对证据、汇总成果和下一步。不要声称尚未发生的执行，不要把需要用户批准的外部操作当成已批准。使用 team-orchestration 技能。',
+      '你是项目经理，也是用户在团队空间中的主要协作对象。进入团队招募阶段时，先和用户多轮澄清目标、交付物、约束、质量标准、工作目录和权限边界；不要在需求明确前分派任务或声称已经创建智能体。信息充分后，按可独立交付的结果决定最小团队规模，为每个成员写清职责和验收产物，使用 propose_team 保存待确认的 Team Charter。保存后明确等待用户在团队招募界面点击确认创建；确认前不要把成员说成已创建，也不要使用 delegate_task。运行阶段继续跟踪风险、依赖和需要用户决策的事项，核对证据后汇总结果。使用 team-recruitment 和 team-orchestration 技能。',
   }, 
   product: {
     icon: 'lightbulb',
@@ -137,6 +137,21 @@ export class Store {
           }),
         ),
       );
+    }
+    // Existing workspaces were created before team recruitment became the
+    // primary project-manager flow. Keep user-authored instructions intact,
+    // while making the new skill available to the already seeded role.
+    const existingProjectManager = this.role('project_manager');
+    if (existingProjectManager && !existingProjectManager.archived) {
+      const skillIds = [...new Set([...(existingProjectManager.skillIds || []), 'team-recruitment'])];
+      const recruitmentRule = '团队招募阶段先多轮澄清需求，使用 propose_team 保存待确认的 Team Charter；保存后等待用户在团队招募界面确认创建，确认前不要配置成员或分派任务。';
+      const currentInstructions = String(existingProjectManager.instructions || '');
+      const instructions = currentInstructions.includes('propose_team')
+        ? currentInstructions.replace(/只有用户明确确认后，才使用 confirm_team_recruitment 完成成员配置，再使用团队编排工具 delegate_task 分派工作。/, '保存后明确等待用户在团队招募界面点击确认创建；确认前不要把成员说成已创建，也不要使用 delegate_task。')
+        : `${currentInstructions}\n${recruitmentRule}`.trim();
+      if (JSON.stringify(skillIds) !== JSON.stringify(existingProjectManager.skillIds || []) || instructions !== existingProjectManager.instructions) {
+        this.saveRole({ ...existingProjectManager, skillIds, instructions }, 'project_manager');
+      }
     }
     if (seedProjectManager && !this.records.list('spaces').length && this.role('project_manager')) {
       this.records.save('spaces', {
@@ -274,6 +289,15 @@ export class Store {
       memberSettings: {},
       ...space,
       collaboration,
+      recruitment: {
+        phase: 'discovery',
+        sessionId: null,
+        turns: 0,
+        brief: '',
+        proposal: null,
+        confirmedAt: null,
+        ...space.recruitment,
+      },
     };
   }
   saveTeamSpace(input, id) {
@@ -373,6 +397,24 @@ export class Store {
         ? [...new Set(collaborationInput.allowedTeamIds.filter((value) => typeof value === 'string' && value !== spaceId).slice(0, 50))]
         : (existing?.collaboration?.allowedTeamIds || []),
     };
+    const recruitmentInput = input.recruitment ?? existing?.recruitment ?? {};
+    const recruitmentPhase = ['discovery', 'proposed', 'confirmed'].includes(recruitmentInput.phase)
+      ? recruitmentInput.phase
+      : 'discovery';
+    const recruitment = {
+      phase: recruitmentPhase,
+      sessionId: typeof recruitmentInput.sessionId === 'string' && recruitmentInput.sessionId.trim()
+        ? recruitmentInput.sessionId.trim().slice(0, 160)
+        : null,
+      turns: Number.isSafeInteger(recruitmentInput.turns) && recruitmentInput.turns >= 0
+        ? Math.min(recruitmentInput.turns, 1000)
+        : 0,
+      brief: typeof recruitmentInput.brief === 'string' ? recruitmentInput.brief.trim().slice(0, 20000) : '',
+      proposal: recruitmentInput.proposal && typeof recruitmentInput.proposal === 'object' && !Array.isArray(recruitmentInput.proposal)
+        ? recruitmentInput.proposal
+        : null,
+      confirmedAt: typeof recruitmentInput.confirmedAt === 'string' ? recruitmentInput.confirmedAt : null,
+    };
     return this.records.save('spaces', {
       ...existing,
       id: spaceId,
@@ -388,6 +430,7 @@ export class Store {
       memberRoleIds,
       responsibilities,
       memberSettings,
+      recruitment,
       status,
       autonomy,
       collaboration,

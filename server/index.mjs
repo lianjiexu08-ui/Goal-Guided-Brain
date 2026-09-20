@@ -315,6 +315,9 @@ export function createWorkbench({
           }
           if (req.method === 'PUT' && !parts[3])
             return send(200, store.saveTeamSpace(body, space.id));
+          if (req.method === 'POST' && parts[3] === 'recruitment' && parts[4] === 'confirm') {
+            return send(200, platform.control.confirmTeamRecruitment(space.id));
+          }
           if (req.method === 'GET' && parts[3] === 'collaborators') {
             const allowed = Array.isArray(space.collaboration?.allowedTeamIds)
               ? space.collaboration.allowedTeamIds
@@ -392,16 +395,17 @@ export function createWorkbench({
                 content,
                 status: 'sent',
               }, `request:${space.id}:${clientMessageId}`);
-            const pmTask = store
-              .tasks()
-              .find((task) => {
-                const meta = store.records.get('task-meta', task.id) || {};
-                return meta.spaceId === space.id && task.role === space.pmRoleId && ['queued', 'running'].includes(task.status);
-              });
+            const recruitment = space.recruitment || {};
+            const spaceTasks = store.tasks().filter((task) => {
+              const meta = store.records.get('task-meta', task.id) || {};
+              return meta.spaceId === space.id && task.role === space.pmRoleId;
+            });
+            const pmTask = spaceTasks.find((task) => ['queued', 'running'].includes(task.status))
+              || (recruitment.sessionId && spaceTasks.find((task) => task.sessionId === recruitment.sessionId));
             try {
               const task = newTask({
                 role: space.pmRoleId,
-                prompt: `团队空间「${space.name}」收到用户新消息。请先阅读这条消息和已有团队上下文，判断是否需要向用户澄清；如果目标明确，就自主拆解并分派给合适的助手，跟踪结果并最终汇总。\n\n用户消息：\n${content}`,
+                prompt: `你正在负责团队空间「${space.name}」的团队招募。当前阶段：${recruitment.phase || 'discovery'}。请先阅读招募历史和已有团队上下文，继续与用户多轮澄清目标、交付物、约束、质量标准、工作目录、权限和模型/工具需求。需求未清楚前不要分派任务；信息充分后使用 propose_team 保存待用户确认的 Team Charter。Team Charter 确认前不要把成员说成已创建，也不要调用 delegate_task。\n\n用户本轮消息：\n${content}`,
                 sessionId: pmTask?.sessionId,
                 workspace: space.workspace,
                 spaceId: space.id,
@@ -410,6 +414,14 @@ export function createWorkbench({
                 providerId: body.providerId || space.providerId || undefined,
                 allowModelWithoutTools: body.allowModelWithoutTools === true,
               });
+              store.saveTeamSpace({
+                ...space,
+                recruitment: {
+                  ...recruitment,
+                  sessionId: task.sessionId,
+                  turns: (recruitment.turns || 0) + 1,
+                },
+              }, space.id);
               const linkedMessage = store.saveTeamMessage({ ...message, taskId: task.id }, message.id);
               return send(201, { ...linkedMessage, sessionId: task.sessionId });
             } catch (error) {

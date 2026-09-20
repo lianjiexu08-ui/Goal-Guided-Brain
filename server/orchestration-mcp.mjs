@@ -13,6 +13,15 @@ const tools = [
   { name: 'list_teams', description: '查看当前团队允许协作的其他长期团队；只返回团队摘要，不返回其他团队的私有消息。', inputSchema: objectSchema() },
   { name: 'delegate_to_team', description: '把明确的协作目标委派给另一个长期团队的项目经理；目标团队使用自己的模型、能力、预算和权限。', inputSchema: objectSchema({ teamId: string, prompt: string, acceptance: string, idempotencyKey: string }, ['teamId', 'prompt', 'idempotencyKey']) },
   { name: 'read_team_task', description: '读取已获准协作团队中的一个委派任务状态和结果。', inputSchema: objectSchema({ taskId: string }, ['taskId']) },
+  { name: 'propose_team', description: '在多轮澄清完成后保存待用户确认的 Team Charter。只保存招募草案，不创建成员、不分派任务；最终确认必须由用户在团队招募界面完成。', inputSchema: objectSchema({
+    teamName: string, goal: string, purpose: string,
+    members: { type: 'array', minItems: 1, maxItems: 8, items: objectSchema({
+      roleId: string, name: string, responsibility: string,
+      deliverables: { type: 'array', items: string }, skills: { type: 'array', items: string },
+      tools: { type: 'array', items: string }, modelHint: string, dependencies: { type: 'array', items: string },
+    }, ['roleId', 'responsibility']) },
+    openQuestions: { type: 'array', items: string },
+  }, ['teamName', 'goal', 'members']) },
   { name: 'list_agents', description: '查看当前任务组的智能体和执行状态。', inputSchema: objectSchema() },
   { name: 'read_inbox', description: '领取当前执行实例的持久化消息；送达不代表已经处理。', inputSchema: objectSchema() },
   { name: 'ack_message', description: '确认自己收到的消息处理状态。', inputSchema: objectSchema({ id: string, status: { type: 'string', enum: ['received', 'processing', 'processed'] } }, ['id', 'status']) },
@@ -137,6 +146,9 @@ export function createOrchestrationServer({ control, token, capabilities }) {
           break;
         case 'read_team_task':
           response = control.readTeamTask(input, principal);
+          break;
+        case 'propose_team':
+          response = control.proposeTeam(input, principal);
           break;
         case 'list_agents':
           response = { items: control.store.tasks().filter(task => control.taskGroup(task.id) === principal.groupId).slice(0, 100).map(task => ({

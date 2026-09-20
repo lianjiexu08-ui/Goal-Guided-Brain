@@ -1372,7 +1372,7 @@ h1 {
   }
 }
 
-/* Single-entry Chat navigation: roles stay available to the orchestrator,
+/* Single-entry team recruitment navigation: roles stay available to the orchestrator,
    while the user gets one clear place to start. */
 .chat-entry {
   height: 76px !important;
@@ -1532,6 +1532,128 @@ h1 {
 .team-collaboration-toggle strong, .team-collaboration-toggle small { display: block; }
 .team-collaboration-toggle strong { color: #476a61; font-size: 12px; }
 .team-collaboration-toggle small { margin-top: 3px; color: #839993; font-size: 10px; }
+
+/* Team recruitment: keep the proposed charter visible beside the conversation
+   so the user can review responsibilities before the team is materialized. */
+.recruitment-proposal-card {
+  margin: 16px 28px 0;
+  padding: 19px 20px 17px;
+  border: 1px solid #b9dfcf;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #f6fcf8, #eef8f4);
+  box-shadow: 0 10px 24px #244c3b0d;
+}
+.recruitment-proposal-card.is-confirmed {
+  border-color: #d8e9e2;
+  background: #f8fcfa;
+}
+.recruitment-proposal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+.recruitment-proposal-head h2 {
+  margin: 5px 0 0;
+  color: #244c4c;
+  font-size: 18px;
+  letter-spacing: -.4px;
+}
+.recruitment-phase {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1px solid #b8ddce;
+  border-radius: 999px;
+  color: #32745f;
+  background: #e3f4eb;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.is-confirmed .recruitment-phase {
+  border-color: #d3e7df;
+  color: #66887d;
+  background: #edf7f2;
+}
+.recruitment-proposal-goal {
+  margin: 11px 0 8px;
+  color: #476563;
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+.recruitment-proposal-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: #78938b;
+  font-size: 11px;
+}
+.recruitment-proposal-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.recruitment-member-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+.recruitment-member {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid #dcece5;
+  border-radius: 12px;
+  background: #fff;
+}
+.recruitment-member-index {
+  display: grid;
+  flex: 0 0 auto;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  border-radius: 8px;
+  color: #32755f;
+  background: #e2f3ea;
+  font-size: 11px;
+  font-weight: 700;
+}
+.recruitment-member-copy { min-width: 0; }
+.recruitment-member-copy strong,
+.recruitment-member-copy p,
+.recruitment-member-copy small { display: block; }
+.recruitment-member-copy strong { color: #365953; font-size: 12px; }
+.recruitment-member-copy p { margin: 3px 0 0; color: #597570; font-size: 11px; line-height: 1.5; }
+.recruitment-member-copy small { margin-top: 5px; color: #8ca19b; font-size: 10px; line-height: 1.4; }
+.recruitment-open-questions {
+  margin-top: 13px;
+  padding: 10px 12px;
+  border: 1px dashed #c8deda;
+  border-radius: 10px;
+  background: #fbfefc;
+}
+.recruitment-open-questions strong { color: #507068; font-size: 11px; }
+.recruitment-open-questions ul { margin: 6px 0 0; padding-left: 18px; color: #718984; font-size: 11px; line-height: 1.55; }
+.recruitment-proposal-actions {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  flex-wrap: wrap;
+  margin-top: 15px;
+}
+.recruitment-proposal-actions .primary-button { min-height: 34px; padding: 8px 13px; font-size: 12px; }
+.recruitment-confirmed { display: inline-flex; align-items: center; gap: 6px; color: #4a806d; font-size: 11px; font-weight: 650; }
+
+@media (max-width: 650px) {
+  .recruitment-proposal-card { margin: 14px 15px 0; padding: 16px 15px; }
+  .recruitment-member-list { grid-template-columns: 1fr; }
+  .recruitment-proposal-actions { align-items: flex-start; flex-direction: column; gap: 10px; }
+}
 
 @media (max-width: 900px) {
   .team-page { padding: 24px 16px 30px; }
