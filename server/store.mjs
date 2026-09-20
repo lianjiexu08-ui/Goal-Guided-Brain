@@ -364,6 +364,20 @@ export class Store {
           ...(typeof value.label === 'string' ? { label: value.label.trim().slice(0, 120) } : {}),
           ...(typeof value.responsibility === 'string' ? { responsibility: value.responsibility.trim().slice(0, 1000) } : {}),
           ...(Array.isArray(value.providerIds) ? { providerIds: [...new Set(value.providerIds.filter((v) => typeof v === 'string').slice(0, 20))] } : {}),
+          ...(typeof value.memberId === 'string' ? { memberId: value.memberId.trim().slice(0, 64) } : {}),
+          ...(typeof value.templateRoleId === 'string' ? { templateRoleId: value.templateRoleId.trim().slice(0, 150) } : {}),
+          ...(typeof value.modelHint === 'string' ? { modelHint: value.modelHint.trim().slice(0, 160) } : {}),
+          ...(Array.isArray(value.skills) ? { skills: [...new Set(value.skills.filter((v) => typeof v === 'string' && v.trim()).map((v) => v.trim().slice(0, 160)).slice(0, 12))] } : {}),
+          ...(Array.isArray(value.skillIds) ? { skillIds: [...new Set(value.skillIds.filter((v) => typeof v === 'string' && v.trim()).map((v) => v.trim().slice(0, 80)).slice(0, 3))] } : {}),
+          ...(Array.isArray(value.capabilityIds) ? { capabilityIds: [...new Set(value.capabilityIds.filter((v) => typeof v === 'string' && v.trim()).map((v) => v.trim().slice(0, 160)).slice(0, 100))] } : {}),
+          ...(Array.isArray(value.providerIds) ? { providerIds: [...new Set(value.providerIds.filter((v) => typeof v === 'string' && v.trim()).map((v) => v.trim().slice(0, 160)).slice(0, 32))] } : {}),
+          ...(Array.isArray(value.tools) ? { tools: [...new Set(value.tools.filter((v) => typeof v === 'string' && v.trim()).map((v) => v.trim().slice(0, 160)).slice(0, 12))] } : {}),
+          ...(value.toolAccess && typeof value.toolAccess === 'object' && !Array.isArray(value.toolAccess) ? {
+            toolAccess: Object.fromEntries(['files', 'web', 'terminal']
+              .filter((key) => value.toolAccess[key] !== undefined && typeof value.toolAccess[key] === 'boolean')
+              .map((key) => [key, value.toolAccess[key]])),
+          } : {}),
+          ...(Array.isArray(value.dependencies) ? { dependencies: [...new Set(value.dependencies.filter((v) => typeof v === 'string' && v.trim()).map((v) => v.trim().slice(0, 64)).slice(0, 12))] } : {}),
         };
       }
     }

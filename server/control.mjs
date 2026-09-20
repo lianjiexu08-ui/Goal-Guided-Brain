@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { bearer, hashToken } from './auth.mjs';
+import { SKILLS } from './roles.mjs';
 
 const terminal = new Set(['completed', 'failed', 'cancelled', 'interrupted', 'state_unknown']);
 const messageKinds = new Set(['task', 'question', 'reply', 'progress', 'blocked', 'handoff', 'notice']);
@@ -335,6 +336,8 @@ export class ControlPlane {
     if (!Array.isArray(body.members) || body.members.length < 1 || body.members.length > 8)
       throw fail('团队成员需要在 1 至 8 个之间。');
     const seen = new Set();
+    const capabilityRows = this.records.list('capabilities');
+    const providerRows = this.records.list('providers');
     const members = body.members.map((member, index) => {
       if (!member || typeof member !== 'object' || Array.isArray(member)) throw fail(`第 ${index + 1} 个成员无效。`);
       const roleId = required(member.roleId, `第 ${index + 1} 个成员的助手`, 150);
@@ -348,6 +351,25 @@ export class ControlPlane {
       const list = value => Array.isArray(value)
         ? [...new Set(value.filter(item => typeof item === 'string' && item.trim()).map(item => item.trim().slice(0, 500)).slice(0, 12))]
         : [];
+      const idList = value => [...new Set((Array.isArray(value) ? value : [])
+        .filter(item => typeof item === 'string' && item.trim())
+        .map(item => item.trim().slice(0, 160)).slice(0, 32))];
+      const skillIds = idList(member.skillIds);
+      if (skillIds.some(id => !SKILLS.some(skill => skill.id === id)))
+        throw fail(`成员 ${memberId} 包含未知 Skill：${skillIds.filter(id => !SKILLS.some(skill => skill.id === id)).join('、')}`);
+      const capabilityIds = idList(member.capabilityIds);
+      if (capabilityIds.some(id => !capabilityRows.some(capability => capability.id === id)))
+        throw fail(`成员 ${memberId} 包含未知能力：${capabilityIds.filter(id => !capabilityRows.some(capability => capability.id === id)).join('、')}`);
+      const providerIds = idList(member.providerIds);
+      if (providerIds.some(id => !providerRows.some(provider => provider.id === id)))
+        throw fail(`成员 ${memberId} 包含未知模型供应商：${providerIds.filter(id => !providerRows.some(provider => provider.id === id)).join('、')}`);
+      if (member.toolAccess !== undefined && (!member.toolAccess || typeof member.toolAccess !== 'object' || Array.isArray(member.toolAccess) ||
+        ['files', 'web', 'terminal'].some(key => member.toolAccess[key] !== undefined && typeof member.toolAccess[key] !== 'boolean'))) {
+        throw fail(`成员 ${memberId} 的工具权限必须使用 files、web、terminal 布尔值。`);
+      }
+      const toolAccess = member.toolAccess && typeof member.toolAccess === 'object'
+        ? Object.fromEntries(['files', 'web', 'terminal'].filter(key => member.toolAccess[key] !== undefined).map(key => [key, member.toolAccess[key]]))
+        : null;
       return {
         memberId,
         roleId,
@@ -355,7 +377,11 @@ export class ControlPlane {
         responsibility,
         deliverables: list(member.deliverables),
         skills: list(member.skills),
+        skillIds,
+        capabilityIds,
+        providerIds,
         tools: list(member.tools),
+        toolAccess,
         modelHint: typeof member.modelHint === 'string' ? member.modelHint.trim().slice(0, 160) : '',
         dependencies: list(member.dependencies),
       };
@@ -363,7 +389,7 @@ export class ControlPlane {
     if (!seen.has('manager')) {
       const pm = this.store.role(team.pmRoleId);
       members.unshift({ memberId: 'manager', roleId: team.pmRoleId, name: pm?.name || team.pmRoleId,
-        responsibility: '持续澄清目标、协调成员、跟踪风险并汇总交付。', deliverables: ['Team Charter 和阶段性结论'], skills: [], tools: [], modelHint: '', dependencies: [] });
+        responsibility: '持续澄清目标、协调成员、跟踪风险并汇总交付。', deliverables: ['Team Charter 和阶段性结论'], skills: [], skillIds: [], capabilityIds: [], providerIds: [], tools: [], toolAccess: null, modelHint: '', dependencies: [] });
     }
     if (members.length > 8) throw fail('团队成员（含项目经理）不能超过 8 个。');
     const memberIds = new Set(members.map(member => member.memberId));
@@ -415,6 +441,27 @@ export class ControlPlane {
       throw fail('团队还没有可确认的招募方案。');
     if (version !== undefined && version !== proposal.version) throw fail('招募方案已更新，请刷新并确认最新版本。', 409);
     if (proposal.openQuestions?.length) throw fail('请先回答 Team Charter 中的待确认问题。');
+    const capabilityRows = this.records.list('capabilities');
+    const providerRows = this.records.list('providers');
+    const unavailableCapabilities = proposal.members.flatMap(member => (member.capabilityIds || [])
+      .filter(id => !capabilityRows.some(capability => capability.id === id && capability.enabled !== false))
+      .map(id => `${member.memberId || member.roleId}:${id}`));
+    if (unavailableCapabilities.length)
+      throw fail(`招募方案包含未启用的能力：${unavailableCapabilities.join('、')}。请先启用能力或移除该绑定。`, 409);
+    const unavailableProviders = proposal.members.flatMap(member => (member.providerIds || [])
+      .filter(id => !providerRows.some(provider => provider.id === id && provider.enabled !== false))
+      .map(id => `${member.memberId || member.roleId}:${id}`));
+    if (unavailableProviders.length)
+      throw fail(`招募方案包含未启用的模型供应商：${unavailableProviders.join('、')}。请先启用供应商或移除该绑定。`, 409);
+    const invalidModels = proposal.members.filter(member => {
+      if (!member.modelHint) return false;
+      const candidates = member.providerIds?.length
+        ? providerRows.filter(provider => member.providerIds.includes(provider.id) && provider.enabled !== false)
+        : providerRows.filter(provider => provider.enabled !== false);
+      return !candidates.some(provider => provider.models?.some(model => model.id === member.modelHint));
+    }).map(member => `${member.memberId || member.roleId}:${member.modelHint}`);
+    if (invalidModels.length)
+      throw fail(`招募方案中的模型未在可用供应商中配置：${invalidModels.join('、')}。请先配置模型或移除该建议。`, 409);
     const unavailable = proposal.members
       .map(member => member.roleId)
       .filter(roleId => {
@@ -430,10 +477,20 @@ export class ControlPlane {
         const template = this.store.role(member.roleId);
         const memberId = member.memberId || `member-${index + 1}`;
         if (member.roleId === fresh.pmRoleId) return { ...member, memberId, agentId: fresh.pmRoleId };
+        const requestedSkillIds = Array.isArray(member.skillIds) ? member.skillIds : [];
+        const requestedCapabilityIds = Array.isArray(member.capabilityIds) ? member.capabilityIds : [];
+        const tools = {
+          ...template.tools,
+          ...member.toolAccess,
+        };
         const role = this.store.saveRole({
           ...template,
           name: member.name,
           desc: member.responsibility.slice(0, 240),
+          skillIds: [...new Set([...(template.skillIds || []), ...requestedSkillIds])].slice(0, 3),
+          capabilityIds: [...new Set([...(template.capabilityIds || []), ...requestedCapabilityIds])],
+          providerIds: member.providerIds?.length ? member.providerIds : template.providerIds,
+          tools,
           ...(member.modelHint ? { model: member.modelHint } : {}),
           instructions: `${template.instructions.slice(0, 7000)}\n\n团队：${proposal.teamName}\n团队目标：${proposal.goal}\n你的职责：${member.responsibility}\n验收产物：${member.deliverables.join('；')}\n建议技能：${member.skills.join('、')}\n建议工具：${member.tools.join('、')}\n建议模型：${member.modelHint || '沿用角色配置'}`.slice(0, 12000),
         });
@@ -442,7 +499,18 @@ export class ControlPlane {
       const memberRoleIds = members.map(member => member.agentId);
       const responsibilities = Object.fromEntries(members.map(member => [member.agentId, member.responsibility]));
       const memberSettings = Object.fromEntries(members.map(member => [member.agentId, {
-        label: member.name, responsibility: member.responsibility,
+        label: member.name,
+        responsibility: member.responsibility,
+        memberId: member.memberId,
+        templateRoleId: member.roleId,
+        modelHint: member.modelHint,
+        skills: member.skills,
+        skillIds: member.skillIds,
+        capabilityIds: member.capabilityIds,
+        providerIds: member.providerIds,
+        tools: member.tools,
+        toolAccess: member.toolAccess,
+        dependencies: member.dependencies,
       }]));
       return this.store.saveTeamSpace({
       ...fresh,
@@ -463,6 +531,17 @@ export class ControlPlane {
       members: roles.filter(role => team.memberRoleIds.includes(role.id)).map(role => ({
         id: role.id, name: team.memberSettings[role.id]?.label || role.name,
         responsibility: team.responsibilities[role.id] || '', model: role.model,
+        templateRoleId: team.memberSettings[role.id]?.templateRoleId || null,
+        memberId: team.memberSettings[role.id]?.memberId || null,
+        modelHint: team.memberSettings[role.id]?.modelHint || null,
+        skills: team.memberSettings[role.id]?.skills || [],
+        tools: team.memberSettings[role.id]?.tools || [],
+        skillIds: role.skillIds || [],
+        capabilityIds: role.capabilityIds || [],
+        providerIds: role.providerIds || [],
+        runtimeTools: role.tools || { files: false, web: false, terminal: false },
+        toolAccess: team.memberSettings[role.id]?.toolAccess || null,
+        dependencies: team.memberSettings[role.id]?.dependencies || [],
       })),
       templates: roles.map(role => ({ id: role.id, name: role.name, desc: role.desc, model: role.model, skillIds: role.skillIds, tools: role.tools })),
     };

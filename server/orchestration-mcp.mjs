@@ -19,7 +19,10 @@ const tools = [
     members: { type: 'array', minItems: 1, maxItems: 8, items: objectSchema({
       memberId: string, roleId: string, name: string, responsibility: string,
       deliverables: { type: 'array', items: string }, skills: { type: 'array', items: string },
-      tools: { type: 'array', items: string }, modelHint: string, dependencies: { type: 'array', items: string },
+      skillIds: { type: 'array', items: string }, capabilityIds: { type: 'array', items: string },
+      providerIds: { type: 'array', items: string }, tools: { type: 'array', items: string },
+      toolAccess: objectSchema({ files: { type: 'boolean' }, web: { type: 'boolean' }, terminal: { type: 'boolean' } }),
+      modelHint: string, dependencies: { type: 'array', items: string },
     }, ['roleId', 'responsibility']) },
     openQuestions: { type: 'array', items: string },
   }, ['teamName', 'goal', 'members']) },
