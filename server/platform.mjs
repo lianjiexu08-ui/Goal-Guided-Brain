@@ -60,7 +60,7 @@ export function createPlatform({
   })();
   ready.catch(() => {});
   function newTask(input) {
-    const assistant = store.role(input.role);
+    let assistant = store.role(input.role);
     if (!assistant || assistant.archived)
       throw new Error('助手不存在或已归档。');
     const teamId = input.teamId || input.spaceId || null;
@@ -70,6 +70,11 @@ export function createPlatform({
       if (space.status !== 'active') throw new Error('团队空间当前不可接收新任务。');
       if (space.pmRoleId !== input.role && input.parentTaskId === undefined)
         throw new Error('团队空间的新任务必须先交给项目经理。');
+      if (input.parentTaskId && space.recruitment.phase !== 'confirmed')
+        throw new Error('团队招募方案尚未确认，不能执行子任务。');
+      if (!space.memberRoleIds.includes(input.role)) throw new Error('该智能体不属于当前团队。');
+      const duty = space.responsibilities[input.role] || space.memberSettings[input.role]?.responsibility;
+      if (duty) assistant = { ...assistant, instructions: `${assistant.instructions}\n\n当前团队：${space.name}\n团队目标：${space.goal}\n本团队职责：${duty}` };
     }
     if (
       requireCredential &&

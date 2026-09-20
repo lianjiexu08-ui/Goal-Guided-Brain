@@ -400,7 +400,7 @@ export class Store {
     const recruitmentInput = input.recruitment ?? existing?.recruitment ?? {};
     const recruitmentPhase = ['discovery', 'proposed', 'confirmed'].includes(recruitmentInput.phase)
       ? recruitmentInput.phase
-      : 'discovery';
+      : (!existing && input.recruitment === undefined ? 'confirmed' : 'discovery');
     const recruitment = {
       phase: recruitmentPhase,
       sessionId: typeof recruitmentInput.sessionId === 'string' && recruitmentInput.sessionId.trim()

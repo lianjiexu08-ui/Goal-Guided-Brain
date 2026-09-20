@@ -1552,6 +1552,13 @@ h1 {
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
 }
 .recruitment-proposal-head h2 {
   margin: 5px 0 0;
@@ -1570,6 +1577,9 @@ h1 {
   font-weight: 700;
   white-space: nowrap;
 }
+.recruitment-head-actions { display: inline-flex; align-items: center; gap: 7px; }
+.charter-chevron { color: #6f9388; transition: transform .18s ease; }
+.charter-chevron.expanded { transform: rotate(180deg); }
 .is-confirmed .recruitment-phase {
   border-color: #d3e7df;
   color: #66887d;
@@ -1630,6 +1640,7 @@ h1 {
 .recruitment-member-copy strong { color: #365953; font-size: 12px; }
 .recruitment-member-copy p { margin: 3px 0 0; color: #597570; font-size: 11px; line-height: 1.5; }
 .recruitment-member-copy small { margin-top: 5px; color: #8ca19b; font-size: 10px; line-height: 1.4; }
+.team-member-responsibility { display: block; overflow: hidden; color: #718b84; font-size: 10px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
 .recruitment-open-questions {
   margin-top: 13px;
   padding: 10px 12px;

@@ -100,19 +100,26 @@ test('project manager proposes a Team Charter and owner confirmation materialize
       members: [
         { roleId: 'project_manager', responsibility: '澄清目标并协调交付。', deliverables: ['Team Charter'] },
         { roleId: 'product', responsibility: '整理需求和验收标准。', deliverables: ['需求说明'] },
-        { roleId: 'developer', responsibility: '实现功能并运行测试。', deliverables: ['可验证代码'] },
+        { roleId: 'developer', memberId: 'frontend', name: '前端开发', responsibility: '实现前端功能并运行测试。', deliverables: ['前端代码'] },
+        { roleId: 'developer', memberId: 'backend', name: '后端开发', responsibility: '实现后端功能并运行测试。', deliverables: ['后端代码'], dependencies: ['frontend'] },
       ],
     } })).content[0].text);
     assert.equal(proposed.phase, 'proposed');
-    assert.equal(proposed.proposal.size, 3);
+    assert.equal(proposed.proposal.size, 4);
+    const token = patch.config.headers.Authorization.replace(/^Bearer\s+/i, '');
+    const principal = app.platform.control.validateInstanceToken(token);
+    assert.throws(() => app.platform.control.createJob({ role: 'developer', prompt: '提前实现功能' }, principal), /尚未确认/);
     const before = await request(`teams/${team.id}`);
     assert.equal(before.body.recruitment.phase, 'proposed');
     assert.deepEqual(before.body.memberRoleIds, ['project_manager', 'product', 'developer', 'assistant']);
     const confirmed = await request(`teams/${team.id}/recruitment/confirm`, {}, 'POST');
     assert.equal(confirmed.status, 200);
     assert.equal(confirmed.body.recruitment.phase, 'confirmed');
-    assert.deepEqual(confirmed.body.memberRoleIds, ['project_manager', 'product', 'developer']);
-    assert.equal(confirmed.body.responsibilities.developer, '实现功能并运行测试。');
+    assert.equal(confirmed.body.memberRoleIds.length, 4);
+    const developerIds = Object.entries(confirmed.body.responsibilities).filter(([, duty]) => duty.includes('并运行测试')).map(([id]) => id);
+    assert.equal(developerIds.length, 2);
+    assert.notEqual(developerIds[0], developerIds[1]);
+    assert.match(app.platform.control.store.role(developerIds[0]).instructions, /实现前端功能并运行测试/);
     const duplicate = await request(`teams/${team.id}/recruitment/confirm`, {}, 'POST');
     assert.equal(duplicate.status, 200);
     assert.equal(duplicate.body.recruitment.phase, 'confirmed');

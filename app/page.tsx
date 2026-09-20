@@ -23,6 +23,7 @@ import {
   Archive,
   BookOpen,
   Check,
+  ChevronDown,
   Circle,
   Copy,
   FileText,
@@ -151,6 +152,8 @@ type TeamMessage = {
   createdAt: string;
 };
 type TeamRecruitmentMember = {
+  memberId?: string;
+  agentId?: string;
   roleId: string;
   name: string;
   responsibility: string;
@@ -192,6 +195,7 @@ type TeamSpace = {
   teamType?: string;
   purpose?: string;
   collaboration?: { autoHandoff?: boolean; sharedBoard?: boolean; allowedTeamIds?: string[] };
+  memberSettings?: Record<string, { label?: string; responsibility?: string }>;
   recruitment?: TeamRecruitment;
   messages: TeamMessage[];
 };
@@ -385,7 +389,9 @@ function Workbench() {
   );
   const [showArchived, setShowArchived] = useState(false);
   const [taskFilter, setTaskFilter] = useState('all');
+  const [expandedCharters, setExpandedCharters] = useState<Record<string, boolean>>({});
   const endRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const routeInitialized = useRef(false);
   const roles = data?.roles || [];
   const activeRoles = roles.filter((r) => !r.archived);
@@ -402,6 +408,8 @@ function Workbench() {
     sessions.find((s) => s.id === currentSession)?.workspace ||
     data?.config.workspace;
   const teamSpace = data?.spaces?.find((space) => space.id === selectedSpaceId) || data?.spaces?.[0];
+  const isTeamConversation = teamSpace?.pmRoleId === role;
+  const assistantName = teamSpace?.memberSettings?.[role]?.label || assistant.name;
   const currentTasks = tasks
     .filter((t) =>
       teamSpace?.pmRoleId === role
@@ -423,6 +431,9 @@ function Workbench() {
   const projectManager = roles.find((item) => item.id === teamSpace?.pmRoleId);
   const recruitment = teamSpace?.recruitment;
   const recruitmentProposal = recruitment?.proposal;
+  const isRecruiting = isTeamConversation && recruitment?.phase !== 'confirmed';
+  const charterKey = `${teamSpace?.id}:${recruitmentProposal?.version}:${recruitment?.phase}`;
+  const charterExpanded = expandedCharters[charterKey] ?? recruitment?.phase !== 'confirmed';
   const modelOptions = (data?.providers || [])
     .filter((provider) => provider.enabled)
     .flatMap((provider) =>
@@ -606,10 +617,12 @@ function Workbench() {
   }
   async function confirmTeamRecruitment() {
     if (!teamSpace?.recruitment?.proposal) return;
+    const proposalVersion = teamSpace.recruitment.proposal.version;
     await action(async () => {
       const saved = await api<TeamSpace>(
         `spaces/${teamSpace.id}/recruitment/confirm`,
         'POST',
+        { version: proposalVersion },
       );
       await refresh();
       setSelectedSpaceId(saved.id);
@@ -665,6 +678,36 @@ function Workbench() {
       autonomyMode: 'auto',
     });
     setModal('team');
+  }
+  async function startRecruitment() {
+    const pm = activeRoles.find((item) => item.id === 'project_manager') || activeRoles[0];
+    if (!pm) return;
+    await action(async () => {
+      const saved = await api<TeamSpace>('spaces', 'POST', {
+        name: '新团队招募',
+        goal: '通过多轮交流明确团队目标和职责。',
+        pmRoleId: pm.id,
+        memberRoleIds: [pm.id],
+        workspace: data?.config.workspace || '',
+        recruitment: { phase: 'discovery' },
+      });
+      setSelectedSpaceId(saved.id);
+      setRole(saved.pmRoleId);
+      setSelected((current) => ({ ...current, [saved.pmRoleId]: undefined }));
+      setDrafts((current) => ({ ...current, [saved.pmRoleId]: '' }));
+      setView('workspace');
+      if (isMobile) setOpenMobile(false);
+      setNotice('招募已开始，描述你希望团队完成的目标');
+    });
+  }
+  function openTeamConversation() {
+    if (!teamSpace) {
+      void startRecruitment();
+      return;
+    }
+    if (teamSpace) selectTeam(teamSpace.id);
+    setView('workspace');
+    if (isMobile) setOpenMobile(false);
   }
   function selectTeam(id: string) {
     const next = data?.spaces?.find((space) => space.id === id);
@@ -724,11 +767,8 @@ function Workbench() {
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton
-                isActive={view === 'workspace'}
-                onClick={() => {
-                  setView('workspace');
-                  if (isMobile) setOpenMobile(false);
-                }}
+                isActive={view === 'workspace' && isTeamConversation}
+                onClick={openTeamConversation}
                 className="role-nav chat-entry"
               >
                 <span className="role-letter chat-entry-icon"><MessageSquare size={18} /></span>
@@ -742,7 +782,7 @@ function Workbench() {
           </SidebarMenu>
           <div className="team-nav-head">
             <span>我的团队</span>
-            <button type="button" aria-label="新建团队" onClick={openTeamCreate}>
+            <button type="button" aria-label="新建招募" disabled={busy || !activeRoles.length} onClick={() => void startRecruitment()}>
               <Plus size={14} />
             </button>
           </div>
@@ -769,8 +809,8 @@ function Workbench() {
             ))}
             {!data?.spaces?.length && (
               <SidebarMenuItem>
-                <button type="button" className="team-nav-empty" onClick={openTeamCreate}>
-                  <Plus size={14} /> 创建第一个团队
+                <button type="button" className="team-nav-empty" disabled={busy || !activeRoles.length} onClick={() => void startRecruitment()}>
+                  <Plus size={14} /> 开始第一次招募
                 </button>
               </SidebarMenuItem>
             )}
@@ -832,7 +872,7 @@ function Workbench() {
             <span className="slash">/</span>
             <strong>
               {view === 'workspace'
-                ? '团队招募'
+                ? isRecruiting ? '团队招募' : isTeamConversation ? '团队对话' : assistantName
                 : view === 'tasks'
                   ? '后台任务'
               : view === 'assistants'
@@ -891,7 +931,8 @@ function Workbench() {
                     options={(data?.spaces || []).map((space) => ({ value: space.id, label: space.name }))}
                   />
                 ) : null}
-                <button className="secondary-button" type="button" onClick={openTeamCreate}><Plus size={15} /> 新建团队</button>
+                <button className="secondary-button" type="button" disabled={busy || !activeRoles.length} onClick={() => void startRecruitment()}><Plus size={15} /> 新建招募</button>
+                <button className="text-button" type="button" onClick={openTeamCreate}>高级配置</button>
                 <div className="team-health"><span className="live-dot" /> {teamMembers.length} 位成员在线</div>
               </div>
             </div>
@@ -943,8 +984,8 @@ function Workbench() {
                     <strong>新的需求从团队招募发起</strong>
                     <p>这里专门查看项目经理的拆解、成员状态和任务结果。</p>
                   </div>
-                  <button className="text-button" onClick={() => setView('workspace')}>
-                    回到团队招募 <ArrowRight size={13} />
+                  <button className="text-button" onClick={openTeamConversation}>
+                    {recruitment?.phase === 'confirmed' ? '回到团队对话' : '回到团队招募'} <ArrowRight size={13} />
                   </button>
                 </div>
               </section>
@@ -955,7 +996,18 @@ function Workbench() {
                     const MemberIcon = assistantIcons[member.icon as keyof typeof assistantIcons] || UserRound;
                     const memberTasks = teamTasks.filter((task) => task.role === member.id);
                     const active = memberTasks.filter(isActive).length;
-                    return <button className="team-member-card" key={member.id} onClick={() => { setRole(member.id); setView('workspace'); }}><span className="team-member-icon" style={{ color: member.color, background: `${member.color}18` }}><MemberIcon size={18} /></span><span className="team-member-copy"><strong>{member.name}</strong><small>{member.model || '跟随工作空间模型'}</small></span><span className={`team-member-state ${active ? 'working' : ''}`}><span className="live-dot" />{active ? `${active} 项进行中` : '待命'}</span></button>;
+                    const settings = teamSpace?.memberSettings?.[member.id];
+                    return (
+                      <button className="team-member-card" key={member.id} onClick={() => { setRole(member.id); setView('workspace'); }}>
+                        <span className="team-member-icon" style={{ color: member.color, background: `${member.color}18` }}><MemberIcon size={18} /></span>
+                        <span className="team-member-copy">
+                          <strong>{settings?.label || member.name}</strong>
+                          {settings?.responsibility && <span className="team-member-responsibility">{settings.responsibility}</span>}
+                          <small>{member.model || '跟随工作空间模型'}</small>
+                        </span>
+                        <span className={`team-member-state ${active ? 'working' : ''}`}><span className="live-dot" />{active ? `${active} 项进行中` : '待命'}</span>
+                      </button>
+                    );
                   })}
                 </div>
                 <div className="team-summary"><div className="team-summary-title"><ListChecks size={16} />任务总览</div><div className="team-metrics"><span><strong>{teamOpenTasks.length}</strong><small>进行中</small></span><span><strong>{teamTasks.filter((task) => task.status === 'completed').length}</strong><small>已完成</small></span></div><button className="text-button" onClick={() => setView('tasks')}>查看全部任务 <ArrowRight size={13} /></button></div>
@@ -967,14 +1019,14 @@ function Workbench() {
             <section className="conversation">
               <div className="conversation-top">
                 <div>
-                  <span className="section-kicker">TEAM RECRUITMENT · 多轮澄清</span>
+                  <span className="section-kicker">{isRecruiting ? 'TEAM RECRUITMENT · 多轮澄清' : isTeamConversation ? 'TEAM CONVERSATION · 协作推进' : 'AGENT CONVERSATION · 独立讨论'}</span>
                   <h1>
-                    招募{teamSpace?.name || '你的智能团队'}
+                    {isRecruiting ? '一起组建你的团队' : isTeamConversation ? teamSpace?.name : assistantName}
                     <span className="quiet-badge">
                       {tasks.some((t) => t.role === role && isActive(t)) ? '工作中' : '随时开始'}
                     </span>
                   </h1>
-                  <p className="conversation-subtitle">{teamSpace?.goal || '先说目标，AI 会和你一起确定团队规模、职责和推进方式。'}</p>
+                  <p className="conversation-subtitle">{isRecruiting ? '先说目标，AI 会和你一起确定团队规模、职责和推进方式。' : isTeamConversation ? teamSpace?.goal : teamSpace?.memberSettings?.[role]?.responsibility || assistant.desc}</p>
                 </div>
                 <div className="conversation-controls">
                   {teamSpace && (data?.spaces || []).length > 0 ? (
@@ -985,9 +1037,10 @@ function Workbench() {
                       options={(data?.spaces || []).map((space) => ({ value: space.id, label: space.name }))}
                     />
                   ) : null}
-                  <button className="secondary-button" type="button" onClick={openTeamCreate}>
-                    <Plus size={15} /> 手动创建团队
+                  <button className="secondary-button" type="button" disabled={busy || !activeRoles.length} onClick={() => void startRecruitment()}>
+                    <Plus size={15} /> 新建招募
                   </button>
+                  <button className="text-button" type="button" onClick={openTeamCreate}>高级配置</button>
                   <button
                     className="icon-button"
                     title="编辑助手"
@@ -997,7 +1050,7 @@ function Workbench() {
                   >
                     <Settings2 size={18} />
                   </button>
-                  <button
+                  {!isTeamConversation && <button
                     className="secondary-button"
                     onClick={() =>
                       setSelected((s) => ({ ...s, [role]: undefined }))
@@ -1006,9 +1059,10 @@ function Workbench() {
                     <Plus size={16} />
                     新会话
                   </button>
+                  }
                 </div>
               </div>
-              <div className="session-picker">
+              {!isTeamConversation && <div className="session-picker">
                 {sessions.length > 0 && (
                   <Choice
                     label="选择会话"
@@ -1024,71 +1078,72 @@ function Workbench() {
                 )}
                 <span>
                   <MessageSquare size={14} />
-                  团队招募上下文
+                  独立上下文
                 </span>
-              </div>
-              {recruitmentProposal && (
+              </div>}
+              {isTeamConversation && recruitmentProposal && (
                 <section
                   className={`recruitment-proposal-card${recruitment?.phase === 'confirmed' ? ' is-confirmed' : ''}`}
                   aria-label="团队招募方案"
                 >
-                  <div className="recruitment-proposal-head">
+                  <button
+                    className="recruitment-proposal-head"
+                    type="button"
+                    aria-expanded={charterExpanded}
+                    onClick={() => setExpandedCharters((current) => ({ ...current, [charterKey]: !charterExpanded }))}
+                  >
                     <div>
                       <span className="section-kicker">TEAM CHARTER</span>
                       <h2>{recruitmentProposal.teamName || teamSpace?.name || '团队方案'}</h2>
                     </div>
-                    <span className="recruitment-phase">
-                      {recruitment?.phase === 'confirmed' ? '已确认' : '待你确认'}
+                    <span className="recruitment-head-actions">
+                      <span className="recruitment-phase">
+                        {recruitment?.phase === 'confirmed' ? '已确认' : '待你确认'}
+                      </span>
+                      <ChevronDown size={16} className={charterExpanded ? 'charter-chevron expanded' : 'charter-chevron'} />
                     </span>
-                  </div>
-                  <p className="recruitment-proposal-goal">{recruitmentProposal.goal}</p>
-                  <div className="recruitment-proposal-meta">
-                    <span><Users size={14} />建议 {recruitmentProposal.size || recruitmentProposal.members.length} 位智能体</span>
-                    {recruitmentProposal.purpose && <span>{recruitmentProposal.purpose}</span>}
-                  </div>
-                  <div className="recruitment-member-list">
-                    {recruitmentProposal.members.map((member) => (
-                      <div className="recruitment-member" key={`${member.roleId}-${member.name}`}>
-                        <div className="recruitment-member-index">{member.name.slice(0, 1)}</div>
-                        <div className="recruitment-member-copy">
-                          <strong>{member.name}</strong>
-                          <p>{member.responsibility}</p>
-                          {!!member.deliverables?.length && (
-                            <small>交付：{member.deliverables.slice(0, 2).join(' · ')}</small>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  {!!recruitmentProposal.openQuestions?.length && (
-                    <div className="recruitment-open-questions">
-                      <strong>还需要你确认</strong>
-                      <ul>
-                        {recruitmentProposal.openQuestions.map((question) => <li key={question}>{question}</li>)}
-                      </ul>
+                  </button>
+                  {charterExpanded && <>
+                    <p className="recruitment-proposal-goal">{recruitmentProposal.goal}</p>
+                    <div className="recruitment-proposal-meta">
+                      <span><Users size={14} />建议 {recruitmentProposal.size || recruitmentProposal.members.length} 位智能体</span>
+                      {recruitmentProposal.purpose && <span>{recruitmentProposal.purpose}</span>}
                     </div>
-                  )}
-                  <div className="recruitment-proposal-actions">
-                    {recruitment?.phase === 'confirmed' ? (
-                      <span className="recruitment-confirmed"><Check size={15} />团队已创建，下一轮可以直接安排任务</span>
-                    ) : (
-                      <button
-                        className="primary-button"
-                        type="button"
-                        disabled={busy || !!recruitmentProposal.openQuestions?.length}
-                        onClick={() => void confirmTeamRecruitment()}
-                      >
-                        <Check size={16} />{recruitmentProposal.openQuestions?.length ? '先补充信息' : '确认创建团队'}
-                      </button>
+                    <div className="recruitment-member-list">
+                      {recruitmentProposal.members.map((member) => (
+                        <div className="recruitment-member" key={member.memberId || `${member.roleId}-${member.name}`}>
+                          <div className="recruitment-member-index">{(member.name || member.roleId || '成').slice(0, 1)}</div>
+                          <div className="recruitment-member-copy">
+                            <strong>{member.name || member.roleId || '未命名成员'}</strong>
+                            <p>{member.responsibility}</p>
+                            {member.modelHint && <small>模型：{member.modelHint}</small>}
+                            {!!member.deliverables?.length && <small>交付：{member.deliverables.slice(0, 2).join(' · ')}</small>}
+                            {!!member.skills?.length && <small>技能：{member.skills.slice(0, 3).join(' · ')}</small>}
+                            {!!member.tools?.length && <small>工具：{member.tools.slice(0, 3).join(' · ')}</small>}
+                            {!!member.dependencies?.length && <small>依赖：{member.dependencies.slice(0, 2).join(' · ')}</small>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {!!recruitmentProposal.openQuestions?.length && (
+                      <div className="recruitment-open-questions">
+                        <strong>还需要你确认</strong>
+                        <ul>{recruitmentProposal.openQuestions.map((question) => <li key={question}>{question}</li>)}</ul>
+                      </div>
                     )}
-                    <button
-                      className="text-button"
-                      type="button"
-                      onClick={() => setNotice('继续在下方补充需求，项目经理会据此调整团队方案')}
-                    >
-                      继续补充需求 <ArrowRight size={13} />
-                    </button>
-                  </div>
+                    <div className="recruitment-proposal-actions">
+                      {recruitment?.phase === 'confirmed' ? (
+                        <span className="recruitment-confirmed"><Check size={15} />团队已创建，下一轮可以直接安排任务</span>
+                      ) : (
+                        <button className="primary-button" type="button" disabled={busy || !!recruitmentProposal.openQuestions?.length} onClick={() => void confirmTeamRecruitment()}>
+                          <Check size={16} />{recruitmentProposal.openQuestions?.length ? '先补充信息' : '确认创建团队'}
+                        </button>
+                      )}
+                      <button className="text-button" type="button" onClick={() => composerRef.current?.focus()}>
+                        继续补充需求 <ArrowRight size={13} />
+                      </button>
+                    </div>
+                  </>}
                 </section>
               )}
               <div className="message-area">
@@ -1104,8 +1159,8 @@ function Workbench() {
                     >
                       <Icon size={31} />
                     </div>
-                    <h2>{teamSpace?.pmRoleId === role ? '开始团队招募' : assistant.greeting || assistant.name}</h2>
-                    <p>{teamSpace?.pmRoleId === role ? '描述你想达成的目标、交付物和限制条件。我会和你多轮澄清，再判断需要几个智能体以及每个智能体的职责。' : assistant.desc}</p>
+                    <h2>{isRecruiting ? '开始团队招募' : assistant.greeting || assistantName}</h2>
+                    <p>{isRecruiting ? '描述你想达成的目标、交付物和限制条件。我会和你多轮澄清，再判断需要几个智能体以及每个智能体的职责。' : teamSpace?.memberSettings?.[role]?.responsibility || assistant.desc}</p>
                     {!assistant.id && data && (
                       <button
                         className="primary-button"
@@ -1161,7 +1216,7 @@ function Workbench() {
                           >
                             <Icon size={13} />
                           </span>
-                          {assistant.name}
+                          {assistantName}
                           <span className={`status ${task.status}`}>
                             {statusLabels[task.status]}
                           </span>
@@ -1244,8 +1299,9 @@ function Workbench() {
               <div className="composer-area">
                 <div className="composer">
                   <textarea
-                    aria-label={`发送给${assistant.name}`}
-                    placeholder={teamSpace?.pmRoleId === role ? '描述你想完成的事，先不用决定要几个智能体…' : `告诉${assistant.name}，你想完成什么…`}
+                    ref={composerRef}
+                    aria-label={`发送给${assistantName}`}
+                    placeholder={isRecruiting ? '描述你想完成的事，先不用决定要几个智能体…' : `告诉${assistantName}，你想完成什么…`}
                     value={drafts[role] || ''}
                     disabled={!assistant.id || assistant.archived}
                     onChange={(e) =>
@@ -1318,7 +1374,7 @@ function Workbench() {
                   </div>
                 </div>
                 <p className="composer-hint">
-                  Enter 发送 · Shift + Enter 换行<span>{teamSpace?.pmRoleId === role ? '先澄清需求，再确认团队方案' : '任务在后台执行'}</span>
+                  Enter 发送 · Shift + Enter 换行<span>{isRecruiting ? '先澄清需求，再确认团队方案' : '任务在后台执行'}</span>
                 </p>
               </div>
             </section>

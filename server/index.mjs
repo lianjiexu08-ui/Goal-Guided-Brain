@@ -316,7 +316,7 @@ export function createWorkbench({
           if (req.method === 'PUT' && !parts[3])
             return send(200, store.saveTeamSpace(body, space.id));
           if (req.method === 'POST' && parts[3] === 'recruitment' && parts[4] === 'confirm') {
-            return send(200, platform.control.confirmTeamRecruitment(space.id));
+            return send(200, platform.control.confirmTeamRecruitment(space.id, { version: body.version }, authorization.principal));
           }
           if (req.method === 'GET' && parts[3] === 'collaborators') {
             const allowed = Array.isArray(space.collaboration?.allowedTeamIds)
@@ -405,7 +405,9 @@ export function createWorkbench({
             try {
               const task = newTask({
                 role: space.pmRoleId,
-                prompt: `你正在负责团队空间「${space.name}」的团队招募。当前阶段：${recruitment.phase || 'discovery'}。请先阅读招募历史和已有团队上下文，继续与用户多轮澄清目标、交付物、约束、质量标准、工作目录、权限和模型/工具需求。需求未清楚前不要分派任务；信息充分后使用 propose_team 保存待用户确认的 Team Charter。Team Charter 确认前不要把成员说成已创建，也不要调用 delegate_task。\n\n用户本轮消息：\n${content}`,
+                prompt: recruitment.phase === 'confirmed'
+                  ? `你正在负责已经确认的团队「${space.name}」。请阅读团队历史和当前消息，按已确认的成员职责拆解任务，使用 delegate_task 推进，并跟踪结果后汇总。只有用户明确提出重新招募或团队范围发生重大变化时，才回到团队招募流程；否则不要调用 propose_team。\n\n用户本轮消息：\n${content}`
+                  : `你正在负责团队空间「${space.name}」的团队招募。当前阶段：${recruitment.phase || 'discovery'}。请先阅读招募历史和已有团队上下文，继续与用户多轮澄清目标、交付物、约束、质量标准、工作目录、权限和模型/工具需求。需求未清楚前不要分派任务；信息充分后使用 propose_team 保存待用户确认的 Team Charter。Team Charter 确认前不要把成员说成已创建，也不要调用 delegate_task。\n\n用户本轮消息：\n${content}`,
                 sessionId: pmTask?.sessionId,
                 workspace: space.workspace,
                 spaceId: space.id,
