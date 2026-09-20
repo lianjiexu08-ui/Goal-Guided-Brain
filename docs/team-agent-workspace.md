@@ -24,6 +24,8 @@ Goal-Guided Brain 把“助手”分成两层：
 
 每个 Chat 都可以创建成一个独立团队。团队空间本身是一个外层容器，不强行把多个角色塞进同一 session；每个智能体仍保留自己的上下文和模型路由，`spaceId`/`teamId` 负责把项目经理、子任务和用户可见的团队消息关联起来。团队可以配置 `teamType`（开发、运维、产品等）、`purpose`、成员职责、项目经理、工作目录和自治预算。主 Chat 可以切换团队，团队之间通过受控协作请求交接工作，团队内部仍可按各自的 `autonomy` 自驱执行。
 
+主 Chat 的输入框旁提供模型选择器，选项以“供应商 · 模型”显示。选择会保存到当前团队；下一条团队消息会把精确的 `providerId` 和 `model` 传给项目经理任务，并在执行快照中记录实际路由。没有工具调用能力的模型会进入纯文本模式，避免把文本模型误当成开发工具模型。
+
 后端同时提供 `/api/teams`（兼容 `/api/spaces`）接口：`POST /api/teams` 创建团队，`PUT /api/teams/:id` 更新配置，`GET /api/teams/:id/collaborators` 查看允许协作的团队，`POST /api/teams/:id/collaborate` 将请求投递给目标团队项目经理。跨团队请求受源团队 `collaboration.allowedTeamIds` 限制，并在目标团队生成独立任务组。
 
 运行中的智能体还可以通过编排 MCP 的 `list_teams`、`delegate_to_team` 和 `read_team_task` 发现、委派和读取获准的团队任务。委派任务使用目标团队自己的项目经理、模型、能力、预算和工作目录；来源团队不能直接读取目标团队的私有消息。

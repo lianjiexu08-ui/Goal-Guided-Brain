@@ -120,7 +120,10 @@ export class ProviderService {
   remove(id) {
     return this.records.remove('providers', id);
   }
-  select(assistant = {}, { exclude = [] } = {}) {
+  select(
+    assistant = {},
+    { exclude = [], modelOverride = '', exactModel = false, allowWithoutTools = false } = {},
+  ) {
     const all = this.list();
     if (!all.length) return null;
     const ids = assistant.providerIds ?? [];
@@ -129,10 +132,12 @@ export class ProviderService {
         ? ids.map((id) => all.find((p) => p.id === id)).filter(Boolean)
         : all
     ).filter((p) => p.enabled && !exclude.includes(p.id));
-    const needsTools =
+    const needsTools = !allowWithoutTools && (
       assistant.requiredTools === true ||
       Object.values(assistant.tools ?? {}).some(Boolean) ||
-      (assistant.capabilityIds?.length ?? 0) > 0;
+      (assistant.capabilityIds?.length ?? 0) > 0
+    );
+    const requestedModel = modelOverride || '';
     const failures = [];
     for (const provider of candidates) {
       const models = [...provider.models].sort(
@@ -141,6 +146,7 @@ export class ProviderService {
       );
       const model = models.find(
         (item) =>
+          (!exactModel || !requestedModel || item.id === requestedModel) &&
           (!needsTools || item.tools) &&
           (!assistant.requiresVision || item.vision) &&
           item.contextWindow >= (assistant.requiredContextWindow ?? 1),

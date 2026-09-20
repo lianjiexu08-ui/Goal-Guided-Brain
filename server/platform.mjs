@@ -88,7 +88,15 @@ export function createPlatform({
     const batchId =
       input.batchId || records.get('jobs', jobId)?.batchId || randomUUID();
     const nodeId = input.nodeId || assistant.nodeId || 'local';
-    const providerIds = input.providerIds ?? assistant.providerIds ?? [];
+    const modelOverride =
+      typeof input.model === 'string' && input.model.trim()
+        ? input.model.trim().slice(0, 120)
+        : '';
+    const providerIds =
+      input.providerIds ??
+      (typeof input.providerId === 'string' && input.providerId.trim()
+        ? [input.providerId.trim()]
+        : assistant.providerIds ?? []);
     if (
       !Array.isArray(providerIds) ||
       providerIds.length > 100 ||
@@ -156,7 +164,13 @@ export function createPlatform({
         spaceId: teamId,
         teamId,
         sourceMessageId: input.sourceMessageId || null,
-        assistantSnapshot: { ...(input.assistantSnapshot || assistant) },
+        modelOverride: modelOverride || null,
+        allowModelWithoutTools: input.allowModelWithoutTools === true,
+        assistantSnapshot: {
+          ...(input.assistantSnapshot || assistant),
+          ...(modelOverride ? { model: modelOverride } : {}),
+          ...(providerIds.length ? { providerIds } : {}),
+        },
         capabilityCommand: input.capabilityCommand || null,
         excludedProviders: [],
       },
@@ -228,17 +242,30 @@ export function createPlatform({
             ...assistant,
             providerIds: meta.providerIds,
             requiredTools: true,
+          }, {
+            modelOverride: meta.modelOverride || '',
+            exactModel: !!meta.modelOverride,
+            allowWithoutTools: meta.allowModelWithoutTools === true,
           });
+      const textOnlyModel =
+        meta.allowModelWithoutTools === true && route?.modelSpec?.tools !== true;
+      const effectiveAssistant = textOnlyModel
+        ? {
+            ...assistant,
+            tools: { files: false, web: false, terminal: false },
+            capabilityIds: [],
+          }
+        : assistant;
       const cap = meta.check
         ? { patches: [], selected: [] }
-        : capabilities.patch(assistant);
+        : capabilities.patch(effectiveAssistant);
       if (!route && !meta.check && requireCredential && !resolveApiKey(dataDir))
         throw new Error('没有可用于远程执行的模型凭据。');
       const { secret: _secret, ...publicRoute } = route || {};
       records.save(
         'runtime-snapshots',
         {
-          assistant,
+          assistant: effectiveAssistant,
           route: route ? publicRoute : null,
           capabilities: cap.selected,
           capabilityConfigs: Object.fromEntries(
@@ -277,7 +304,7 @@ export function createPlatform({
         });
       return {
         task,
-        assistant,
+        assistant: effectiveAssistant,
         bundles,
         config: { model: store.config.model },
         route:
@@ -545,8 +572,21 @@ export function createPlatform({
         ...assistant,
         providerIds: meta.providerIds,
         requiredTools: true,
+      }, {
+        modelOverride: meta.modelOverride || '',
+        exactModel: !!meta.modelOverride,
+        allowWithoutTools: meta.allowModelWithoutTools === true,
       });
-      const cap = capabilities.patch(assistant);
+      const textOnlyModel =
+        meta.allowModelWithoutTools === true && route.modelSpec?.tools !== true;
+      const effectiveAssistant = textOnlyModel
+        ? {
+            ...assistant,
+            tools: { files: false, web: false, terminal: false },
+            capabilityIds: [],
+          }
+        : assistant;
+      const cap = capabilities.patch(effectiveAssistant);
       const workspace = await workspaces.prepare(task, meta.workspaceMode);
       if (stopping || stoppingTasks.has(task.id)) {
         finish('cancelled');
@@ -556,7 +596,7 @@ export function createPlatform({
       records.save(
         'runtime-snapshots',
         {
-          assistant,
+          assistant: effectiveAssistant,
           route: route ? publicRoute : null,
           capabilities: cap.selected,
           capabilityConfigs: Object.fromEntries(
@@ -570,22 +610,26 @@ export function createPlatform({
       const endpoint = `${address()}/api/mcp`;
       const capabilityPatch = [
         ...gatewayPatches(cap.patches, address(), token),
-        {
-          id: 'workbench-orchestration',
-          name: '@deepseek-ai/dsh-mcp-client',
-          config: {
-            serverName: 'workbench',
-            transport: 'streamable-http',
-            url: endpoint,
-            headers: { Authorization: `Bearer ${token}` },
-            failOnStartupError: true,
-          },
-        },
+        ...(textOnlyModel
+          ? []
+          : [
+              {
+                id: 'workbench-orchestration',
+                name: '@deepseek-ai/dsh-mcp-client',
+                config: {
+                  serverName: 'workbench',
+                  transport: 'streamable-http',
+                  url: endpoint,
+                  headers: { Authorization: `Bearer ${token}` },
+                  failOnStartupError: true,
+                },
+              },
+            ]),
       ];
       workspaces.releasePort(task.id);
       run = runtimeFactory({
         task: { ...task, workspace: workspace.path },
-        assistant,
+        assistant: effectiveAssistant,
         config: store.config,
         route,
         capabilityPatch,
@@ -606,7 +650,7 @@ export function createPlatform({
         onDone: finish,
         onEvent: (event) => recordEvent(task, event, [route?.secret, token]),
       });
-      run.assistant = assistant;
+      run.assistant = effectiveAssistant;
       runs.set(task.id, run);
       run._heartbeat = setInterval(() => {
         if (!control.heartbeatLocal(task.id, execution.epoch))

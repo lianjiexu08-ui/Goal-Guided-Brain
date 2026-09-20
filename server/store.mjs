@@ -268,6 +268,8 @@ export class Store {
       teamType: 'custom',
       purpose: space.goal || '',
       chatId: space.id,
+      model: null,
+      providerId: null,
       responsibilities: {},
       memberSettings: {},
       ...space,
@@ -308,6 +310,18 @@ export class Store {
       throw new Error('团队类型无效。');
     const purpose = String(input.purpose ?? existing?.purpose ?? goal).trim();
     if (!purpose || purpose.length > 2000) throw new Error('团队职责无效。');
+    const modelValue = input.model ?? existing?.model ?? null;
+    const model =
+      modelValue === null || modelValue === ''
+        ? null
+        : String(modelValue).trim().slice(0, 120);
+    if (model && !modelValue) throw new Error('团队模型无效。');
+    const providerValue = input.providerId ?? existing?.providerId ?? null;
+    const providerId =
+      providerValue === null || providerValue === ''
+        ? null
+        : String(providerValue).trim().slice(0, 160);
+    if (providerId && !providerValue) throw new Error('团队供应商无效。');
     const responsibilities = {};
     const suppliedResponsibilities = input.responsibilities ?? existing?.responsibilities ?? {};
     if (suppliedResponsibilities && typeof suppliedResponsibilities === 'object' && !Array.isArray(suppliedResponsibilities)) {
@@ -366,6 +380,8 @@ export class Store {
       name,
       goal,
       purpose,
+      model,
+      providerId,
       teamType,
       workspace: input.workspace || existing?.workspace || this.config.workspace,
       pmRoleId,

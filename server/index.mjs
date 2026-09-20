@@ -65,6 +65,29 @@ export function createWorkbench({
         toolCount: Array.isArray(capability.health.tools) ? capability.health.tools.length : null,
       } : null,
     })),
+    providers: platform.providers.list().map((provider) => ({
+      id: provider.id,
+      name: provider.name,
+      protocol: provider.protocol,
+      enabled: provider.enabled !== false,
+      priority: provider.priority,
+      health: provider.health
+        ? {
+            ok: provider.health.ok === true,
+            model: provider.health.model || null,
+            toolTest: provider.health.toolTest === true,
+            latencyMs: provider.health.latencyMs || null,
+            error: provider.health.ok ? null : provider.health.error || null,
+          }
+        : null,
+      models: (provider.models || []).map((model) => ({
+        id: model.id,
+        name: model.name,
+        tools: model.tools === true,
+        vision: model.vision === true,
+        contextWindow: model.contextWindow,
+      })),
+    })),
     tasks: store
       .tasks()
       .map(({ context: _context, log: _log, ...t }) => {
@@ -383,6 +406,9 @@ export function createWorkbench({
                 workspace: space.workspace,
                 spaceId: space.id,
                 sourceMessageId: message.id,
+                model: body.model || space.model || undefined,
+                providerId: body.providerId || space.providerId || undefined,
+                allowModelWithoutTools: body.allowModelWithoutTools === true,
               });
               const linkedMessage = store.saveTeamMessage({ ...message, taskId: task.id }, message.id);
               return send(201, { ...linkedMessage, sessionId: task.sessionId });
@@ -456,6 +482,9 @@ export function createWorkbench({
             sessionId: body.sessionId,
             nodeId: body.nodeId,
             providerIds: body.providerIds,
+            providerId: body.providerId,
+            model: body.model,
+            allowModelWithoutTools: body.allowModelWithoutTools === true,
             budgetTokens: body.budgetTokens,
             workspaceMode: body.workspaceMode,
             workspaceKey: body.workspaceKey,

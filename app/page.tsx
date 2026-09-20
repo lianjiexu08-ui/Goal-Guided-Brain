@@ -158,6 +158,8 @@ type TeamSpace = {
   pmRoleId: string;
   memberRoleIds: string[];
   status: string;
+  model?: string | null;
+  providerId?: string | null;
   autonomy: { mode: string; maxDepth: number; maxJobs: number; budgetTokens: number };
   teamType?: string;
   purpose?: string;
@@ -189,10 +191,33 @@ type Capability = {
     toolCount?: number | null;
   } | null;
 };
+type ProviderModel = {
+  id: string;
+  name: string;
+  tools: boolean;
+  vision: boolean;
+  contextWindow: number;
+};
+type Provider = {
+  id: string;
+  name: string;
+  protocol: string;
+  enabled: boolean;
+  priority: number;
+  health?: {
+    ok: boolean;
+    model?: string | null;
+    toolTest?: boolean;
+    latencyMs?: number | null;
+    error?: string | null;
+  } | null;
+  models: ProviderModel[];
+};
 type State = {
   roles: Assistant[];
   skillCatalog: { id: string; name: string }[];
   capabilities: Capability[];
+  providers: Provider[];
   tasks: Task[];
   sessions: Session[];
   knowledge: Knowledge[];
@@ -368,6 +393,31 @@ function Workbench() {
   const teamTasks = tasks.filter((task) => task.spaceId === teamSpace?.id);
   const teamOpenTasks = teamTasks.filter(isActive);
   const projectManager = roles.find((item) => item.id === teamSpace?.pmRoleId);
+  const modelOptions = (data?.providers || [])
+    .filter((provider) => provider.enabled)
+    .flatMap((provider) =>
+      provider.models.map((model) => ({
+        key: `${provider.id}::${model.id}`,
+        providerId: provider.id,
+        providerName: provider.name,
+        model,
+      })),
+    );
+  const roleModelOption = modelOptions.find(
+    (option) =>
+      option.model.id === (projectManager?.model || data?.config.model) &&
+      (!projectManager?.providerIds?.length ||
+        projectManager.providerIds.includes(option.providerId)),
+  );
+  const selectedModelOption =
+    modelOptions.find(
+      (option) =>
+        option.model.id === teamSpace?.model &&
+        option.providerId === teamSpace?.providerId,
+    ) ||
+    roleModelOption ||
+    modelOptions[0] ||
+    null;
   const boundCapabilities = (data?.capabilities || []).filter((capability) =>
     assistant.capabilityIds?.includes(capability.id),
   );
@@ -481,6 +531,13 @@ function Workbench() {
           {
             clientMessageId: `chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             content: drafts[role],
+            ...(selectedModelOption
+              ? {
+                  model: selectedModelOption.model.id,
+                  providerId: selectedModelOption.providerId,
+                  allowModelWithoutTools: !selectedModelOption.model.tools,
+                }
+              : {}),
           },
         );
         if (message.sessionId) {
@@ -493,9 +550,28 @@ function Workbench() {
         role,
         sessionId: currentSession,
         prompt: drafts[role],
+        ...(selectedModelOption
+          ? {
+              model: selectedModelOption.model.id,
+              providerId: selectedModelOption.providerId,
+              allowModelWithoutTools: !selectedModelOption.model.tools,
+            }
+          : {}),
       });
       setSelected((s) => ({ ...s, [role]: task.sessionId }));
       setDrafts((s) => ({ ...s, [role]: '' }));
+    });
+  }
+  async function changeTeamModel(value: string) {
+    if (!teamSpace) return;
+    const option = modelOptions.find((item) => item.key === value);
+    if (!option) return;
+    await action(async () => {
+      await api(`spaces/${teamSpace.id}`, 'PUT', {
+        model: option.model.id,
+        providerId: option.providerId,
+      });
+      setNotice(`已切换到 ${option.providerName} · ${option.model.name}`);
     });
   }
   function openSettings() {
@@ -1089,9 +1165,29 @@ function Workbench() {
                       </span>
                     </button>
                     <div>
-                      <span className="model-label">
-                        {assistant.model || data?.config.model || 'DeepSeek'}
-                      </span>
+                      {selectedModelOption ? (
+                        <label className="model-switcher" title="切换本次 Chat 使用的模型">
+                          <span className="sr-only">选择模型</span>
+                          <select
+                            aria-label="选择模型"
+                            value={selectedModelOption.key}
+                            disabled={busy || !teamSpace}
+                            onChange={(event) => void changeTeamModel(event.target.value)}
+                          >
+                            {modelOptions.map((option) => (
+                              <option key={option.key} value={option.key}>
+                                {option.providerName} · {option.model.name}
+                                {!option.model.tools ? ' · 纯文本' : ''}
+                              </option>
+                            ))}
+                          </select>
+                          {!selectedModelOption.model.tools && (
+                            <small>纯文本模式</small>
+                          )}
+                        </label>
+                      ) : (
+                        <span className="model-label">尚未配置模型</span>
+                      )}
                       <button
                         className="send-button"
                         aria-label="发送任务"
