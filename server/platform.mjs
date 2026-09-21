@@ -131,6 +131,11 @@ export function createPlatform({
       providerIds.some((id) => typeof id !== 'string')
     )
       throw new Error('模型候选必须为供应商 ID 列表。');
+    const decisionOnlyProviders = providerIds.filter(
+      (id) => records.get('providers', id)?.protocol === 'typesafe-system-one',
+    );
+    if (decisionOnlyProviders.length)
+      throw new Error('TypeSafe 只能通过 evaluate_decision 使用，不能作为聊天或执行模型。');
     if (
       input.budgetTokens !== undefined &&
       (!Number.isSafeInteger(input.budgetTokens) ||
@@ -1414,7 +1419,9 @@ export function createPlatform({
     manage,
     saveLegacyCredential,
     hasCredential: () =>
-      providers.list().some((p) => p.enabled) || !!resolveApiKey(dataDir),
+      providers.list().some((p) =>
+        p.enabled && p.protocol !== 'typesafe-system-one' && p.models?.length,
+      ) || !!resolveApiKey(dataDir),
     async close() {
       stopping = true;
       clearInterval(timer);

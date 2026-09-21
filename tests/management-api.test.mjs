@@ -40,6 +40,24 @@ test('health endpoint supports HEAD probes without a response body', async (t) =
   assert.equal(response.body, null);
 });
 
+test('TypeSafe-only configuration does not masquerade as a chat model', async (t) => {
+  const { app, request } = await fixture(t);
+  app.platform.providers.save({
+    name: 'TypeSafe decisions',
+    protocol: 'typesafe-system-one',
+    baseUrl: 'http://127.0.0.1:1/v1',
+    models: [{ id: 'jev-latest' }],
+  });
+  assert.equal((await request('state')).body.config.hasApiKey, false);
+  app.platform.providers.save({
+    name: 'Chat fixture',
+    protocol: 'openai-completions',
+    baseUrl: 'http://127.0.0.1:1/v1',
+    models: [{ id: 'chat-fixture' }],
+  });
+  assert.equal((await request('state')).body.config.hasApiKey, true);
+});
+
 test('legacy key migration preserves the old file until encrypted storage succeeds and wires the provider', async (t) => {
   const { app, request, dataDir } = await fixture(t);
   const filename = path.join(dataDir, 'secrets.json'),

@@ -446,6 +446,16 @@ export class ControlPlane {
     if (proposal.openQuestions?.length) throw fail('请先回答 Team Charter 中的待确认问题。');
     const capabilityRows = this.records.list('capabilities');
     const providerRows = this.records.list('providers');
+    const decisionOnlyProviders = proposal.members.flatMap(member => {
+      const ids = member.providerIds?.length
+        ? member.providerIds
+        : this.store.role(member.roleId)?.providerIds || [];
+      return ids
+        .filter(id => providerRows.some(provider => provider.id === id && provider.protocol === 'typesafe-system-one'))
+        .map(id => `${member.memberId || member.roleId}:${id}`);
+    });
+    if (decisionOnlyProviders.length)
+      throw fail(`招募方案不能把 TypeSafe 作为成员执行模型：${decisionOnlyProviders.join('、')}。请改用普通聊天模型；TypeSafe 只能用于 evaluate_decision。`, 409);
     const unavailableCapabilities = proposal.members.flatMap(member => (member.capabilityIds || [])
       .filter(id => !capabilityRows.some(capability => capability.id === id && capability.enabled !== false))
       .map(id => `${member.memberId || member.roleId}:${id}`));
@@ -461,8 +471,8 @@ export class ControlPlane {
       const templateProviderIds = this.store.role(member.roleId)?.providerIds || [];
       const allowedProviderIds = member.providerIds?.length ? member.providerIds : templateProviderIds;
       const candidates = allowedProviderIds.length
-        ? providerRows.filter(provider => allowedProviderIds.includes(provider.id) && provider.enabled !== false)
-        : providerRows.filter(provider => provider.enabled !== false);
+        ? providerRows.filter(provider => allowedProviderIds.includes(provider.id) && provider.enabled !== false && provider.protocol !== 'typesafe-system-one')
+        : providerRows.filter(provider => provider.enabled !== false && provider.protocol !== 'typesafe-system-one');
       return !candidates.some(provider => provider.models?.some(model => model.id === member.modelHint));
     }).map(member => `${member.memberId || member.roleId}:${member.modelHint}`);
     if (invalidModels.length)
@@ -476,8 +486,8 @@ export class ControlPlane {
       const templateProviderIds = template?.providerIds || [];
       const allowedProviderIds = member.providerIds?.length ? member.providerIds : templateProviderIds;
       const candidates = allowedProviderIds.length
-        ? providerRows.filter(provider => allowedProviderIds.includes(provider.id) && provider.enabled !== false)
-        : providerRows.filter(provider => provider.enabled !== false);
+        ? providerRows.filter(provider => allowedProviderIds.includes(provider.id) && provider.enabled !== false && provider.protocol !== 'typesafe-system-one')
+        : providerRows.filter(provider => provider.enabled !== false && provider.protocol !== 'typesafe-system-one');
       const model = candidates.flatMap(provider => provider.models || [])
         .find(candidate => candidate.id === member.modelHint && (!requiresToolCalling || candidate.tools === true));
       return model ? [] : [`${member.memberId || member.roleId}:${member.modelHint}`];

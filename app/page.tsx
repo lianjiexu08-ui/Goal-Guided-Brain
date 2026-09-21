@@ -453,7 +453,11 @@ function Workbench() {
   const charterKey = `${teamSpace?.id}:${recruitmentProposal?.version}:${recruitment?.phase}`;
   const charterExpanded = expandedCharters[charterKey] ?? recruitment?.phase !== 'confirmed';
   const modelOptions = (data?.providers || [])
-    .filter((provider) => provider.enabled)
+    // TypeSafe is a structured decision backend. It does not generate chat
+    // replies or code, so it must never appear in the conversation model
+    // switcher. It remains configurable in Management and callable through
+    // the dedicated decision flow.
+    .filter((provider) => provider.enabled && provider.protocol !== 'typesafe-system-one')
     .flatMap((provider) =>
       provider.models.map((model) => ({
         key: `${provider.id}::${model.id}`,

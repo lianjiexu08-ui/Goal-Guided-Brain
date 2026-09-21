@@ -247,6 +247,14 @@ test('team confirmation rejects disabled capabilities and unavailable model hint
       { roleId: 'developer', memberId: 'dev', responsibility: '实现功能。', providerIds: [textProvider.id], modelHint: 'recruitment-text-model' },
     ] }, principal);
     assert.throws(() => app.platform.control.confirmTeamRecruitment(team.id), /不支持成员所需的工具或能力/);
+    const decisionProvider = app.platform.providers.save({
+      name: 'TypeSafe 决策后端', protocol: 'typesafe-system-one', baseUrl: 'https://decision.example.test/v1',
+      models: [{ id: 'jev-latest' }], enabled: true,
+    });
+    app.platform.control.proposeTeam({ teamName: '错误决策团队', goal: '验证决策后端不能执行成员任务。', purpose: '保持聊天模型和结构化判断边界。', members: [
+      { roleId: 'developer', memberId: 'dev', responsibility: '实现功能。', providerIds: [decisionProvider.id], modelHint: 'jev-latest', toolAccess: { files: false, web: false, terminal: false } },
+    ] }, principal);
+    assert.throws(() => app.platform.control.confirmTeamRecruitment(team.id), /不能把 TypeSafe 作为成员执行模型/);
     app.platform.control.proposeTeam({ teamName: '纯文本团队', goal: '只做文本整理。', purpose: '验证显式关闭工具后可以使用纯文本模型。', members: [
       { roleId: 'developer', memberId: 'writer', responsibility: '整理文字内容。', providerIds: [textProvider.id], modelHint: 'recruitment-text-model', toolAccess: { files: false, web: false, terminal: false } },
     ] }, principal);

@@ -1256,10 +1256,12 @@ function EntityEditor({
                       '供应商',
                       [
                         { value: '', label: '选择供应商' },
-                        ...data.providers.map((item) => ({
+                        ...data.providers
+                          .filter((item) => item.protocol !== 'typesafe-system-one')
+                          .map((item) => ({
                           value: item.id,
                           label: title(item),
-                        })),
+                          })),
                       ],
                       true,
                     )
@@ -1783,7 +1785,7 @@ function JobDetail({
             >
               <option value="">原候选顺序</option>
               {data.providers
-                .filter((provider) => provider.enabled !== false)
+                .filter((provider) => provider.enabled !== false && provider.protocol !== 'typesafe-system-one')
                 .map((provider) => (
                   <option key={provider.id} value={provider.id}>
                     {title(provider)}
@@ -2396,7 +2398,9 @@ function PluginComponents({
                                       <datalist id={`plugin-models-${item.id}`}>
                                         {[
                                           ...new Set(
-                                            data.providers.flatMap((provider) =>
+                                            data.providers
+                                              .filter((provider) => provider.protocol !== 'typesafe-system-one')
+                                              .flatMap((provider) =>
                                               entityList(provider.models).map(
                                                 (model) => model.id,
                                               ),
