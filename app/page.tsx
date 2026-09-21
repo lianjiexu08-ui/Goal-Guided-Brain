@@ -1018,7 +1018,11 @@ function Workbench() {
                           <span className={`status-icon ${task.status}`}>
                             {task.status === 'running' ? <LoaderCircle size={13} className="spin" /> : task.status === 'completed' ? <Check size={13} /> : <Circle size={13} />}
                           </span>
-                          <span><strong>{roles.find((item) => item.id === task.role)?.name || task.role}</strong><small>{task.title}</small></span>
+                          <span>
+                            <strong>{roles.find((item) => item.id === task.role)?.name || task.role}</strong>
+                            <small>{task.title}</small>
+                            {(task.result || task.error) && <small className="team-task-result">{(task.result || task.error).replace(/\s+/g, ' ').slice(0, 180)}</small>}
+                          </span>
                           <em className={`status ${task.status}`}>{statusLabels[task.status]}</em>
                         </button>
                       ))}
@@ -1045,13 +1049,14 @@ function Workbench() {
                     const memberTasks = teamTasks.filter((task) => task.role === member.id);
                     const active = memberTasks.filter(isActive).length;
                     const settings = teamSpace?.memberSettings?.[member.id];
+                    const memberModel = settings?.modelHint || member.model || teamSpace?.model;
                     return (
                       <button className="team-member-card" key={member.id} onClick={() => { setRole(member.id); setView('workspace'); }}>
                         <span className="team-member-icon" style={{ color: member.color, background: `${member.color}18` }}><MemberIcon size={18} /></span>
                         <span className="team-member-copy">
                           <strong>{settings?.label || member.name}</strong>
                           {settings?.responsibility && <span className="team-member-responsibility">{settings.responsibility}</span>}
-                          <small>{member.model || '跟随工作空间模型'}</small>
+                          <small>{memberModel || '跟随工作空间模型'}</small>
                         </span>
                         <span className={`team-member-state ${active ? 'working' : ''}`}><span className="live-dot" />{active ? `${active} 项进行中` : '待命'}</span>
                       </button>

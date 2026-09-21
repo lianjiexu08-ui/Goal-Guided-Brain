@@ -1488,6 +1488,7 @@ h1 {
 .team-task-row strong, .team-task-row small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .team-task-row strong { color: #45625f; font-size: 11px; font-weight: 650; }
 .team-task-row small { margin-top: 2px; color: #8c9d99; font-size: 10px; }
+.team-task-row .team-task-result { color: #5c7a73; line-height: 1.35; }
 .team-task-row em { font-style: normal; }
 .team-roster-panel { padding: 22px 18px; background: #f9fcfb; }
 .team-roster-head { display: flex; justify-content: space-between; align-items: flex-start; padding: 0 4px 16px; }
