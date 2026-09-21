@@ -26,7 +26,7 @@ Goal-Guided Brain 把“助手”分成两层：
 
 团队招募输入框旁提供模型选择器，选项以“供应商 · 模型”显示。选择会保存到当前团队；下一轮招募消息会把精确的 `providerId` 和 `model` 传给项目经理任务，并在执行快照中记录实际路由。没有工具调用能力的模型会进入纯文本模式，避免把文本模型误当成开发工具模型。
 
-后端同时提供 `/api/teams`（兼容 `/api/spaces`）接口：`POST /api/teams` 创建团队，`PUT /api/teams/:id` 更新配置，`GET /api/teams/:id/collaborators` 查看允许协作的团队，`POST /api/teams/:id/collaborate` 将请求投递给目标团队项目经理。跨团队请求受源团队 `collaboration.enabled` 和 `allowedTeamIds` 限制；开启协作且白名单为空时会包含之后新建的活动团队，并在目标团队生成独立任务组。
+后端同时提供 `/api/teams`（兼容 `/api/spaces`）接口：`POST /api/teams` 创建团队，`PUT /api/teams/:id` 更新配置，`GET /api/teams/:id/collaborators` 查看允许协作的团队，`POST /api/teams/:id/collaborate` 将请求投递给目标团队项目经理。跨团队请求受源团队 `collaboration.enabled` 和 `allowedTeamIds` 限制；开启协作且白名单为空时会包含之后新建的活动团队，并在目标团队生成独立任务组。委派消息会在源团队和目标团队各保留一条关联记录，双方可以通过同一个 `taskId` 查看进度。
 
 运行中的智能体还可以通过编排 MCP 的 `list_teams`、`delegate_to_team` 和 `read_team_task` 发现、委派和读取获准的团队任务。委派任务使用目标团队自己的项目经理、模型、能力、预算和工作目录；来源团队不能直接读取目标团队的私有消息。
 

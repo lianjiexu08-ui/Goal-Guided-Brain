@@ -1483,6 +1483,7 @@ h1 {
 .team-message-blocked { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 9px; color: #9b7950; font-size: 11px; line-height: 1.5; }
 .team-message-blocked button { flex: 0 0 auto; color: #8a6334; font-size: 11px; font-weight: 600; }
 .team-message-blocked button:hover { color: #5f4323; text-decoration: underline; }
+.team-message-collab-status { display: block; margin-top: 8px; color: #6b8d86; font-size: 10px; }
 .team-empty { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 150px; color: #9aaba7; font-size: 12px; }
 .team-activity { margin: 22px 0 4px; padding: 14px; border: 1px solid #e4ece9; border-radius: 15px; background: #fbfdfc; }
 .team-activity-title { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; color: #68847e; font-size: 11px; font-weight: 650; }

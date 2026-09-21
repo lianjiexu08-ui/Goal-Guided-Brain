@@ -411,7 +411,24 @@ export function createWorkbench({
               sourceMessageId: message.id,
             });
             const linked = store.saveTeamMessage({ ...message, taskId: task.id }, message.id);
-            return send(201, { ...linked, taskId: task.id, sessionId: task.sessionId, sourceTeamId: space.id, targetTeamId: target.id });
+            const sourceLinked = store.saveTeamMessage(
+              {
+                ...message,
+                spaceId: space.id,
+                teamId: space.id,
+                relatedMessageId: message.id,
+                taskId: task.id,
+              },
+              `${handoffId}:source`,
+            );
+            return send(201, {
+              ...linked,
+              taskId: task.id,
+              sessionId: task.sessionId,
+              sourceTeamId: space.id,
+              targetTeamId: target.id,
+              sourceMessageId: sourceLinked.id,
+            });
           }
           if (req.method === 'POST' && parts[3] === 'messages') {
             if (space.status !== 'active') throw new Error('团队空间当前不可接收新消息。');

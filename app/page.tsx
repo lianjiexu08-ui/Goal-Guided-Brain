@@ -1047,10 +1047,21 @@ function Workbench() {
                     <div className="pm-flow"><span>多轮澄清</span><ArrowRight size={13} /><span>Team Charter</span><ArrowRight size={13} /><span>确认创建</span></div>
                   </div>
                   {teamMessages.map((message) => {
+                    const relatedTask = message.taskId
+                      ? tasks.find((task) => task.id === message.taskId)
+                      : null;
+                    const outgoingCollaboration =
+                      message.kind === 'handoff' &&
+                      message.fromTeamId === teamSpace?.id;
+                    const targetTeamName = data?.spaces?.find(
+                      (item) => item.id === message.toTeamId,
+                    )?.name;
                     const author = message.senderType === 'owner'
                       ? '你'
                       : message.senderType === 'team'
-                        ? data?.spaces?.find((item) => item.id === message.fromTeamId)?.name || '协作团队'
+                        ? outgoingCollaboration
+                          ? `本团队 → ${targetTeamName || '协作团队'}`
+                          : data?.spaces?.find((item) => item.id === message.fromTeamId)?.name || '协作团队'
                         : roles.find((item) => item.id === message.senderId)?.name || '项目经理';
                     return (
                     <div className={`team-message ${message.senderType === 'owner' ? 'from-user' : 'from-pm'} ${message.status === 'blocked' ? 'blocked' : ''}`} key={message.id}>
@@ -1059,6 +1070,11 @@ function Workbench() {
                         {message.status === 'blocked' && <em className="team-message-state">未发送</em>}
                       </span>
                       <p>{message.content}</p>
+                      {message.kind === 'handoff' && relatedTask && (
+                        <small className="team-message-collab-status">
+                          跨团队任务 · {statusLabels[relatedTask.status] || relatedTask.status}
+                        </small>
+                      )}
                       {message.status === 'blocked' && (
                         <div className="team-message-blocked">
                           <span>{message.error || '项目经理正在处理上一条消息。'}</span>

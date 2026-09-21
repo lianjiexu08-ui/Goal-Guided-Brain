@@ -175,6 +175,15 @@ test('multiple Chat teams keep independent ownership and can hand work to anothe
     const detail = await request(`teams/${created.body.id}`);
     assert.equal(detail.body.messages[0].fromTeamId, source.id);
     assert.equal(detail.body.tasks[0].teamId, created.body.id);
+    const sourceDetail = await request(`teams/${source.id}`);
+    const outgoing = sourceDetail.body.messages.find(
+      (message) =>
+        message.kind === 'handoff' &&
+        message.toTeamId === created.body.id &&
+        message.taskId === delegated.body.taskId,
+    );
+    assert.ok(outgoing);
+    assert.equal(outgoing.relatedMessageId, detail.body.messages[0].id);
   } finally {
     await app.close();
     fs.rmSync(fixture.dir, { recursive: true, force: true });
