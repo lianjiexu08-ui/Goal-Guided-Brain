@@ -1,94 +1,178 @@
 # Goal-Guided Brain
 
-Goal-Guided Brain 是一个服务个人目标的智能协作工作空间，使用 DSH 运行模型与工具。支持多个模型供应商、助手协作、隔离开发目录、Skill/MCP/插件、服务器资料、定时任务和监控。可以纯本地部署，也可以由云端控制端调度出站连接的执行节点。
+Goal-Guided Brain（简称 **GGB**）是一个面向个人目标的智能协作工作空间。你只需要把目标交给团队招募，项目经理会和你多轮澄清需求，再决定需要几个智能体、每个成员负责什么、使用哪个模型和哪些能力。
 
-完整的产品定位、架构、团队工作流、模型与能力配置、CLI、API、权限边界和迭代路线见 [项目全景说明](docs/project-overview.md)。
+GGB 把模型当作可替换的执行引擎，把团队职责、个人习惯、项目知识、权限边界、任务状态和交付证据作为稳定内核。它适合开发、运维、产品规划、资料整理以及需要多个专业角色协作的长期项目。
 
-## 启动
+完整的产品定位、架构、数据模型、接口、权限边界和迭代路线见 [项目全景说明](docs/project-overview.md)。
 
-需要 Node.js 22.13+（建议 24+）和 Git。终端 CLI 支持 Windows 10/11（PowerShell 或 cmd）、macOS 和 Linux，不要求 WSL；Linux 常驻服务和远程执行节点仍可按 [部署说明](deploy/README.md) 单独配置。
+## 你可以用它做什么
 
-```sh
+- **团队招募**：直接描述目标，和项目经理多轮讨论，生成可确认的 Team Charter。
+- **多团队协作**：为开发、运维、产品或不同项目建立独立团队，团队之间通过项目经理受控委派。
+- **模型自由切换**：按团队、角色或单次任务选择 DeepSeek、Gemini、Claude、Codex/OpenAI、Kimi 等模型。
+- **能力管理**：安装、固定、启用和回退 Skill、MCP 与 Plugin；智能体只能使用已绑定能力。
+- **可恢复执行**：任务组、子任务、消息、检查点、产物、预算、租约和远程节点状态都会持久化。
+- **个人工作习惯**：保存语言、时区、语气、详细程度、长期规则和项目知识。
+- **可选结构化判断**：TypeSafe System One 可用于路由、风险预评估和人工复核分流，不会替代聊天模型。
+- **跨平台 CLI**：通过 `ggb` 在 Windows、macOS 和 Linux 上直接执行或持续对话。
+
+## 工作方式
+
+```mermaid
+flowchart LR
+  User[你描述目标] --> Recruit[团队招募]
+  Recruit --> PM[项目经理澄清并生成 Team Charter]
+  PM --> Confirm{你确认方案}
+  Confirm --> Members[创建成员与任务组]
+  Members --> Route[按职责选择模型和能力]
+  Route --> Execute[隔离环境中执行]
+  Execute --> Evidence[消息 / 检查点 / 产物 / 测试证据]
+  Evidence --> Summary[项目经理复核并汇总]
+```
+
+确认 Team Charter 之前，系统不会把成员说成已经创建，也不会自动分派执行任务。高风险的发布、部署、删除、发送和外部写入仍需要明确授权或人工复核。
+
+## 快速开始
+
+要求 Node.js `22.13+`（建议 `24+`）和 Git。
+
+```bash
 npm install
 npm run build
 npm start
 ```
 
-打开 <http://127.0.0.1:3088>。API 默认监听本机 3089。`npm run dev` 启动开发模式；`npm run stop` 停止生产启动脚本。macOS 可双击 `启动工作台.command`。
+打开 <http://127.0.0.1:3088>。API 默认监听 `127.0.0.1:3089`。开发模式使用：
 
-也可以直接使用统一 CLI，不打开网页。项目品牌命令是 `ggb`；`dsh`、`dsh-workbench` 和 `goal-guided-brain` 保留为兼容别名：
-
-```sh
-npm link                    # 或 npm install -g .
-export GEMINI_API_KEY=...
-ggb run --provider gemini --model gemini-2.5-flash "总结当前项目"
-echo "设计一个缓存方案" | ggb run --provider claude
-ggb run --session refactor "先分析这个模块"
-ggb run --session refactor --continue "继续重构并运行测试"
-ggb chat --provider claude --session personal
-ggb providers
-ggb decide --state '{"goal":"ship a release"}' --questions '{"urgent":{"type":"noul","instructions":"Is this urgent?"}}'
+```bash
+npm run dev
 ```
 
-Windows PowerShell 设置密钥时使用 `$env:GEMINI_API_KEY = '...'`，cmd 使用 `set GEMINI_API_KEY=...`；macOS/Linux 使用上面的 `export`。在 Windows 上，`npm link` 或 `npm install -g .` 会由 npm 自动生成 `ggb.cmd` 和 PowerShell 可调用的命令 shim，直接输入 `ggb` 即可；macOS/Linux 会生成同名可执行文件。CLI 预设支持 `gemini`、`claude`、`codex`、`kimi` 和 `deepseek`，`gpt/openai` 是 Codex/OpenAI 别名。`ggb chat` 提供持续对话，支持 `/new`、`/model [供应商/]模型`、`/session`、`/help` 和 `/exit`。密钥只从对应环境变量读取（也可临时使用 `--api-key`），不会自动写入文件；`--no-stream` 返回完整结果，`--json` 输出稳定的 `turn_end` JSON 事件。`--session` 将对话追加保存为 JSONL，`--continue` 恢复最近会话（默认目录 `~/.dsh/sessions`，可用 `DSH_SESSION_DIR` 覆盖），历史最多带入最近 20 轮或 80,000 字符。也可通过 `--base-url` 接入自托管或兼容接口。
+停止本地服务：
 
-在模型管理中创建加密凭据库、保存 API Key，再添加供应商和模型。协议支持 DeepSeek、OpenAI Chat Completions、OpenAI Responses、Anthropic Messages，以及 TypeSafe System One 结构化决策接口；可填写自定义 HTTPS 地址，本机确定性接口可用 HTTP。模型测试会实际发送请求，费用由对应供应商收取。
+```bash
+npm run stop
+```
 
-TypeSafe 是可选的判断后端，不是聊天或代码生成模型。它接收 `state` 和带类型的问题，返回 choice、score、noul、概率和置信度，可用于团队招募预评估、任务路由和人工复核分流。网页中配置 TypeSafe 供应商时，基础地址填写 `https://api.typesafe.ai/v1`，模型填写 `jev-latest`，凭据保存在加密凭据库；终端也可以使用 `TYPESAFE_API_KEY` 和 `ggb decide`。低置信度或高风险判断仍应交给项目经理和用户确认。接口格式见 [TypeSafe Introduction](https://docs.typesafe.ai/introduction) 和 [System One API](https://docs.typesafe.ai/api)。
+首次使用建议：
 
-助手可配置工作规范、工具、能力绑定、供应商候选顺序和执行节点。默认并发 3，每次执行默认最多 30 分钟，任务组默认共享 200,000 Token 预算。用量按模型上报事件累计；达到预算后停止当前任务组，无法预先阻止一个尚未返回用量的模型请求。费用按输入/输出每百万 Token 单价估算，未填单价显示未知。
+1. 在“模型管理”中初始化加密凭据库，配置至少一个普通聊天模型。
+2. 确认工作目录和 DSH 执行引擎可用。
+3. 返回“团队招募”，直接描述你要完成的目标。
+4. 检查项目经理生成的 Team Charter、成员职责、模型和能力绑定。
+5. 点击“确认创建团队”，再开始执行任务。
 
-## 功能
+## CLI：`ggb`
 
-产品方向和个人智能体行为约定见 [个人智能体方向](docs/personal-agent.md)；它把个人习惯、模型路由、记忆边界和风险确认作为稳定内核，把模型供应商作为可替换执行引擎。
+项目品牌命令是 `ggb`。`dsh`、`dsh-workbench` 和 `goal-guided-brain` 保留为兼容别名。
 
-- **助手与会话**：新建、复制、编辑、归档及恢复；每个助手有稳定通信 ID。原有助手、任务、会话和知识继续保留。
-- **团队招募**：主入口改为团队招募。你先描述目标，项目经理会通过多轮对话澄清交付物、约束和质量标准，再生成包含建议人数、角色职责和交付物的 Team Charter；你确认后才会配置成员并开始分派任务。每个团队可以负责运维、产品或多个独立开发项目，团队之间也可以通过受控协作请求交接任务。设计说明见 [团队智能体空间](docs/team-agent-workspace.md)。
-- **模型**：按能力与候选顺序路由；团队招募可以按团队直接切换已配置的供应商和模型，选择会持久化并写入任务执行快照。认证失败禁用路由，网络故障可切换供应商。工具已开始执行时不自动重跑整个任务。
-- **协作任务**：主子任务、依赖、共享任务板、持久收件箱、回复、检查点、成果和待处理事项。需求变更提升版本，旧成果进入待复核状态。
-- **开发验收**：有基准提交的 Git 项目使用 worktree，无提交项目使用独立快照。支持差异检查、内部提交、验证证据和集成目录，源目录及未提交内容不被自动覆盖。
-- **能力中心**：集中管理 Skill、MCP 和 Plugin，支持检索 SkillsMP、ClawHub、官方 MCP Registry，安装自定义仓库或本机能力包。固定版本与摘要，绑定到助手后会注入对应 Skill 或 MCP 工具；智能体可通过 `list_capabilities` 查看本次执行实际可用的能力，并通过 `run_capability_command` 排队执行已绑定且允许调用的 Plugin 命令。固定版本支持禁用、升级和回退，市场可能要求认证或受可用性限制。
-- **MCP**：stdio、Streamable HTTP 工具调用；工具允许列表与具体参数审批。首版外部 MCP 均在控制端连接或运行，远程节点通过实例凭证访问网关。
-- **资源**：保存项目目录、服务器别名、地址、端口、用户名、备注和凭据引用。
-- **定时监控**：固定间隔、Cron、时区、执行预览、补跑一次、默认不重叠；HTTP/TCP/模型/MCP 检查。站内通知和 Webhook 仅在异常或恢复时投递，投递记录持久化并有限重试。
-- **项目记忆**：知识作用域、来源、历史版本、删除及可阅读 Markdown 导出。
+```bash
+npm link
 
-## 数据、恢复与凭据
+export DEEPSEEK_API_KEY=...
+ggb run --provider deepseek --model deepseek-chat "分析当前项目风险"
+echo "设计一个缓存方案" | ggb run --provider claude
+ggb chat --provider gemini --session personal
+ggb providers
+```
 
-默认数据目录为 `~/.dsh-workbench/`，可用 `WORKBENCH_DATA_DIR` 指定独立目录。`WORKBENCH_UI_PORT`、`WORKBENCH_API_PORT` 修改端口；`DSH_EXECUTABLE` 指定 DSH。
+CLI 支持：
 
-| 内容     | 位置与用途                                                       |
-| -------- | ---------------------------------------------------------------- |
-| SQLite   | `workspace.sqlite`，任务、会话、配置、消息、租约、调度及版本记录 |
-| 加密凭据 | `vault.json`，Argon2id 派生密钥、AES-256-GCM；不保存解锁口令     |
-| 执行目录 | `runs/<taskId>/`，独立运行配置、Home、日志、临时资料             |
-| 能力版本 | `capabilities/<id>/<digest>/package/`，任务固定内容摘要          |
-| 知识导出 | `knowledge/*.md`，数据库为编辑权威，直接改文件不会反向导入       |
-| 备份     | `backups/`，SQLite 一致性备份及配套的加密凭据副本                |
+- `ggb run`：执行一次任务，可使用 `--system`、`--no-stream`、`--json`、`--session` 和 `--continue`。
+- `ggb chat`：进入持续对话，支持 `/new`、`/model`、`/session`、`/help` 和 `/exit`。
+- `ggb providers`：查看普通模型预设和可选 TypeSafe 后端。
+- `ggb decide`：向 TypeSafe 发送结构化 `state` 和 `questions`，只返回 JSON 判断结果。
 
-升级前自动创建 SQLite 一致性备份；版本迁移在事务中进行。不要通过运行中的数据库文件复制代替备份功能。离线恢复、失败回滚和云端单次迁移见 [备份恢复说明](deploy/backup-restore.md)。一个数据目录只允许一个控制端持有写入权。
+会话默认保存到 `~/.dsh/sessions`，可用 `DSH_SESSION_DIR` 覆盖。密钥只从环境变量或一次性的 `--api-key` 读取，不会自动写入会话文件。
 
-旧版 DeepSeek 环境变量或 DSH 凭据仍可读取。界面提供显式导入旧凭据：加密保存并验证后移除工作台自己的旧 `secrets.json`，不会修改外部 DSH 配置或用户环境变量。旧 settings API 写入密钥也必须先解锁凭据库。
+Windows PowerShell 示例：
 
-恢复采用检查点交接，由新实例、新目录继续。租约失效的实例不能覆盖当前结果，状态不明的操作需核验，不自动重复执行。关闭浏览器不停止任务；纯本地部署在电脑离线后无法运行，云端常驻需要另行部署。
+```powershell
+$env:GEMINI_API_KEY = '...'
+ggb run --provider gemini "总结这个项目"
+```
 
-## 权限与兼容边界
+## 模型配置
 
-云端登录、HTTPS、Linux 常驻服务、节点配对和 WSL2 安装见 [部署说明](deploy/README.md)。`WORKBENCH_VAULT_PASSWORD` 可从部署环境提供无人值守解锁材料，不能与密文备份一起存储。
+普通模型可在网页“模型管理”中保存到加密凭据库，也可以在 CLI 中通过环境变量使用：
 
-MCP 非只读工具按实例和参数精确授权，发送身份由实例凭证推导。服务器的 `readOnlyHint` 是信任声明，无法把恶意服务器变成安全代码。启用终端、Skill 脚本或 Hook 等同于运行第三方代码；任务授权和环境变量隔离不等同于虚拟机隔离。推送、部署、消息发送按用户授予任务的权限执行。
+| 供应商 | 环境变量 |
+| --- | --- |
+| DeepSeek | `DEEPSEEK_API_KEY` |
+| Kimi | `KIMI_API_KEY` 或 `MOONSHOT_API_KEY` |
+| Gemini | `GEMINI_API_KEY` 或 `GOOGLE_API_KEY` |
+| Claude | `ANTHROPIC_API_KEY` |
+| Codex/OpenAI | `CODEX_API_KEY` 或 `OPENAI_API_KEY` |
 
-插件导入展示逐项兼容结果，导入成功不表示原平台全部行为可用。首版覆盖 Skills、MCP、可转换的命令与助手模板，以及已验证的同步命令 Hooks。MCP Resources/Prompts、LSP、平台专属界面和依赖原平台运行的组件仍不支持；Skills.sh、Smithery 的认证接入尚未交付。
+网页模型管理支持 DeepSeek、OpenAI Chat Completions、OpenAI Responses 和 Anthropic Messages。供应商配置包括基础地址、凭据引用、模型列表、上下文长度、工具能力、视觉能力和路由优先级。
 
-## 验证与进度
+### TypeSafe 是可选的
 
-```sh
-DEEPSEEK_API_KEY=local-fixture-key npm test
+[TypeSafe System One](https://docs.typesafe.ai/introduction) 是结构化判断接口，不是聊天或代码生成模型。GGB 将它作为独立的可选决策后端：
+
+```bash
+export TYPESAFE_API_KEY=...
+ggb decide \
+  --state '{"goal":"发布新版本","constraints":["周五前完成"]}' \
+  --questions '{"urgent":{"type":"noul","instructions":"Is this urgent?"}}' \
+  --json
+```
+
+未配置 TypeSafe 时，普通模型、团队招募和开发任务照常运行。TypeSafe 的结果不能代替事实验证、用户确认或高风险操作审批。网页配置建议基础地址为 `https://api.typesafe.ai/v1`，模型使用 `jev-latest`。
+
+## 能力中心
+
+GGB 的 Skill、MCP 和 Plugin 采用显式绑定：
+
+1. 搜索或导入能力来源。
+2. 固定版本并保存内容摘要。
+3. 检查依赖、健康状态和兼容性。
+4. 绑定到角色或团队成员。
+5. 任务启动时只注入已绑定且启用的能力。
+
+运行中的智能体可以通过编排 MCP 查看本次实际能力，并调用已经获准的 Plugin 命令。它不能从任务中自行启用未绑定能力，也不能通过消息扩大权限。
+
+## 数据和安全
+
+默认数据目录为 `~/.dsh-workbench/`：
+
+```text
+workspace.sqlite       团队、任务、消息、知识、配置和调度
+vault.json             Argon2id + AES-256-GCM 加密凭据库
+runs/<taskId>/         隔离的执行目录和日志
+capabilities/          固定版本的 Skill / Plugin 内容
+backups/               SQLite 一致性备份及凭据副本
+```
+
+任务使用实例凭证、执行租约和心跳。租约失效、任务暂停、取消或预算超限后，执行权限会被撤销；迟到结果不能覆盖当前状态。MCP 写操作按实例、工具和参数授权，未知的外部操作结果不会自动重试。
+
+公开部署必须使用 HTTPS、登录认证和反向代理，不要直接暴露 3088/3089。Linux 常驻服务、远程节点、Windows WSL2、备份和恢复请查看 [部署说明](deploy/README.md)。
+
+## 文档入口
+
+- [项目全景说明](docs/project-overview.md)：完整产品、架构、接口、权限和路线图。
+- [个人智能体方向](docs/personal-agent.md)：个人偏好、记忆边界和模型分工。
+- [团队智能体空间](docs/team-agent-workspace.md)：团队招募、成员职责和跨团队协作。
+- [Claude Code 与 Pi 设计调研](docs/claude-pi-design-review.md)：可借鉴的 Agent 设计。
+- [阶段计划与发布边界](docs/phase-2-plan.md)：已交付能力和未完成验收项。
+- [部署说明](deploy/README.md)：控制平面、执行节点、WSL2 和 HTTPS。
+- [备份恢复说明](deploy/backup-restore.md)：SQLite 与加密凭据恢复。
+- [依赖安全说明](docs/dependency-security.md)：依赖和第三方代码边界。
+
+## 开发和发布验证
+
+```bash
 npm run lint
 npm run typecheck
+npm test
 npm run build
 ```
 
-测试使用临时数据库、本地确定性模型、MCP 服务和真实安装的 DSH，不调用付费模型。覆盖数据迁移、加密凭据、协议认证与工具调用、降级、持久消息、节点断线、迟到结果、目录隔离、定时幂等、通知重试及恢复。
+测试使用临时数据库、本地确定性模型和 MCP fixture，不调用付费模型。每次功能迭代都应补充对应验证，检查 `git diff --check`，提交清晰的 Git commit，并推送到远程仓库：
 
-计划及逐项验收记录见 [阶段计划](docs/phase-2-plan.md)。macOS 本机验证不代替 Linux、Windows/WSL2 或真实云端 HTTPS 的平台验收；没有目标环境的项目继续标记待验证。
+```text
+https://github.com/lianjiexu08-ui/Goal-Guided-Brain.git
+```
+
+当前项目仍在持续迭代中。真实 Linux、Windows/WSL2、云端 HTTPS、节点离线调度和生产模型质量需要在目标环境中单独验收，不能用本机测试代替。
