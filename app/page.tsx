@@ -273,6 +273,8 @@ type State = {
   spaces: TeamSpace[];
   config: Config;
 };
+const modelDisplayName = (model: ProviderModel) =>
+  model.name === model.id ? model.name : `${model.name} · ${model.id}`;
 const statusLabels: Record<string, string> = {
   queued: '排队中',
   running: '进行中',
@@ -1510,11 +1512,14 @@ function Workbench() {
                           >
                             {modelOptions.map((option) => (
                               <option key={option.key} value={option.key}>
-                                {option.providerName} · {option.model.name}
+                                {option.providerName} · {modelDisplayName(option.model)}
                                 {!option.model.tools ? ' · 纯文本' : ''}
                               </option>
                             ))}
                           </select>
+                          <small className="model-id" title={`实际请求模型 ID：${selectedModelOption.model.id}`}>
+                            ID: {selectedModelOption.model.id}
+                          </small>
                           {!selectedModelOption.model.tools && (
                             <small>纯文本模式</small>
                           )}

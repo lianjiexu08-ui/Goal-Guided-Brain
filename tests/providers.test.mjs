@@ -243,6 +243,41 @@ test('TypeSafe decision provider stays out of text routing and returns typed dec
   await assert.rejects(service.probe(provider.id, { toolTest: true }), /结构化决策/);
 });
 
+test('provider model sync uses the remote catalog and removes unsupported modalities', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-provider-sync-'));
+  const db = new DatabaseSync(':memory:');
+  db.exec(RECORDS_SCHEMA);
+  const vault = new Vault(dir);
+  const server = http.createServer((req, res) => {
+    assert.equal(req.method, 'GET');
+    assert.equal(req.url, '/v1/models');
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ data: [
+      { id: 'gpt-5.4', supported_endpoint_types: ['openai'] },
+      { id: 'gpt-5.6', supported_endpoint_types: ['openai'] },
+      { id: 'gpt-4o-audio-preview', supported_endpoint_types: ['openai'] },
+      { id: 'gpt-image-1', supported_endpoint_types: ['openai'] },
+    ] }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.close(); vault.lock(); db.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  await vault.initialize('fixture-passphrase');
+  const credential = await vault.put({ name: 'sync', value: 'sync-secret' });
+  const service = new ProviderService({ store: { records: new Records(db) }, vault });
+  const provider = service.save({
+    name: 'Sync fixture',
+    protocol: 'openai-completions',
+    baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
+    credentialId: credential.id,
+    models: [{ id: 'gpt-5.6', name: 'GPT 5.6', tools: true, contextWindow: 200000 }, { id: 'old-model' }],
+  });
+  const synced = await service.syncModels(provider.id);
+  assert.deepEqual(synced.provider.models.map((model) => model.id), ['gpt-5.4', 'gpt-5.6']);
+  assert.equal(synced.provider.models.find((model) => model.id === 'gpt-5.6').tools, true);
+  assert.deepEqual(synced.removed, ['old-model']);
+  assert.equal(synced.provider.credentialId, credential.id);
+});
+
 test('runtime isolates environment and merges installed skill directories', () => {
   process.env.WORKBENCH_TEST_RELEASE_TOKEN = 'do-not-inherit';
   try {

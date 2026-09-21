@@ -702,6 +702,12 @@ h1 {
   font-size: 10px;
   white-space: nowrap;
 }
+.model-switcher .model-id {
+  color: #82939a;
+  max-width: 138px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .send-button {
   display: grid;
   place-items: center;

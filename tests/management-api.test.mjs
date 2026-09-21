@@ -1,4 +1,5 @@
 import test from 'node:test';
+import http from 'node:http';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -56,6 +57,39 @@ test('TypeSafe-only configuration does not masquerade as a chat model', async (t
     models: [{ id: 'chat-fixture' }],
   });
   assert.equal((await request('state')).body.config.hasApiKey, true);
+});
+
+test('management API synchronizes a provider catalog without exposing its credential', async (t) => {
+  const { app, request } = await fixture(t);
+  let authorization = '';
+  const remote = http.createServer((req, res) => {
+    authorization = req.headers.authorization || '';
+    assert.equal(req.method, 'GET');
+    assert.equal(req.url, '/v1/models');
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ data: [
+      { id: 'catalog-model', context_window: 64000 },
+      { id: 'catalog-audio', modalities: ['audio'] },
+    ] }));
+  });
+  await new Promise((resolve) => remote.listen(0, '127.0.0.1', resolve));
+  t.after(() => remote.close());
+  await request('vault/initialize', { passphrase: 'fixture-vault-password-123' });
+  const credential = await app.platform.vault.put({ name: 'catalog', value: 'catalog-secret' });
+  const created = await request('providers', {
+    name: 'Catalog fixture',
+    protocol: 'openai-completions',
+    baseUrl: `http://127.0.0.1:${remote.address().port}/v1`,
+    credentialId: credential.id,
+    models: [{ id: 'old-model', tools: true }],
+  });
+  assert.equal(created.status, 200);
+  const synced = await request(`providers/${created.body.id}/sync-models`, {}, 'POST');
+  assert.equal(synced.status, 200);
+  assert.deepEqual(synced.body.provider.models.map((model) => model.id), ['catalog-model']);
+  assert.deepEqual(synced.body.removed, ['old-model']);
+  assert.equal(authorization, 'Bearer catalog-secret');
+  assert.equal(JSON.stringify(synced.body).includes('catalog-secret'), false);
 });
 
 test('legacy key migration preserves the old file until encrypted storage succeeds and wires the provider', async (t) => {
@@ -221,4 +255,3 @@ test('resource and credential probes validate project paths and tcp connection',
   assert.equal(sshProbe.status, 200);
   assert.equal(sshProbe.body.ok, true);
 });
-

@@ -149,6 +149,8 @@ ggb run --provider gemini "总结这个项目"
 
 网页模型管理支持 DeepSeek、OpenAI Chat Completions、OpenAI Responses 和 Anthropic Messages。供应商配置包括基础地址、凭据引用、模型列表、上下文长度、工具能力、视觉能力和路由优先级。
 
+保存供应商后，可以在“模型管理”的供应商列表中点击同步按钮，从该供应商的 `/models` 接口读取最新模型 ID。同步会保留已经确认过的工具、视觉和价格信息，并过滤当前聊天执行引擎不能直接使用的图片、音频、实时和其他专用模型；新发现的模型默认按纯文本模型处理，确认支持工具后再在管理页探测并启用工具能力。对话选择器同时显示模型名称和真实 ID，避免展示名与实际请求模型混淆。
+
 ### TypeSafe 是可选的
 
 [TypeSafe System One](https://docs.typesafe.ai/introduction) 是结构化判断接口，不是聊天或代码生成模型。GGB 将它作为独立的可选决策后端：

@@ -774,6 +774,9 @@ function EntityEditor({
                       添加模型
                     </button>
                   </div>
+                  <p className="manage-help">
+                    保存供应商后，可以在列表中点击同步按钮，从接口读取真实可用的模型 ID；图片、音频和实时专用模型会自动排除。
+                  </p>
                   {entityList(form.models).map((model, index) => {
                     const updateModel = (key: string, value: unknown) =>
                       field(
@@ -1314,7 +1317,7 @@ function EntityEditor({
                 alignItems: 'center',
               }}
             >
-              <span>{String(testResult.message || (testResult.ok ? '测试通过' : '测试失败'))}</span>
+              <span>{typeof testResult.message === 'string' ? testResult.message : testResult.ok ? '测试通过' : '测试失败'}</span>
               {typeof testResult.latencyMs === 'number' && (
                 <span style={{ fontSize: '11px', opacity: 0.8 }}>{testResult.latencyMs}ms</span>
               )}
@@ -2936,6 +2939,30 @@ export function Management({
     <div className="manage-actions">
       {collection === 'providers' && (
         <IconButton
+          icon={RefreshCw}
+          label={`同步 ${title(item)} 的模型列表`}
+          disabled={busy || item.protocol === 'typesafe-system-one'}
+          onClick={async () => {
+            setBusy(true);
+            setError('');
+            try {
+              const result = await api<{ discovered?: number; previous?: number; removed?: string[] }>(
+                `providers/${item.id}/sync-models`,
+                'POST',
+              );
+              await refresh();
+              await onChanged();
+              setNotice(`已同步 ${result.discovered || 0} 个模型${result.removed?.length ? `，移除 ${result.removed.length} 个旧模型` : ''}`);
+            } catch (err) {
+              setError((err as Error).message);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
+      )}
+      {collection === 'providers' && (
+        <IconButton
           icon={Activity}
           label={`测试 ${title(item)}`}
           disabled={busy}
@@ -2968,7 +2995,7 @@ export function Management({
             setBusy(true);
             try {
               const res = await api<Record<string, unknown>>(`resources/${item.id}/probe`, 'POST');
-              setNotice(String(res.message || (res.ok ? '资源测试通过' : '资源测试失败')));
+              setNotice(typeof res.message === 'string' ? res.message : res.ok ? '资源测试通过' : '资源测试失败');
             } catch (err) {
               setNotice(`测试失败: ${(err as Error).message}`);
             } finally {

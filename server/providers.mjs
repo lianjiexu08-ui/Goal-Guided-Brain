@@ -59,6 +59,55 @@ export function providerEndpoint(provider) {
   return `${base}${provider.protocol === 'anthropic-messages' && !base.endsWith('/v1') ? '/v1' : ''}${suffix}`;
 }
 
+function modelsEndpoint(provider) {
+  const base = provider.baseUrl.replace(/\/$/, '');
+  if (provider.protocol === 'typesafe-system-one') return '';
+  if (provider.protocol === 'anthropic-messages' && !base.endsWith('/v1')) return `${base}/v1/models`;
+  return base.endsWith('/models') ? base : `${base}/models`;
+}
+
+function modelRows(data) {
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.models)) return data.models;
+  return [];
+}
+
+function unsupportedModel(row) {
+  const id = String(row?.id || row?.name || '').toLowerCase();
+  const name = String(row?.name || '').toLowerCase();
+  const dedicatedTerms = ['audio', 'image', 'realtime', 'embedding', 'moderation', 'transcription', 'text-to-speech', 'tts'];
+  if (dedicatedTerms.some((term) => id.includes(term) || name.includes(term))) return true;
+  const modalities = row?.modalities || row?.input_modalities || row?.output_modalities;
+  if (!Array.isArray(modalities) || modalities.length === 0) return false;
+  return modalities.every((modality) => dedicatedTerms.some((term) => String(modality).toLowerCase().includes(term)));
+}
+
+function modelSpecFromRemote(row, previous) {
+  const id = String(row?.id || row?.name || '').trim();
+  const contextWindow = Number(
+    row?.context_window || row?.contextWindow || row?.max_context_length || previous?.contextWindow || 128000,
+  );
+  const tools = typeof row?.tools === 'boolean'
+    ? row.tools
+    : typeof row?.supports_tools === 'boolean'
+      ? row.supports_tools
+      : previous?.tools === true;
+  const vision = typeof row?.vision === 'boolean'
+    ? row.vision
+    : typeof row?.supports_vision === 'boolean'
+      ? row.supports_vision
+      : previous?.vision === true;
+  return {
+    id,
+    name: previous?.name || id,
+    tools,
+    vision,
+    contextWindow: Number.isInteger(contextWindow) && contextWindow > 0 ? contextWindow : 128000,
+    inputPrice: previous?.inputPrice ?? null,
+    outputPrice: previous?.outputPrice ?? null,
+  };
+}
+
 export class ProviderService {
   constructor({ store, vault }) {
     this.records = store.records;
@@ -125,6 +174,42 @@ export class ProviderService {
   }
   remove(id) {
     return this.records.remove('providers', id);
+  }
+  async syncModels(id) {
+    const provider = this.records.get('providers', id);
+    if (!provider) throw new Error('模型供应商不存在。');
+    const endpoint = modelsEndpoint(provider);
+    if (!endpoint) throw new Error('结构化决策后端不提供聊天模型列表。');
+    const secret = provider.credentialId ? this.vault.get(provider.credentialId) : '';
+    if (provider.credentialId && !secret) throw new Error('供应商凭据不存在。');
+    const headers = provider.protocol === 'anthropic-messages'
+      ? { 'Content-Type': 'application/json', ...(secret ? { 'x-api-key': secret } : {}), 'anthropic-version': '2023-06-01' }
+      : { 'Content-Type': 'application/json', ...(secret ? { Authorization: `Bearer ${secret}` } : {}) };
+    let response;
+    try {
+      response = await fetch(endpoint, { headers, signal: AbortSignal.timeout(15000), redirect: 'error' });
+    } catch (error) {
+      throw new Error(error.name === 'TimeoutError' ? '模型列表请求超时。' : `模型列表请求失败：${error.message}`);
+    }
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new Error(`模型列表接口返回 HTTP ${response.status}。`);
+    }
+    const data = await response.json();
+    const rows = modelRows(data).filter((row) => !unsupportedModel(row));
+    const current = new Map((provider.models || []).map((model) => [model.id, model]));
+    const models = rows
+      .map((row) => modelSpecFromRemote(row, current.get(String(row?.id || row?.name || '').trim())))
+      .filter((model) => model.id);
+    if (!models.length) throw new Error('模型列表接口没有返回可用于聊天的模型。');
+    const record = this.save({ ...provider, models }, id);
+    return {
+      provider: record,
+      endpoint,
+      discovered: models.length,
+      previous: current.size,
+      removed: [...current.keys()].filter((modelId) => !models.some((model) => model.id === modelId)),
+    };
   }
   select(
     assistant = {},

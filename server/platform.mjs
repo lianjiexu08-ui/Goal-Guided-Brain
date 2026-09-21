@@ -1091,6 +1091,8 @@ export function createPlatform({
     }
     if (collection === 'providers') {
       if (method === 'GET') return ok(providers.list());
+      if (method === 'POST' && action === 'sync-models')
+        return ok(await providers.syncModels(id));
       if (method === 'POST' && action === 'probe')
         return ok(await providers.probe(id, body));
       if (method === 'POST' || method === 'PUT')
