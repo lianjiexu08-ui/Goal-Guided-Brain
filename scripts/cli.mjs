@@ -28,6 +28,7 @@ const PRESETS = {
     model: 'gpt-5-codex', keys: ['CODEX_API_KEY', 'OPENAI_API_KEY'],
   },
 };
+const PROVIDER_ALIASES = { gpt: 'codex', openai: 'codex' };
 
 const usage = `用法：
   dsh providers
@@ -38,7 +39,7 @@ const usage = `用法：
   dsh run --session refactor --continue "继续重构"
   dsh chat --provider claude --session personal
 
-支持预设：${Object.keys(PRESETS).join('、')}。
+支持预设：${Object.keys(PRESETS).join('、')}（gpt/openai 是 Codex/OpenAI 别名）。
 密钥从对应环境变量读取，也可用 --api-key 临时传入（不会写入磁盘）。
 会话以 JSONL 保存在 ~/.dsh/sessions（可用 DSH_SESSION_DIR 覆盖）；--json 输出一行稳定的 turn_end 事件。`;
 
@@ -53,6 +54,14 @@ function valueAfter(args, flag, fallback) {
 }
 
 function has(args, flag) { return args.includes(flag); }
+
+function presetFor(name) {
+  const requested = String(name || '').trim().toLowerCase();
+  const canonical = PROVIDER_ALIASES[requested] || requested;
+  const preset = PRESETS[canonical];
+  if (!preset) throw new Error(`未知供应商“${name}”，可选：${Object.keys(PRESETS).join('、')}（gpt/openai 为 Codex/OpenAI 别名）`);
+  return { name: canonical, preset };
+}
 
 const SESSION_VERSION = 1;
 const MAX_HISTORY_TURNS = 20;
@@ -179,9 +188,9 @@ function pickKey(preset, explicit) {
 }
 
 function parseInput(args) {
-  const providerName = valueAfter(args, '--provider', process.env.DSH_PROVIDER || 'deepseek').toLowerCase();
-  const preset = PRESETS[providerName];
-  if (!preset) throw new Error(`未知供应商“${providerName}”，可选：${Object.keys(PRESETS).join('、')}`);
+  const selected = presetFor(valueAfter(args, '--provider', process.env.DSH_PROVIDER || 'deepseek'));
+  const providerName = selected.name;
+  const preset = selected.preset;
   const model = valueAfter(args, '--model', process.env.DSH_MODEL || preset.model);
   const system = valueAfter(args, '--system', process.env.DSH_SYSTEM || '');
   const apiKey = pickKey(preset, valueAfter(args, '--api-key'));
@@ -325,7 +334,37 @@ async function interactiveChat(input) {
       if (!value) continue;
       if (value === '/exit' || value === '/quit') break;
       if (value === '/help') {
-        console.log('/new 新建会话  /session 查看会话  /exit 退出  /help 帮助\n');
+        console.log('/new 新建会话  /model [供应商/]模型 切换模型  /session 查看会话  /exit 退出  /help 帮助\n');
+        continue;
+      }
+      if (value === '/model' || value.startsWith('/model ')) {
+        const tokens = value.slice('/model'.length).trim().split(/\s+/).filter(Boolean);
+        if (!tokens.length) {
+          console.log(`当前模型：${input.providerName}/${input.model}\n`);
+          continue;
+        }
+        let providerName = input.providerName;
+        let model = tokens[0];
+        if (tokens.length > 1) {
+          providerName = tokens[0];
+          model = tokens[1];
+        } else if (tokens[0].includes('/')) {
+          [providerName, model] = tokens[0].split('/', 2);
+        }
+        const selected = presetFor(providerName);
+        const previousPreset = input.preset;
+        input.providerName = selected.name;
+        input.preset = selected.preset;
+        input.providerExplicit = true;
+        input.model = model;
+        input.modelExplicit = true;
+        if (!input.baseUrlExplicit) input.baseUrl = selected.preset.baseUrl;
+        if (!input.apiKeyExplicit) input.apiKey = pickKey(selected.preset, '');
+        appendSession(input.sessionFile, {
+          type: 'model_change', sessionId: input.sessionId, at: new Date().toISOString(),
+          provider: input.providerName, model: input.model,
+        });
+        console.log(`已切换到 ${input.providerName}/${input.model}${previousPreset === input.preset ? '' : '（供应商已切换）'}\n`);
         continue;
       }
       if (value === '/session') {
@@ -371,6 +410,7 @@ async function main() {
   if (command === 'help' || command === '--help' || command === '-h') return console.log(usage);
   if (command === 'providers') {
     for (const [id, preset] of Object.entries(PRESETS)) console.log(`${id.padEnd(9)} ${preset.label.padEnd(14)} ${preset.protocol.padEnd(10)} ${preset.model}`);
+    console.log('gpt/openai  Codex/OpenAI 别名');
     return;
   }
   if (command !== 'run' && command !== 'chat') throw new Error(`未知命令“${command}”。\n\n${usage}`);

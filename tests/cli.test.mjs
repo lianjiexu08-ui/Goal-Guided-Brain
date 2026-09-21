@@ -41,6 +41,22 @@ test('CLI sends a unified prompt to an OpenAI-compatible provider', async (t) =>
   assert.equal(requests[0].body.messages[0].content, 'hello\n\ncontext');
 });
 
+test('CLI accepts gpt as an OpenAI-compatible provider alias', async (t) => {
+  const requests = [];
+  const server = http.createServer(async (req, res) => {
+    let body = ''; for await (const chunk of req) body += chunk;
+    requests.push(JSON.parse(body));
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ output_text: 'gpt alias answer' }));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const result = await runCli(`http://127.0.0.1:${server.address().port}/v1`, ['--provider', 'gpt', '--model', 'fixture-gpt', 'hello']);
+  assert.equal(result.code, 0);
+  assert.equal(result.stdout, 'gpt alias answer\n');
+  assert.equal(requests[0].model, 'fixture-gpt');
+});
+
 test('CLI parses Anthropic message responses', async (t) => {
   const server = http.createServer((req, res) => {
     assert.equal(req.url, '/v1/messages');
