@@ -76,6 +76,7 @@ export function createWorkbench({
             ok: provider.health.ok === true,
             model: provider.health.model || null,
             toolTest: provider.health.toolTest === true,
+            structured: provider.health.structured === true,
             latencyMs: provider.health.latencyMs || null,
             error: provider.health.ok ? null : provider.health.error || null,
           }

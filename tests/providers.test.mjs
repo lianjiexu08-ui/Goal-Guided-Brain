@@ -213,6 +213,36 @@ test('provider probes speak three protocols, retry transient failures and disabl
   }
 });
 
+test('TypeSafe decision provider stays out of text routing and returns typed decisions', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-typesafe-'));
+  const db = new DatabaseSync(':memory:');
+  db.exec(RECORDS_SCHEMA);
+  const vault = new Vault(dir);
+  const requests = [];
+  const server = http.createServer(async (req, res) => {
+    let raw = ''; for await (const chunk of req) raw += chunk;
+    requests.push({ url: req.url, auth: req.headers.authorization, body: JSON.parse(raw) });
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ model: 'jev-latest', answers: { urgent: { noul: 0.91, confidence: 0.88 } }, usage: { input_tokens: 12 } }));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.close(); vault.lock(); db.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  await vault.initialize('fixture-passphrase');
+  const credential = await vault.put({ name: 'typesafe', value: 'typesafe-secret' });
+  const service = new ProviderService({ store: { records: new Records(db) }, vault });
+  const provider = service.save({ name: 'TypeSafe', protocol: 'typesafe-system-one', baseUrl: `http://127.0.0.1:${server.address().port}/v1`, credentialId: credential.id, models: [{ id: 'jev-latest' }] });
+  const chat = service.save({ name: 'Chat', protocol: 'openai-completions', baseUrl: `http://127.0.0.1:${server.address().port}/v1`, models: [{ id: 'chat' }] });
+  assert.equal(service.select({ providerIds: [provider.id, chat.id], model: 'chat' }).providerId, chat.id);
+  const result = await service.evaluateDecision({ providerId: provider.id, state: { goal: 'ship feature' }, questions: { urgent: { type: 'noul', instructions: 'Is this urgent?' } } });
+  assert.equal(result.answers.urgent.noul, 0.91);
+  assert.equal(result.route.protocol, 'typesafe-system-one');
+  assert.equal(requests[0].url, '/v1/systemone');
+  assert.equal(requests[0].auth, 'Bearer typesafe-secret');
+  assert.deepEqual(requests[0].body.state, { goal: 'ship feature' });
+  assert.equal((await service.probe(provider.id)).structured, true);
+  await assert.rejects(service.probe(provider.id, { toolTest: true }), /结构化决策/);
+});
+
 test('runtime isolates environment and merges installed skill directories', () => {
   process.env.WORKBENCH_TEST_RELEASE_TOKEN = 'do-not-inherit';
   try {

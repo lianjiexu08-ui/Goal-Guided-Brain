@@ -28,6 +28,20 @@ function runCli(url, args, input = '', noStream = true, extraEnv = {}) {
   });
 }
 
+function runDecide(url, args, extraEnv = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cli, 'decide', '--base-url', url, '--api-key', 'fixture-key', ...args], {
+      env: { ...process.env, PATH: process.env.PATH, ...extraEnv },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '', stderr = '';
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.on('error', reject);
+    child.on('close', code => resolve({ code, stdout, stderr }));
+  });
+}
+
 test('CLI sends a unified prompt to an OpenAI-compatible provider', async (t) => {
   const requests = [];
   const server = http.createServer(async (req, res) => {
@@ -44,6 +58,28 @@ test('CLI sends a unified prompt to an OpenAI-compatible provider', async (t) =>
   assert.equal(requests[0].url, '/v1/chat/completions');
   assert.equal(requests[0].auth, 'Bearer fixture-key');
   assert.equal(requests[0].body.messages[0].content, 'hello\n\ncontext');
+});
+
+test('CLI decide sends a TypeSafe System One request and prints structured answers', async (t) => {
+  const requests = [];
+  const server = http.createServer(async (req, res) => {
+    let body = ''; for await (const chunk of req) body += chunk;
+    requests.push({ url: req.url, auth: req.headers.authorization, body: JSON.parse(body) });
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ model: 'jev-latest', answers: { urgent: { noul: 0.72 } } }));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const result = await runDecide(`http://127.0.0.1:${server.address().port}/v1`, [
+    '--state', '{"goal":"ship"}',
+    '--questions', '{"urgent":{"type":"noul","instructions":"Is it urgent?"}}',
+    '--json',
+  ]);
+  assert.equal(result.code, 0);
+  assert.deepEqual(JSON.parse(result.stdout).answers.urgent, { noul: 0.72 });
+  assert.equal(requests[0].url, '/v1/systemone');
+  assert.equal(requests[0].auth, 'Bearer fixture-key');
+  assert.deepEqual(requests[0].body.state, { goal: 'ship' });
 });
 
 test('CLI accepts gpt as an OpenAI-compatible provider alias', async (t) => {

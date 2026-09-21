@@ -25,11 +25,14 @@ ggb run --session refactor "先分析这个模块"
 ggb run --session refactor --continue "继续重构并运行测试"
 ggb chat --provider claude --session personal
 ggb providers
+ggb decide --state '{"goal":"ship a release"}' --questions '{"urgent":{"type":"noul","instructions":"Is this urgent?"}}'
 ```
 
 Windows PowerShell 设置密钥时使用 `$env:GEMINI_API_KEY = '...'`，cmd 使用 `set GEMINI_API_KEY=...`；macOS/Linux 使用上面的 `export`。在 Windows 上，`npm link` 或 `npm install -g .` 会由 npm 自动生成 `ggb.cmd` 和 PowerShell 可调用的命令 shim，直接输入 `ggb` 即可；macOS/Linux 会生成同名可执行文件。CLI 预设支持 `gemini`、`claude`、`codex`、`kimi` 和 `deepseek`，`gpt/openai` 是 Codex/OpenAI 别名。`ggb chat` 提供持续对话，支持 `/new`、`/model [供应商/]模型`、`/session`、`/help` 和 `/exit`。密钥只从对应环境变量读取（也可临时使用 `--api-key`），不会自动写入文件；`--no-stream` 返回完整结果，`--json` 输出稳定的 `turn_end` JSON 事件。`--session` 将对话追加保存为 JSONL，`--continue` 恢复最近会话（默认目录 `~/.dsh/sessions`，可用 `DSH_SESSION_DIR` 覆盖），历史最多带入最近 20 轮或 80,000 字符。也可通过 `--base-url` 接入自托管或兼容接口。
 
-在模型管理中创建加密凭据库、保存 API Key，再添加供应商和模型。协议支持 DeepSeek、OpenAI Chat Completions、OpenAI Responses、Anthropic Messages；可填写自定义 HTTPS 地址，本机确定性接口可用 HTTP。模型测试会实际发送请求，费用由对应供应商收取。
+在模型管理中创建加密凭据库、保存 API Key，再添加供应商和模型。协议支持 DeepSeek、OpenAI Chat Completions、OpenAI Responses、Anthropic Messages，以及 TypeSafe System One 结构化决策接口；可填写自定义 HTTPS 地址，本机确定性接口可用 HTTP。模型测试会实际发送请求，费用由对应供应商收取。
+
+TypeSafe 是可选的判断后端，不是聊天或代码生成模型。它接收 `state` 和带类型的问题，返回 choice、score、noul、概率和置信度，可用于团队招募预评估、任务路由和人工复核分流。网页中配置 TypeSafe 供应商时，基础地址填写 `https://api.typesafe.ai/v1`，模型填写 `jev-latest`，凭据保存在加密凭据库；终端也可以使用 `TYPESAFE_API_KEY` 和 `ggb decide`。低置信度或高风险判断仍应交给项目经理和用户确认。接口格式见 [TypeSafe Introduction](https://docs.typesafe.ai/introduction) 和 [System One API](https://docs.typesafe.ai/api)。
 
 助手可配置工作规范、工具、能力绑定、供应商候选顺序和执行节点。默认并发 3，每次执行默认最多 30 分钟，任务组默认共享 200,000 Token 预算。用量按模型上报事件累计；达到预算后停止当前任务组，无法预先阻止一个尚未返回用量的模型请求。费用按输入/输出每百万 Token 单价估算，未填单价显示未知。
 

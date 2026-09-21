@@ -39,6 +39,7 @@ const usage = `用法：
   ggb run --continue "继续上一个任务"
   ggb run --session refactor --continue "继续重构"
   ggb chat --provider claude --session personal
+  ggb decide --state '{"goal":"..."}' --questions '{"urgent":{"type":"noul","instructions":"Is this urgent?"}}'
 
 支持预设：${Object.keys(PRESETS).join('、')}（gpt/openai 是 Codex/OpenAI 别名）。
 密钥从对应环境变量读取，也可用 --api-key 临时传入（不会写入磁盘）。
@@ -225,6 +226,41 @@ function headers(preset, apiKey) {
     'anthropic-version': '2023-06-01',
   };
   return { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` };
+}
+
+function jsonFlag(args, flag) {
+  const raw = valueAfter(args, flag, '');
+  if (!raw) throw new Error(`缺少 ${flag} 参数。`);
+  try { return JSON.parse(raw); } catch { throw new Error(`${flag} 必须是有效 JSON。`); }
+}
+
+async function decide(args) {
+  const baseUrl = safeBaseUrl(valueAfter(args, '--base-url', process.env.TYPESAFE_BASE_URL || 'https://api.typesafe.ai/v1'));
+  if (!baseUrl) throw new Error('TypeSafe 接口地址无效。');
+  const apiKey = valueAfter(args, '--api-key', process.env.TYPESAFE_API_KEY || '');
+  if (!apiKey) throw new Error('未找到 TypeSafe 密钥，请设置 TYPESAFE_API_KEY 或使用 --api-key。');
+  const model = valueAfter(args, '--model', process.env.TYPESAFE_MODEL || 'jev-latest');
+  const body = { state: valueAfter(args, '--state', ''), model, questions: jsonFlag(args, '--questions') };
+  if (!body.state) throw new Error('缺少 --state 参数。');
+  try { body.state = JSON.parse(body.state); } catch { /* TypeSafe accepts a plain text state. */ }
+  let response;
+  let status;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    response = await fetch(`${baseUrl.replace(/\/$/, '')}${baseUrl.endsWith('/systemone') ? '' : '/systemone'}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30000),
+    });
+    status = response.status;
+    if (!(status === 429 || status === 529 || status >= 500) || attempt === 2) break;
+    await response.body?.cancel();
+    await new Promise(resolve => setTimeout(resolve, 200 * 2 ** attempt));
+  }
+  if (!response.ok) throw new Error(`TypeSafe 返回 HTTP ${status}。`);
+  const data = await response.json();
+  process.stdout.write(`${JSON.stringify(data, null, has(args, '--json') ? 0 : 2)}\n`);
+  return data;
 }
 
 function endpoint(input) {
@@ -414,6 +450,7 @@ async function main() {
     console.log('gpt/openai  Codex/OpenAI 别名');
     return;
   }
+  if (command === 'decide') return decide(args);
   if (command !== 'run' && command !== 'chat') throw new Error(`未知命令“${command}”。\n\n${usage}`);
   const input = parseInput(args);
   if (command === 'chat') return interactiveChat(input);

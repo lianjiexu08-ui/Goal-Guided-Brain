@@ -7,9 +7,26 @@ import { SKILLS } from './roles.mjs';
 
 const string = { type: 'string' };
 const objectSchema = (properties = {}, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
+const jsonValue = { type: ['string', 'object', 'array'] };
+const decisionQuestion = {
+  type: 'object',
+  properties: {
+    type: { type: 'string', enum: ['choice', 'score', 'noul'] },
+    instructions: string,
+    criteria: {},
+  },
+  required: ['type', 'instructions'],
+  additionalProperties: true,
+};
 const tools = [
   { name: 'list_capabilities', description: '查看当前助手本次执行已绑定的 Skill、MCP 和 Plugin 能力；只读，不会授予新权限。', inputSchema: objectSchema() },
   { name: 'list_capability_catalog', description: '查看当前工作台已启用的 Skill、MCP 和 Plugin 目录及稳定 ID；只读，用于设计 Team Charter，不会自动授予权限。', inputSchema: objectSchema() },
+  { name: 'evaluate_decision', description: '使用已配置的 TypeSafe System One 后端，对当前状态执行结构化判断；这是可选决策能力，不会替代普通模型或直接执行外部操作。', inputSchema: objectSchema({
+    state: jsonValue,
+    model: string,
+    providerId: string,
+    questions: { type: 'object', minProperties: 1, maxProperties: 100, additionalProperties: decisionQuestion },
+  }, ['state', 'questions']) },
   { name: 'run_capability_command', description: '运行当前助手已绑定 Plugin 中一个可调用的命令；命令会作为受控子任务排队，不会直接获得额外权限。', inputSchema: objectSchema({ capabilityId: string, commandId: string, arguments: string }, ['capabilityId', 'commandId']) },
   { name: 'list_teams', description: '查看当前团队允许协作的其他长期团队；只返回团队摘要，不返回其他团队的私有消息。', inputSchema: objectSchema() },
   { name: 'delegate_to_team', description: '把明确的协作目标委派给另一个长期团队的项目经理；目标团队使用自己的模型、能力、预算和权限。', inputSchema: objectSchema({ teamId: string, prompt: string, acceptance: string, idempotencyKey: string }, ['teamId', 'prompt', 'idempotencyKey']) },
@@ -148,6 +165,9 @@ export function createOrchestrationServer({ control, token, capabilities }) {
           };
           break;
         }
+        case 'evaluate_decision':
+          response = await control.evaluateDecision(input, principal);
+          break;
         case 'run_capability_command': {
           if (!capabilities) throw new Error('能力命令服务不可用。');
           const task = control.store.task(principal.taskId);

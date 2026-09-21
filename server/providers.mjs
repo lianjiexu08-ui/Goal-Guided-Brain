@@ -3,7 +3,9 @@ const PROTOCOLS = [
   'openai-completions',
   'openai-responses',
   'anthropic-messages',
+  'typesafe-system-one',
 ];
+const TEXT_PROTOCOLS = new Set(PROTOCOLS.filter(protocol => protocol !== 'typesafe-system-one'));
 const text = (value, label, max = 160, required = true) => {
   if (
     typeof value !== 'string' ||
@@ -43,6 +45,10 @@ export function providerUrl(value) {
 }
 export function providerEndpoint(provider) {
   const base = provider.baseUrl.replace(/\/$/, '');
+  if (provider.protocol === 'typesafe-system-one') {
+    if (base.endsWith('/systemone')) return base;
+    return `${base}${base.endsWith('/v1') ? '' : '/v1'}/systemone`;
+  }
   const suffix =
     provider.protocol === 'anthropic-messages'
       ? '/messages'
@@ -78,8 +84,8 @@ export class ProviderService {
     const models = value.models.map((model) => ({
       id: text(model.id, '模型 ID'),
       name: text(model.name ?? model.id, '模型名称'),
-      tools: model.tools === true,
-      vision: model.vision === true,
+      tools: value.protocol !== 'typesafe-system-one' && model.tools === true,
+      vision: value.protocol !== 'typesafe-system-one' && model.vision === true,
       contextWindow: number(model.contextWindow, 128000, 10_000_000),
       inputPrice: number(model.inputPrice, null, 1_000_000),
       outputPrice: number(model.outputPrice, null, 1_000_000),
@@ -131,7 +137,7 @@ export class ProviderService {
       ids.length
         ? ids.map((id) => all.find((p) => p.id === id)).filter(Boolean)
         : all
-    ).filter((p) => p.enabled && !exclude.includes(p.id));
+    ).filter((p) => p.enabled && TEXT_PROTOCOLS.has(p.protocol) && !exclude.includes(p.id));
     const needsTools = !allowWithoutTools && (
       assistant.requiredTools === true ||
       Object.values(assistant.tools ?? {}).some(Boolean) ||
@@ -177,6 +183,60 @@ export class ProviderService {
         '没有满足助手能力要求的可用模型，请检查供应商、工具调用能力和路由设置。',
     );
   }
+  async evaluateDecision({ providerId = '', model: modelId = '', state, questions } = {}) {
+    const candidates = this.list().filter(provider =>
+      provider.enabled && provider.protocol === 'typesafe-system-one' &&
+      (!providerId || provider.id === providerId),
+    );
+    if (!candidates.length) throw new Error('没有启用的 TypeSafe 决策供应商，请先在模型管理中配置。');
+    const provider = candidates[0];
+    if (!['string', 'object'].includes(typeof state) || state === null) {
+      throw new Error('TypeSafe state 必须是字符串、对象或数组。');
+    }
+    if (!questions || typeof questions !== 'object' || Array.isArray(questions) || !Object.keys(questions).length || Object.keys(questions).length > 100)
+      throw new Error('TypeSafe questions 必须是 1 至 100 个问题的对象。');
+    const serialized = JSON.stringify({ state, questions });
+    if (serialized.length > 500_000) throw new Error('TypeSafe 请求内容不能超过 500 KB。');
+    for (const [id, question] of Object.entries(questions)) {
+      if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(id) || !question || typeof question !== 'object' || Array.isArray(question))
+        throw new Error(`TypeSafe 问题 ${id} 无效。`);
+      if (!['choice', 'score', 'noul'].includes(question.type)) throw new Error(`TypeSafe 问题 ${id} 的类型不支持。`);
+      if (typeof question.instructions !== 'string' || !question.instructions.trim()) throw new Error(`TypeSafe 问题 ${id} 缺少 instructions。`);
+      if (question.type === 'choice' && (!Array.isArray(question.options) || question.options.length < 2 || question.options.length > 100))
+        throw new Error(`TypeSafe 选择题 ${id} 必须包含 2 至 100 个 options。`);
+    }
+    const model = provider.models.find(item => item.id === (modelId || provider.models[0]?.id));
+    if (!model) throw new Error('TypeSafe 模型不存在。');
+    const secret = provider.credentialId ? this.vault.get(provider.credentialId) : '';
+    if (provider.credentialId && !secret) throw new Error('供应商凭据不存在。');
+    const headers = { 'Content-Type': 'application/json', ...(secret ? { Authorization: `Bearer ${secret}` } : {}) };
+    let status;
+    let response;
+    const started = Date.now();
+    try {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        response = await fetch(providerEndpoint(provider), {
+          method: 'POST', headers,
+          body: JSON.stringify({ state, model: model.id, questions }),
+          signal: AbortSignal.timeout(15000), redirect: 'error',
+        });
+        status = response.status;
+        if (!(status === 429 || status === 529 || status >= 500) || attempt === 2) break;
+        await response.body?.cancel();
+        await new Promise(resolve => setTimeout(resolve, 200 * 2 ** attempt));
+      }
+      if (!response.ok) {
+        await response.body?.cancel();
+        throw new Error(`接口返回 HTTP ${status}`);
+      }
+      const data = await response.json();
+      if (!data || typeof data !== 'object' || !data.answers || typeof data.answers !== 'object') throw new Error('TypeSafe 返回缺少 answers。');
+      return { ...data, route: { providerId: provider.id, providerName: provider.name, model: model.id, protocol: provider.protocol, latencyMs: Date.now() - started } };
+    } catch (error) {
+      const message = String(error.message || error).split(secret || '\0').join('[隐藏]').slice(0, 500);
+      throw new Error(status ? `TypeSafe 接口返回 HTTP ${status}：${message}` : message);
+    }
+  }
   async probe(id, { model: modelId, toolTest = false } = {}) {
     const provider = this.records.get('providers', id);
     if (!provider) throw new Error('模型供应商不存在。');
@@ -188,6 +248,30 @@ export class ProviderService {
       ? this.vault.get(provider.credentialId)
       : '';
     if (provider.credentialId && !secret) throw new Error('供应商凭据不存在。');
+    if (provider.protocol === 'typesafe-system-one') {
+      if (toolTest) throw new Error('TypeSafe 是结构化决策接口，不支持工具调用测试。');
+      const started = Date.now();
+      let status;
+      let health;
+      try {
+        const response = await fetch(providerEndpoint(provider), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(secret ? { Authorization: `Bearer ${secret}` } : {}) },
+          body: JSON.stringify({ state: { check: 'connection' }, model: model.id, questions: { reachable: { type: 'noul', instructions: 'Is this connection reachable?' } } }),
+          signal: AbortSignal.timeout(15000), redirect: 'error',
+        });
+        status = response.status;
+        if (!response.ok) { await response.body?.cancel(); throw new Error(`接口返回 HTTP ${status}`); }
+        const data = await response.json();
+        if (typeof data.answers?.reachable?.noul !== 'number') throw new Error('接口没有返回有效的 noul 结果。');
+        health = { ok: true, status, model: model.id, checkedAt: new Date().toISOString(), latencyMs: Date.now() - started, toolTest: false, structured: true };
+      } catch (error) {
+        health = { ok: false, model: model.id, checkedAt: new Date().toISOString(), latencyMs: Date.now() - started, toolTest: false, status: status ?? null, structured: true, error: status && status !== 200 ? `接口返回 HTTP ${status}` : error.name === 'TimeoutError' ? '接口连接超时。' : String(error.message).split(secret || '\0').join('[隐藏]').slice(0, 500) };
+      }
+      const current = this.records.get('providers', id);
+      if (current && current.revision === provider.revision) this.records.save('providers', { ...current, health, enabled: [401, 403].includes(status) ? false : current.enabled }, id);
+      return health;
+    }
     const fn = {
       name: 'connection_check',
       description: 'Return the connection test result.',

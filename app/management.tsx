@@ -726,6 +726,10 @@ function EntityEditor({
                       value: 'anthropic-messages',
                       label: 'Anthropic Messages',
                     },
+                    {
+                      value: 'typesafe-system-one',
+                      label: 'TypeSafe System One（结构化决策）',
+                    },
                   ])}
                   {input('priority', '路由优先级', {
                     type: 'number',
@@ -738,6 +742,12 @@ function EntityEditor({
                   type: 'url',
                   placeholder: 'https://api.example.com/v1',
                 })}
+                {form.protocol === 'typesafe-system-one' && (
+                  <p className="manage-help">
+                    TypeSafe 用于结构化判断和路由，不生成聊天回复或代码。建议地址为
+                    https://api.typesafe.ai/v1，模型问题需使用 choice、score 或 noul 类型。
+                  </p>
+                )}
                 {credentialChoice()}
                 <fieldset>
                   <div className="manage-field-heading">
@@ -2788,6 +2798,7 @@ export function Management({
           onClick={() => {
             setProbeItem(item);
             setProbeModel(entityList(item.models)[0]?.id || '');
+            setProbeTools(item.protocol !== 'typesafe-system-one');
             setProbeResult(null);
           }}
         />
@@ -3988,9 +3999,12 @@ export function Management({
                 <input
                   type="checkbox"
                   checked={probeTools}
+                  disabled={probeItem.protocol === 'typesafe-system-one'}
                   onChange={(event) => setProbeTools(event.target.checked)}
                 />
-                检查工具调用
+                {probeItem.protocol === 'typesafe-system-one'
+                  ? 'TypeSafe 结构化连通性检查'
+                  : '检查工具调用'}
               </label>
               <ErrorMessage error={error} />
               <button className="primary-button" disabled={busy}>

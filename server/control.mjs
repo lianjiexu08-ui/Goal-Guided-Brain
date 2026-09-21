@@ -30,7 +30,7 @@ const teamMeta = (store, taskId) => store.records.get('task-meta', taskId) || {}
 
 export class ControlPlane {
   constructor({ store, createTask = input => store.createTask(input), updateTask = (id, changes) => store.updateTask(id, changes),
-    stopTask, buildAssignment, onEvent, onRemoteDone, now = () => Date.now(), leaseMs = 60000 } = {}) {
+    stopTask, buildAssignment, onEvent, onRemoteDone, evaluateDecision = async () => { throw fail('TypeSafe 决策服务未配置。'); }, now = () => Date.now(), leaseMs = 60000 } = {}) {
     this.store = store;
     this.records = store.records;
     this.createTask = createTask;
@@ -39,6 +39,7 @@ export class ControlPlane {
     this.buildAssignment = buildAssignment;
     this.onEvent = onEvent;
     this.onRemoteDone = onRemoteDone;
+    this.evaluateDecision = evaluateDecision;
     this.now = now;
     this.leaseMs = leaseMs;
   }

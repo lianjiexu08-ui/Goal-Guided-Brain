@@ -12,13 +12,13 @@ import { createOrchestrationServer } from '../server/orchestration-mcp.mjs';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 
-function setup(t) {
+function setup(t, options = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-control-'));
   const workspace = path.join(directory, 'project');
   fs.mkdirSync(workspace);
   const store = new Store(path.join(directory, 'data'), workspace);
   let time = 1000000;
-  const control = new ControlPlane({ store, now: () => time });
+  const control = new ControlPlane({ store, now: () => time, ...options });
   t.after(() => { store.close(); fs.rmSync(directory, { recursive: true, force: true }); });
   const request = (route, body = {}, token, method = 'POST') => control.handle({
     method, parts: route.split('/'), body, req: { headers: token ? { authorization: `Bearer ${token}` } : {} },
@@ -320,6 +320,25 @@ test('MCP tools derive sender identity from a revocable instance token', async t
   assert.equal(checkpoint.taskId, job.taskId);
   control.revokeExecution(job.taskId);
   assert.equal((await client.callTool({ name: 'read_inbox', arguments: {} })).isError, true);
+});
+
+test('MCP can call the optional structured decision backend', async t => {
+  const { control, store } = setup(t, {
+    evaluateDecision: async input => ({ model: input.model || 'jev-latest', answers: { urgent: { noul: 0.8, confidence: 0.75 } } }),
+  });
+  const job = control.createJob({ role: 'assistant', prompt: 'Classify' });
+  const claim = control.claimLocal(store.task(job.taskId));
+  const server = createOrchestrationServer({ control, token: claim.token });
+  const client = new Client({ name: 'decision-test', version: '1' });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  t.after(async () => { await client.close(); await server.close(); });
+  const response = await client.callTool({ name: 'evaluate_decision', arguments: {
+    state: { goal: 'ship' }, model: 'jev-latest',
+    questions: { urgent: { type: 'noul', instructions: 'Is this urgent?' } },
+  } });
+  assert.equal(JSON.parse(response.content[0].text).answers.urgent.noul, 0.8);
 });
 
 test('MCP capability listing is scoped to the running assistant and omits secrets', async t => {
