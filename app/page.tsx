@@ -159,7 +159,13 @@ type TeamRecruitmentMember = {
   responsibility: string;
   deliverables?: string[];
   skills?: string[];
+  /** Stable Skill bindings used by the runtime; skills is display-only prose. */
+  skillIds?: string[];
+  /** Stable MCP/Plugin capability bindings used by the runtime. */
+  capabilityIds?: string[];
   tools?: string[];
+  /** Explicit runtime tool overrides. A null value follows the role template. */
+  toolAccess?: { files?: boolean; web?: boolean; terminal?: boolean } | null;
   modelHint?: string;
   dependencies?: string[];
 };
@@ -1165,18 +1171,40 @@ function Workbench() {
                     </div>
                     <div className="recruitment-member-list">
                       {recruitmentProposal.members.map((member) => (
-                        <div className="recruitment-member" key={member.memberId || `${member.roleId}-${member.name}`}>
-                          <div className="recruitment-member-index">{(member.name || member.roleId || '成').slice(0, 1)}</div>
-                          <div className="recruitment-member-copy">
-                            <strong>{member.name || member.roleId || '未命名成员'}</strong>
-                            <p>{member.responsibility}</p>
-                            {member.modelHint && <small>模型：{member.modelHint}</small>}
-                            {!!member.deliverables?.length && <small>交付：{member.deliverables.slice(0, 2).join(' · ')}</small>}
-                            {!!member.skills?.length && <small>技能：{member.skills.slice(0, 3).join(' · ')}</small>}
-                            {!!member.tools?.length && <small>工具：{member.tools.slice(0, 3).join(' · ')}</small>}
-                            {!!member.dependencies?.length && <small>依赖：{member.dependencies.slice(0, 2).join(' · ')}</small>}
-                          </div>
-                        </div>
+                        (() => {
+                          const skillNames = (member.skillIds || []).map((id) =>
+                            data?.skillCatalog.find((skill) => skill.id === id)?.name || id,
+                          );
+                          const capabilityNames = (member.capabilityIds || []).map((id) =>
+                            data?.capabilities.find((capability) => capability.id === id)?.name || id,
+                          );
+                          const toolLabels = member.toolAccess
+                            ? ([
+                                ['files', '文件'],
+                                ['web', '网页'],
+                                ['terminal', '终端'],
+                              ] as const)
+                                .filter(([key]) => member.toolAccess?.[key] !== undefined)
+                                .map(([key, label]) => `${label}${member.toolAccess?.[key] ? '已启用' : '未启用'}`)
+                            : [];
+                          return (
+                            <div className="recruitment-member" key={member.memberId || `${member.roleId}-${member.name}`}>
+                              <div className="recruitment-member-index">{(member.name || member.roleId || '成').slice(0, 1)}</div>
+                              <div className="recruitment-member-copy">
+                                <strong>{member.name || member.roleId || '未命名成员'}</strong>
+                                <p>{member.responsibility}</p>
+                                {member.modelHint && <small>模型：{member.modelHint}</small>}
+                                {!!member.deliverables?.length && <small>交付：{member.deliverables.slice(0, 2).join(' · ')}</small>}
+                                {!!member.skills?.length && <small>技能说明：{member.skills.slice(0, 3).join(' · ')}</small>}
+                                {!!skillNames.length && <small>绑定 Skill：{skillNames.slice(0, 3).join(' · ')}</small>}
+                                {!!member.tools?.length && <small>工具说明：{member.tools.slice(0, 3).join(' · ')}</small>}
+                                {!!capabilityNames.length && <small>绑定能力：{capabilityNames.slice(0, 3).join(' · ')}</small>}
+                                {!!toolLabels.length && <small>工具权限：{toolLabels.join(' · ')}</small>}
+                                {!!member.dependencies?.length && <small>依赖：{member.dependencies.slice(0, 2).join(' · ')}</small>}
+                              </div>
+                            </div>
+                          );
+                        })()
                       ))}
                     </div>
                     {!!recruitmentProposal.openQuestions?.length && (

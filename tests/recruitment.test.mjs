@@ -149,6 +149,10 @@ test('project manager proposes a Team Charter and owner confirmation materialize
     const before = await request(`teams/${team.id}`);
     assert.equal(before.body.recruitment.phase, 'proposed');
     assert.deepEqual(before.body.memberRoleIds, ['project_manager', 'product', 'developer', 'assistant']);
+    const frontendProposal = before.body.recruitment.proposal.members.find(member => member.memberId === 'frontend');
+    assert.deepEqual(frontendProposal.skillIds, ['development-workflow', 'team-recruitment', 'product-planning']);
+    assert.deepEqual(frontendProposal.capabilityIds, [capability.id]);
+    assert.deepEqual(frontendProposal.toolAccess, { files: true, web: false, terminal: true });
     const confirmed = await request(`teams/${team.id}/recruitment/confirm`, {}, 'POST');
     assert.equal(confirmed.status, 200);
     assert.equal(confirmed.body.recruitment.phase, 'confirmed');
