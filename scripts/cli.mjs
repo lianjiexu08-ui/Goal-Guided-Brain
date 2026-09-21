@@ -41,7 +41,7 @@ const usage = `用法：
   ggb chat --provider claude --session personal
   ggb decide --state '{"goal":"..."}' --questions '{"urgent":{"type":"noul","instructions":"Is this urgent?"}}'
 
-支持预设：${Object.keys(PRESETS).join('、')}（gpt/openai 是 Codex/OpenAI 别名）。
+支持预设：${Object.keys(PRESETS).join('、')}（gpt/openai 是 Codex/OpenAI 别名）；TypeSafe 通过 decide 命令作为可选结构化决策后端。
 密钥从对应环境变量读取，也可用 --api-key 临时传入（不会写入磁盘）。
 会话以 JSONL 保存在 ~/.dsh/sessions（可用 DSH_SESSION_DIR 覆盖）；--json 输出一行稳定的 turn_end 事件。`;
 
@@ -448,6 +448,7 @@ async function main() {
   if (command === 'providers') {
     for (const [id, preset] of Object.entries(PRESETS)) console.log(`${id.padEnd(9)} ${preset.label.padEnd(14)} ${preset.protocol.padEnd(10)} ${preset.model}`);
     console.log('gpt/openai  Codex/OpenAI 别名');
+    console.log('typesafe   TypeSafe System One（仅用于 decide 结构化判断）');
     return;
   }
   if (command === 'decide') return decide(args);
