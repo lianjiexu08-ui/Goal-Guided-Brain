@@ -353,10 +353,10 @@ export class ControlPlane {
       const list = value => Array.isArray(value)
         ? [...new Set(value.filter(item => typeof item === 'string' && item.trim()).map(item => item.trim().slice(0, 500)).slice(0, 12))]
         : [];
-      const idList = value => [...new Set((Array.isArray(value) ? value : [])
+      const idList = (value, max = 32) => [...new Set((Array.isArray(value) ? value : [])
         .filter(item => typeof item === 'string' && item.trim())
-        .map(item => item.trim().slice(0, 160)).slice(0, 32))];
-      const skillIds = idList(member.skillIds);
+        .map(item => item.trim().slice(0, 160)).slice(0, max))];
+      const skillIds = idList(member.skillIds, 3);
       if (skillIds.some(id => !SKILLS.some(skill => skill.id === id)))
         throw fail(`成员 ${memberId} 包含未知 Skill：${skillIds.filter(id => !SKILLS.some(skill => skill.id === id)).join('、')}`);
       const capabilityIds = idList(member.capabilityIds);

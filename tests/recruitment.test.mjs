@@ -136,12 +136,13 @@ test('project manager proposes a Team Charter and owner confirmation materialize
       members: [
         { roleId: 'project_manager', responsibility: '澄清目标并协调交付。', deliverables: ['Team Charter'], capabilityIds: [capability.id], providerIds: [provider.id], modelHint: 'recruitment-model', toolAccess: { terminal: true } },
         { roleId: 'product', responsibility: '整理需求和验收标准。', deliverables: ['需求说明'], tools: ['需要终端执行'] },
-        { roleId: 'developer', memberId: 'frontend', name: '前端开发', responsibility: '实现前端功能并运行测试。', deliverables: ['前端代码'], skillIds: ['development-workflow'], capabilityIds: [capability.id], providerIds: [provider.id], modelHint: 'recruitment-model', toolAccess: { files: true, web: false, terminal: true } },
+        { roleId: 'developer', memberId: 'frontend', name: '前端开发', responsibility: '实现前端功能并运行测试。', deliverables: ['前端代码'], skillIds: ['development-workflow', 'team-recruitment', 'product-planning', 'personal-workflow'], capabilityIds: [capability.id], providerIds: [provider.id], modelHint: 'recruitment-model', toolAccess: { files: true, web: false, terminal: true } },
         { roleId: 'developer', memberId: 'backend', name: '后端开发', responsibility: '实现后端功能并运行测试。', deliverables: ['后端代码'], dependencies: ['frontend'] },
       ],
     } })).content[0].text);
     assert.equal(proposed.phase, 'proposed');
     assert.equal(proposed.proposal.size, 4);
+    assert.deepEqual(proposed.proposal.members.find(member => member.memberId === 'frontend').skillIds, ['development-workflow', 'team-recruitment', 'product-planning']);
     const token = patch.config.headers.Authorization.replace(/^Bearer\s+/i, '');
     const principal = app.platform.control.validateInstanceToken(token);
     assert.throws(() => app.platform.control.createJob({ role: 'developer', prompt: '提前实现功能' }, principal), /尚未确认/);
