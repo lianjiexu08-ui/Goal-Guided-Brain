@@ -351,6 +351,7 @@ export function createWorkbench({
             return send(200, platform.control.confirmTeamRecruitment(space.id, { version: body.version }, authorization.principal));
           }
           if (req.method === 'GET' && parts[3] === 'collaborators') {
+            if (space.collaboration?.enabled === false) return send(200, []);
             const allowed = Array.isArray(space.collaboration?.allowedTeamIds)
               ? space.collaboration.allowedTeamIds
               : [];
@@ -370,6 +371,8 @@ export function createWorkbench({
           }
           if (req.method === 'POST' && parts[3] === 'collaborate') {
             if (space.status !== 'active') throw new Error('团队空间当前不可发起协作。');
+            if (space.collaboration?.enabled === false)
+              throw Object.assign(new Error('当前团队未启用跨团队协作。'), { status: 409 });
             const targetId = required(body.targetTeamId || body.teamId, '目标团队');
             const target = store.teamSpaces().find((candidate) => candidate.id === targetId || candidate.chatId === targetId);
             if (!target || target.status !== 'active') throw new Error('目标团队不存在或已暂停。');

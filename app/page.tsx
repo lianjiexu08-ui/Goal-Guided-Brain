@@ -204,7 +204,7 @@ type TeamSpace = {
   autonomy: { mode: string; maxDepth: number; maxJobs: number; budgetTokens: number };
   teamType?: string;
   purpose?: string;
-  collaboration?: { autoHandoff?: boolean; sharedBoard?: boolean; allowedTeamIds?: string[] };
+  collaboration?: { enabled?: boolean; autoHandoff?: boolean; sharedBoard?: boolean; allowedTeamIds?: string[] };
   memberSettings?: Record<string, {
     label?: string;
     responsibility?: string;
@@ -2412,11 +2412,10 @@ function Workbench() {
                     workspace: teamForm.workspace,
                     autonomy: { mode: teamForm.autonomyMode },
                     collaboration: {
+                      enabled: teamForm.allowCollaboration,
                       autoHandoff: true,
                       sharedBoard: true,
-                      allowedTeamIds: teamForm.allowCollaboration
-                        ? (data?.spaces || []).map((space) => space.id)
-                        : [],
+                      allowedTeamIds: [],
                     },
                   });
                   setSelectedSpaceId(saved.id);

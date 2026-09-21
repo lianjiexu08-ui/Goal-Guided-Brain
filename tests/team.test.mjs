@@ -110,16 +110,42 @@ test('multiple Chat teams keep independent ownership and can hand work to anothe
       purpose: '负责监控、故障处理和发布保障。',
       teamType: 'operations',
       memberRoleIds: ['project_manager', 'assistant'],
-      collaboration: { allowedTeamIds: [source.id], autoHandoff: true },
+      collaboration: { enabled: true, allowedTeamIds: [], autoHandoff: true },
     }, 'POST');
     assert.equal(created.status, 201);
     assert.equal(created.body.teamType, 'operations');
     assert.equal(created.body.chatId, created.body.id);
+    assert.equal(created.body.collaboration.enabled, true);
+    assert.deepEqual(created.body.collaboration.allowedTeamIds, []);
     const teams = await request('teams');
     assert.equal(teams.body.length, 2);
     const collaborators = await request(`teams/${source.id}/collaborators`);
     assert.equal(collaborators.status, 200);
     assert.ok(collaborators.body.some((item) => item.id === created.body.id));
+
+    const future = await request('teams', {
+      name: '后续项目团队',
+      goal: '承接后续专项开发任务。',
+      collaboration: { enabled: true, allowedTeamIds: [] },
+    }, 'POST');
+    assert.equal(future.status, 201);
+    const futureCollaborators = await request(`teams/${created.body.id}/collaborators`);
+    assert.ok(futureCollaborators.body.some((item) => item.id === future.body.id));
+
+    const closed = await request('teams', {
+      name: '封闭团队',
+      goal: '仅处理本团队内部任务。',
+      collaboration: { enabled: false, allowedTeamIds: [] },
+    }, 'POST');
+    assert.equal(closed.status, 201);
+    assert.deepEqual((await request(`teams/${closed.body.id}/collaborators`)).body, []);
+    const disabled = await request(`teams/${closed.body.id}/collaborate`, {
+      targetTeamId: source.id,
+      clientMessageId: 'closed-1',
+      content: '不应发送跨团队请求。',
+    }, 'POST');
+    assert.equal(disabled.status, 409);
+    assert.match(disabled.body.error, /未启用跨团队协作/);
 
     const waiting = await request('teams', {
       name: '待确认团队',

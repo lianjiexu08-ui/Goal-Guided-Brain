@@ -177,7 +177,7 @@ export class Store {
           assistant: '整理资料、补充信息和行动计划。',
         },
         memberSettings: {},
-        collaboration: { autoHandoff: true, sharedBoard: true, allowedTeamIds: [] },
+        collaboration: { enabled: true, autoHandoff: true, sharedBoard: true, allowedTeamIds: [] },
       });
     }
     this.db
@@ -279,6 +279,7 @@ export class Store {
   normalizeTeamSpace(space) {
     if (!space) return space;
     const collaboration = {
+      enabled: true,
       autoHandoff: true,
       sharedBoard: true,
       allowedTeamIds: [],
@@ -410,6 +411,7 @@ export class Store {
       throw new Error('团队空间预算需要在 1000 至 100000000 之间。');
     const collaborationInput = input.collaboration ?? existing?.collaboration ?? {};
     const collaboration = {
+      enabled: collaborationInput.enabled !== false,
       autoHandoff: collaborationInput.autoHandoff !== false,
       sharedBoard: collaborationInput.sharedBoard !== false,
       allowedTeamIds: Array.isArray(collaborationInput.allowedTeamIds)
