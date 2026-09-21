@@ -249,7 +249,16 @@ test('team MCP can discover and delegate to an allowed long-lived team', async (
     assert.equal(delegated.sourceTeamId, source.id);
     assert.equal(delegated.targetTeamId, target.id);
     assert.ok(delegated.taskId);
+    assert.ok(delegated.sourceMessageId);
     assert.equal(app.platform.control.records.get('task-meta', delegated.taskId).modelOverride, 'pm-routing-model');
+    const sourceHandoff = app.store.teamMessages(source.id).find(
+      (message) =>
+        message.kind === 'handoff' &&
+        message.toTeamId === target.id &&
+        message.taskId === delegated.taskId,
+    );
+    assert.equal(sourceHandoff.id, delegated.sourceMessageId);
+    assert.equal(sourceHandoff.relatedMessageId, delegated.messageId);
     assert.equal(runs.length, 2);
     const duplicate = JSON.parse((await client.callTool({ name: 'delegate_to_team', arguments: {
       teamId: target.id,

@@ -583,6 +583,7 @@ export class ControlPlane {
     };
   }
   collaborationAllowed(source, target) {
+    if (source.collaboration?.enabled === false) return false;
     const allowed = Array.isArray(source.collaboration?.allowedTeamIds)
       ? source.collaboration.allowedTeamIds
       : [];
@@ -628,9 +629,20 @@ export class ControlPlane {
     if (existing?.taskId) {
       const existingTask = this.store.task(existing.taskId);
       const existingMeta = existingTask && teamMeta(this.store, existingTask.id);
+      const sourceMessageId = `handoff:${source.id}:${target.id}:${idempotencyKey}:source`;
+      if (!this.records.get('space-messages', sourceMessageId)) {
+        this.store.saveTeamMessage({
+          ...existing,
+          spaceId: source.id,
+          teamId: source.id,
+          relatedMessageId: existing.id,
+          taskId: existing.taskId,
+        }, sourceMessageId);
+      }
       return {
         duplicate: true,
         messageId: existing.id,
+        sourceMessageId,
         taskId: existing.taskId,
         jobId: existingMeta?.jobId || null,
         sourceTeamId: source.id,
@@ -670,10 +682,18 @@ export class ControlPlane {
         contextExtra: JSON.stringify({ sourceTeamId: source.id, sourceTaskId: sourceTask.id, sourceJobId: sourceMeta.jobId || null }),
       });
       const linked = this.store.saveTeamMessage({ ...message, taskId: child.id }, message.id);
+      const sourceLinked = this.store.saveTeamMessage({
+        ...message,
+        spaceId: source.id,
+        teamId: source.id,
+        relatedMessageId: message.id,
+        taskId: child.id,
+      }, `handoff:${source.id}:${target.id}:${idempotencyKey}:source`);
       const childMeta = teamMeta(this.store, child.id);
       return {
         duplicate: false,
         messageId: linked.id,
+        sourceMessageId: sourceLinked.id,
         taskId: child.id,
         jobId: childMeta.jobId || null,
         sourceTeamId: source.id,
