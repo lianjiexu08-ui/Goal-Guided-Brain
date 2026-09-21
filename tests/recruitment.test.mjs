@@ -48,6 +48,11 @@ test('team recruitment keeps one PM session across completed discovery turns', a
     const recruitmentPrincipal = app.platform.control.validateInstanceToken(recruitmentToken);
     const discoveryRoster = app.platform.control.readTeamRoster(recruitmentPrincipal);
     assert.deepEqual(discoveryRoster.members.map(member => member.id), [team.pmRoleId]);
+    const bypass = await request(`teams/${team.id}`, { recruitment: { phase: 'confirmed' } }, 'PUT');
+    assert.equal(bypass.status, 409);
+    assert.match(bypass.body.error, /招募阶段只能通过招募流程推进/);
+    const unchanged = await request(`teams/${team.id}`);
+    assert.equal(unchanged.body.recruitment.phase, 'discovery');
     const sessionId = first.body.sessionId;
     runs[0].complete();
     await tick();

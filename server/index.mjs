@@ -313,8 +313,18 @@ export function createWorkbench({
               jobs: store.records.list('jobs').filter((job) => job.spaceId === space.id),
             });
           }
-          if (req.method === 'PUT' && !parts[3])
+          if (req.method === 'PUT' && !parts[3]) {
+            const requestedRecruitment = body.recruitment;
+            if (
+              requestedRecruitment &&
+              typeof requestedRecruitment === 'object' &&
+              !Array.isArray(requestedRecruitment) &&
+              requestedRecruitment.phase !== undefined &&
+              requestedRecruitment.phase !== space.recruitment.phase
+            )
+              throw Object.assign(new Error('团队招募阶段只能通过招募流程推进。'), { status: 409 });
             return send(200, store.saveTeamSpace(body, space.id));
+          }
           if (req.method === 'POST' && parts[3] === 'recruitment' && parts[4] === 'confirm') {
             return send(200, platform.control.confirmTeamRecruitment(space.id, { version: body.version }, authorization.principal));
           }
@@ -373,8 +383,6 @@ export function createWorkbench({
               workspace: target.workspace,
               teamId: target.id,
               spaceId: target.id,
-              model: target.model || undefined,
-              providerId: target.providerId || undefined,
               sourceMessageId: message.id,
             });
             const linked = store.saveTeamMessage({ ...message, taskId: task.id }, message.id);

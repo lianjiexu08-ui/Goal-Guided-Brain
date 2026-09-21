@@ -184,8 +184,16 @@ test('team MCP can discover and delegate to an allowed long-lived team', async (
       name: '资料团队',
       goal: '整理资料并输出证据摘要。',
       memberRoleIds: ['project_manager', 'assistant'],
+      model: 'team-default-model',
+      memberSettings: { project_manager: { modelHint: 'pm-routing-model' } },
     }, 'POST')).body;
-    await request(`teams/${source.id}`, { collaboration: { allowedTeamIds: [target.id] } }, 'PUT');
+    const pending = (await request('teams', {
+      name: '待招募资料团队',
+      goal: '尚未确认成员的资料团队。',
+      memberRoleIds: ['project_manager', 'assistant'],
+      recruitment: { phase: 'discovery' },
+    }, 'POST')).body;
+    await request(`teams/${source.id}`, { collaboration: { allowedTeamIds: [target.id, pending.id] } }, 'PUT');
     await request(`teams/${source.id}/messages`, { clientMessageId: 'mcp-source', content: '准备一次跨团队资料协作。' }, 'POST');
     await tick();
     assert.equal(runs.length, 1);
@@ -194,8 +202,9 @@ test('team MCP can discover and delegate to an allowed long-lived team', async (
     clients.push(client);
     await client.connect(new StreamableHTTPClientTransport(new URL(patch.config.url), { requestInit: { headers: patch.config.headers } }));
     const listed = JSON.parse((await client.callTool({ name: 'list_teams', arguments: {} })).content[0].text);
-    assert.equal(listed.items.length, 1);
-    assert.equal(listed.items[0].id, target.id);
+    assert.equal(listed.items.length, 2);
+    assert.equal(listed.items.find(item => item.id === target.id).memberCount, 2);
+    assert.equal(listed.items.find(item => item.id === pending.id).memberCount, 1);
     const delegated = JSON.parse((await client.callTool({ name: 'delegate_to_team', arguments: {
       teamId: target.id,
       prompt: '整理资料并提交来源清单。',
@@ -205,6 +214,7 @@ test('team MCP can discover and delegate to an allowed long-lived team', async (
     assert.equal(delegated.sourceTeamId, source.id);
     assert.equal(delegated.targetTeamId, target.id);
     assert.ok(delegated.taskId);
+    assert.equal(app.platform.control.records.get('task-meta', delegated.taskId).modelOverride, 'pm-routing-model');
     assert.equal(runs.length, 2);
     const duplicate = JSON.parse((await client.callTool({ name: 'delegate_to_team', arguments: {
       teamId: target.id,

@@ -594,7 +594,9 @@ export class ControlPlane {
         purpose: team.purpose || team.goal || '',
         teamType: team.teamType || 'custom',
         pmRoleId: team.pmRoleId,
-        memberCount: Array.isArray(team.memberRoleIds) ? team.memberRoleIds.length : 0,
+        memberCount: team.recruitment?.phase === 'confirmed'
+          ? (Array.isArray(team.memberRoleIds) ? team.memberRoleIds.length : 0)
+          : (team.pmRoleId ? 1 : 0),
         status: team.status,
       })),
     };
