@@ -4,7 +4,7 @@ Goal-Guided Brain 是一个服务个人目标的智能协作工作空间，使�
 
 ## 启动
 
-需要 Node.js 22.19+（建议 24+）、Git，以及安装好的 `dsh`。当前开发验证使用 macOS、Node.js 26.8.1 和 DSH 0.1.2-rc.1。Windows 执行节点使用 WSL2。
+需要 Node.js 22.13+（建议 24+）和 Git。终端 CLI 支持 Windows 10/11（PowerShell 或 cmd）、macOS 和 Linux，不要求 WSL；Linux 常驻服务和远程执行节点仍可按 [部署说明](deploy/README.md) 单独配置。
 
 ```sh
 npm install
@@ -14,20 +14,20 @@ npm start
 
 打开 <http://127.0.0.1:3088>。API 默认监听本机 3089。`npm run dev` 启动开发模式；`npm run stop` 停止生产启动脚本。macOS 可双击 `启动工作台.command`。
 
-也可以直接使用统一 CLI，不打开网页。兼容命令为 `dsh`，项目品牌命令为 `goal-guided-brain`：
+也可以直接使用统一 CLI，不打开网页。项目品牌命令是 `ggb`；`dsh`、`dsh-workbench` 和 `goal-guided-brain` 保留为兼容别名：
 
 ```sh
-npm link
+npm link                    # 或 npm install -g .
 export GEMINI_API_KEY=...
-dsh run --provider gemini --model gemini-2.5-flash "总结当前项目"
-echo "设计一个缓存方案" | dsh run --provider claude
-dsh run --session refactor "先分析这个模块"
-dsh run --session refactor --continue "继续重构并运行测试"
-dsh chat --provider claude --session personal
-dsh providers
+ggb run --provider gemini --model gemini-2.5-flash "总结当前项目"
+echo "设计一个缓存方案" | ggb run --provider claude
+ggb run --session refactor "先分析这个模块"
+ggb run --session refactor --continue "继续重构并运行测试"
+ggb chat --provider claude --session personal
+ggb providers
 ```
 
-CLI 预设支持 `gemini`、`claude`、`codex`、`kimi` 和 `deepseek`，`gpt/openai` 是 Codex/OpenAI 别名。`dsh chat` 提供持续对话，支持 `/new`、`/model [供应商/]模型`、`/session`、`/help` 和 `/exit`。密钥只从对应环境变量读取（也可临时使用 `--api-key`），不会自动写入文件；`--no-stream` 返回完整结果，`--json` 输出稳定的 `turn_end` JSON 事件。`--session` 将对话追加保存为 JSONL，`--continue` 恢复最近会话（默认目录 `~/.dsh/sessions`，可用 `DSH_SESSION_DIR` 覆盖），历史最多带入最近 20 轮或 80,000 字符。也可通过 `--base-url` 接入自托管或兼容接口。
+Windows PowerShell 设置密钥时使用 `$env:GEMINI_API_KEY = '...'`，cmd 使用 `set GEMINI_API_KEY=...`；macOS/Linux 使用上面的 `export`。在 Windows 上，`npm link` 或 `npm install -g .` 会由 npm 自动生成 `ggb.cmd` 和 PowerShell 可调用的命令 shim，直接输入 `ggb` 即可；macOS/Linux 会生成同名可执行文件。CLI 预设支持 `gemini`、`claude`、`codex`、`kimi` 和 `deepseek`，`gpt/openai` 是 Codex/OpenAI 别名。`ggb chat` 提供持续对话，支持 `/new`、`/model [供应商/]模型`、`/session`、`/help` 和 `/exit`。密钥只从对应环境变量读取（也可临时使用 `--api-key`），不会自动写入文件；`--no-stream` 返回完整结果，`--json` 输出稳定的 `turn_end` JSON 事件。`--session` 将对话追加保存为 JSONL，`--continue` 恢复最近会话（默认目录 `~/.dsh/sessions`，可用 `DSH_SESSION_DIR` 覆盖），历史最多带入最近 20 轮或 80,000 字符。也可通过 `--base-url` 接入自托管或兼容接口。
 
 在模型管理中创建加密凭据库、保存 API Key，再添加供应商和模型。协议支持 DeepSeek、OpenAI Chat Completions、OpenAI Responses、Anthropic Messages；可填写自定义 HTTPS 地址，本机确定性接口可用 HTTP。模型测试会实际发送请求，费用由对应供应商收取。
 

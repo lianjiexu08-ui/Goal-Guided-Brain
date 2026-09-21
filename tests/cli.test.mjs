@@ -8,6 +8,11 @@ import { spawn } from 'node:child_process';
 
 const cli = path.resolve('scripts/cli.mjs');
 
+test('package exposes the cross-platform ggb executable alias', () => {
+  const packageJson = JSON.parse(fs.readFileSync(path.resolve('package.json'), 'utf8'));
+  assert.equal(packageJson.bin.ggb, './scripts/cli.mjs');
+});
+
 function runCli(url, args, input = '', noStream = true, extraEnv = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cli, 'run', '--base-url', url, '--api-key', 'fixture-key', ...(noStream ? ['--no-stream'] : []), ...args], {

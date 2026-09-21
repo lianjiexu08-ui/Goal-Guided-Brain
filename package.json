@@ -4,6 +4,7 @@
   "private": true,
   "description": "面向个人目标的多模型智能协作工作空间",
   "bin": {
+    "ggb": "./scripts/cli.mjs",
     "dsh": "./scripts/cli.mjs",
     "dsh-workbench": "./scripts/cli.mjs",
     "goal-guided-brain": "./scripts/cli.mjs"

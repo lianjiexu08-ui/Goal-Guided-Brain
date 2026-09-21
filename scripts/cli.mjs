@@ -29,22 +29,23 @@ const PRESETS = {
   },
 };
 const PROVIDER_ALIASES = { gpt: 'codex', openai: 'codex' };
+const CLI_NAME = 'ggb';
 
 const usage = `用法：
-  dsh providers
-  dsh run --provider gemini --model gemini-2.5-flash "解释这段代码"
-  echo "总结这个项目" | dsh run --provider claude
-  dsh run --provider deepseek --system "你是后端专家" --no-stream "设计 API"
-  dsh run --continue "继续上一个任务"
-  dsh run --session refactor --continue "继续重构"
-  dsh chat --provider claude --session personal
+  ggb providers
+  ggb run --provider gemini --model gemini-2.5-flash "解释这段代码"
+  echo "总结这个项目" | ggb run --provider claude
+  ggb run --provider deepseek --system "你是后端专家" --no-stream "设计 API"
+  ggb run --continue "继续上一个任务"
+  ggb run --session refactor --continue "继续重构"
+  ggb chat --provider claude --session personal
 
 支持预设：${Object.keys(PRESETS).join('、')}（gpt/openai 是 Codex/OpenAI 别名）。
 密钥从对应环境变量读取，也可用 --api-key 临时传入（不会写入磁盘）。
 会话以 JSONL 保存在 ~/.dsh/sessions（可用 DSH_SESSION_DIR 覆盖）；--json 输出一行稳定的 turn_end 事件。`;
 
 function fail(message, code = 1) {
-  console.error(`dsh: ${message}`);
+  console.error(`${CLI_NAME}: ${message}`);
   process.exitCode = code;
 }
 
@@ -81,7 +82,7 @@ function safeSessionId(value) {
 function sessionPath(value) {
   if (!value) return '';
   const raw = String(value).trim();
-  if (path.isAbsolute(raw) || raw.includes(path.sep)) return path.resolve(raw);
+  if (path.isAbsolute(raw) || raw.includes('/') || raw.includes('\\')) return path.resolve(raw);
   return path.join(sessionDir(), `${safeSessionId(raw)}.jsonl`);
 }
 
@@ -156,7 +157,7 @@ function appendSession(file, entry) {
 
 function prepareSession(input) {
   const requested = input.session || (input.continueSession ? latestSessionPath() : '');
-  if (input.continueSession && !requested) throw new Error('没有可继续的会话，请先运行一次 dsh 或指定 --session。');
+  if (input.continueSession && !requested) throw new Error(`没有可继续的会话，请先运行一次 ${CLI_NAME} 或指定 --session。`);
   const file = sessionPath(requested) || sessionPath(randomUUID());
   const parsed = parseSession(file);
   if (parsed.meta) {
@@ -321,10 +322,10 @@ async function run(input, prompt, history = []) {
 
 async function interactiveChat(input) {
   if (!process.stdin.isTTY || !process.stdout.isTTY)
-    throw new Error('chat 需要交互式终端；管道输入请使用 dsh run。');
+    throw new Error(`chat 需要交互式终端；管道输入请使用 ${CLI_NAME} run。`);
   prepareSession(input);
   if (!input.apiKey) throw new Error(`未找到 ${input.preset.label} 密钥，请设置 ${input.preset.keys.join(' 或 ')}`);
-  console.log(`dsh · ${input.providerName}/${input.model} · 会话 ${input.sessionId}`);
+  console.log(`${CLI_NAME} · ${input.providerName}/${input.model} · 会话 ${input.sessionId}`);
   console.log('输入 /help 查看命令，/exit 退出。\n');
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, historySize: 1000 });
   const ask = () => new Promise(resolve => rl.question('你 › ', resolve));
@@ -397,7 +398,7 @@ async function interactiveChat(input) {
           type: 'error', sessionId: input.sessionId, at: new Date().toISOString(),
           message: redactSession(error.message, input),
         });
-        console.error(`dsh: ${error.message}\n`);
+        console.error(`${CLI_NAME}: ${error.message}\n`);
       }
     }
   } finally {
