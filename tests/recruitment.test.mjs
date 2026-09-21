@@ -165,6 +165,12 @@ test('project manager proposes a Team Charter and owner confirmation materialize
     assert.deepEqual(frontendRoster.runtimeTools, frontend.tools);
     assert.ok(roster.templates.some(template => template.id === 'project_manager'));
     assert.equal(roster.templates.some(template => template.id === frontendId), false);
+    const archivedManager = await request(`roles/${team.pmRoleId}/archive`, {}, 'POST');
+    assert.equal(archivedManager.status, 400);
+    assert.match(archivedManager.body.error, /仍属于启用中的团队/);
+    const archivedMember = await request(`roles/${frontendId}/archive`, {}, 'POST');
+    assert.equal(archivedMember.status, 400);
+    assert.match(archivedMember.body.error, /仍属于启用中的团队/);
     const child = app.platform.control.createJob({ role: frontendId, prompt: '执行前端成员的模型路由校验。' }, principal);
     assert.equal(app.platform.control.records.get('task-meta', child.taskId).modelOverride, 'recruitment-model');
     const pmTask = app.platform.newTask({ role: team.pmRoleId, prompt: '验证项目经理团队能力快照。', teamId: team.id, spaceId: team.id });

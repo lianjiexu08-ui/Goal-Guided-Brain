@@ -237,6 +237,11 @@ export class Store {
   archiveRole(id, archived) {
     const role = this.role(id);
     if (!role) throw new Error('助手不存在。');
+    if (archived && this.teamSpaces().some((team) =>
+      team.status !== 'archived' &&
+      (team.pmRoleId === id || (Array.isArray(team.memberRoleIds) && team.memberRoleIds.includes(id)))
+    ))
+      throw new Error('该助手仍属于启用中的团队，请先调整团队成员或归档团队。');
     if (
       archived &&
       this.tasks().some(
