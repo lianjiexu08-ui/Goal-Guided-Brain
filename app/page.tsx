@@ -94,6 +94,8 @@ type Task = {
   parentTaskId?: string | null;
   parentJobId?: string | null;
   spaceId?: string | null;
+  artifactCount?: number;
+  verificationStatus?: string | null;
 };
 type Session = {
   id: string;
@@ -281,12 +283,24 @@ const statusLabels: Record<string, string> = {
   budget_exceeded: '预算超限',
   'budget-exceeded': '预算超限',
 };
+const verificationLabels: Record<string, string> = {
+  verified: '已验收',
+  failed: '验证失败',
+  'pending-review': '待验收',
+  'needs-review': '需要复核',
+};
 const capabilityKindLabels: Record<string, string> = {
   mcp: 'MCP',
   skill: 'Skill',
   plugin: 'Plugin',
 };
 const isActive = (t: Task) => ['queued', 'running'].includes(t.status);
+const taskVerification = (task: Task) =>
+  task.verificationStatus
+    ? verificationLabels[task.verificationStatus] || task.verificationStatus
+    : task.status === 'completed'
+      ? '待验收'
+      : '';
 const formatTime = (s: string) =>
   new Date(s).toLocaleString('zh-CN', {
     month: '2-digit',
@@ -1032,6 +1046,7 @@ function Workbench() {
                             <strong>{roles.find((item) => item.id === task.role)?.name || task.role}</strong>
                             <small>{task.title}</small>
                             {(task.result || task.error) && <small className="team-task-result">{(task.result || task.error).replace(/\s+/g, ' ').slice(0, 180)}</small>}
+                            {taskVerification(task) && <small className={`team-task-proof ${task.verificationStatus || 'pending-review'}`}>验收 · {taskVerification(task)}{task.artifactCount ? ` · ${task.artifactCount} 项证据` : ''}</small>}
                           </span>
                           <em className={`status ${task.status}`}>{statusLabels[task.status]}</em>
                         </button>

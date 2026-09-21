@@ -383,6 +383,23 @@ test('HTTP journey: concurrent assistants, developer queue, cancellation, handof
     assert.equal(state.body.config.hasApiKey, true);
     assert.ok(!JSON.stringify(state.body).includes('fixture-private-key'));
     assert.ok(!('context' in state.body.tasks[0]));
+    assert.ok(state.body.tasks.every((task) => task.artifactCount === 0));
+    assert.ok(
+      state.body.tasks.every((task) => task.verificationStatus === null),
+    );
+    const inspectedTask = state.body.tasks[0];
+    app.store.records.save('artifacts', {
+      taskId: inspectedTask.id,
+      kind: 'verification',
+      status: 'verified',
+      name: 'npm test',
+    });
+    const withEvidence = await request('state', undefined, 'GET');
+    const evidenceTask = withEvidence.body.tasks.find(
+      (task) => task.id === inspectedTask.id,
+    );
+    assert.equal(evidenceTask.artifactCount, 1);
+    assert.equal(evidenceTask.verificationStatus, 'verified');
     assert.equal(
       fs.statSync(path.join(s.dataDir, 'vault.json')).mode & 0o777,
       0o600,

@@ -357,6 +357,41 @@
 .manage-detail .manage-row {
   padding: 12px 0;
 }
+.delivery-summary {
+  border: 1px solid #dbe8e2;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 14px 0 18px;
+  background: #f4faf7;
+}
+.delivery-summary[data-tone='warning'] {
+  border-color: #eadfbe;
+  background: #fffaf0;
+}
+.delivery-summary[data-tone='error'] {
+  border-color: #efd1d1;
+  background: #fff6f6;
+}
+.delivery-summary[data-tone='active'] {
+  border-color: #d6e5eb;
+  background: #f5fafc;
+}
+.delivery-summary-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.delivery-summary-heading strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+.delivery-summary p {
+  margin: 7px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #5d6e73;
+}
 .manage-pager {
   display: flex;
   gap: 15px;

@@ -1483,6 +1483,51 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
       : entityList(execution?.artifacts).find(
           (item) => item.kind === 'verification',
         );
+  const artifacts = entityList(execution?.artifacts);
+  const taskStatus = execution ? status(execution) : '';
+  const verificationState =
+    (verification ? status(verification) : '') ||
+    (workspace && txt(workspace, 'verificationStatus')) ||
+    (workspace?.verified === true ? 'verified' : '');
+  const deliveryState =
+    taskStatus === 'failed' || verificationState === 'failed'
+      ? 'failed'
+      : ['queued', 'running', 'state_unknown'].includes(taskStatus)
+        ? taskStatus
+        : verificationState === 'verified'
+          ? 'verified'
+          : taskStatus === 'completed'
+            ? 'pending-review'
+            : taskStatus || 'pending-review';
+  let deliveryDetail = '任务仍在执行，完成后会在这里显示交付证据。';
+  if (deliveryState === 'verified') {
+    deliveryDetail = verification
+      ? `验证命令：${title(verification)} · ${time(
+          verification.finishedAt || verification.createdAt,
+        )}`
+      : '执行目录已标记为验证通过。';
+  } else if (deliveryState === 'failed') {
+    deliveryDetail =
+      txt(execution || {}, 'error') ||
+      txt(verification || {}, 'output') ||
+      '执行或验证未通过，请查看错误信息。';
+  } else if (deliveryState === 'pending-review') {
+    deliveryDetail = artifacts.length
+      ? `已记录 ${artifacts.length} 个产物，但还没有验证通过的证据。`
+      : '任务已经返回结果，但还没有记录产物或验证证据。';
+  } else if (['queued', 'running'].includes(deliveryState)) {
+    deliveryDetail = '任务正在执行，完成后会在这里显示交付证据。';
+  } else if (deliveryState === 'state_unknown') {
+    deliveryDetail = '暂时无法确认执行状态，请先检查已有修改和事件记录。';
+  } else if (deliveryState === 'completed') {
+    deliveryDetail = '任务已完成，等待交付判断。';
+  } else if (deliveryState === 'cancelled') {
+    deliveryDetail = '任务已停止，已有结果和修改需要复核。';
+  } else if (deliveryState === 'interrupted') {
+    deliveryDetail = '任务在执行中断开，恢复前请先检查已有修改。';
+  } else if (deliveryState === 'blocked') {
+    deliveryDetail = '任务正在等待处理事项，完成后再进行交付判断。';
+  }
   const mutating =
     execution &&
     ['running', 'queued', 'state_unknown'].includes(status(execution));
@@ -1523,10 +1568,32 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
       <ErrorMessage error={error} />
       {!execution ? (
         <Empty busy={!error} />
-      ) : !workspace ? (
-        <p>尚未分配执行目录</p>
       ) : (
         <>
+          <div
+            className="delivery-summary"
+            data-tone={
+              deliveryState === 'failed'
+                ? 'error'
+                : deliveryState === 'verified'
+                  ? 'success'
+                  : ['queued', 'running', 'state_unknown'].includes(
+                        deliveryState,
+                      )
+                    ? 'active'
+                    : 'warning'
+            }
+          >
+            <div className="delivery-summary-heading">
+              <strong>交付判断</strong>
+              <Badge value={deliveryState} />
+            </div>
+            <p>{deliveryDetail}</p>
+          </div>
+          {!workspace ? (
+            <p>尚未分配执行目录；当前判断以任务结果和验证记录为准。</p>
+          ) : (
+            <>
           <dl>
             <dt>目录类型</dt>
             <dd>
@@ -1720,6 +1787,8 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
                   </span>
                 </div>
               ))}
+            </>
+          )}
             </>
           )}
         </>

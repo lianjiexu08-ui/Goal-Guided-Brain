@@ -89,11 +89,29 @@ export function createWorkbench({
         contextWindow: model.contextWindow,
       })),
     })),
-    tasks: store
-      .tasks()
-      .map(({ context: _context, log: _log, ...t }) => {
+    tasks: (() => {
+      const evidence = new Map();
+      for (const artifact of store.records.list('artifacts')) {
+        if (!artifact.taskId) continue;
+        const summary = evidence.get(artifact.taskId) || {
+          artifactCount: 0,
+          verificationStatus: null,
+        };
+        summary.artifactCount += 1;
+        if (artifact.kind === 'verification' && !summary.verificationStatus) {
+          summary.verificationStatus =
+            artifact.status ||
+            (artifact.verified === true ? 'verified' : 'pending-review');
+        }
+        evidence.set(artifact.taskId, summary);
+      }
+      return store.tasks().map(({ context: _context, log: _log, ...t }) => {
         const meta = store.records.get('task-meta', t.id) || {};
         const job = meta.jobId ? store.records.get('jobs', meta.jobId) : null;
+        const summary = evidence.get(t.id) || {
+          artifactCount: 0,
+          verificationStatus: null,
+        };
         return {
           ...t,
           log: '',
@@ -103,8 +121,11 @@ export function createWorkbench({
           spaceId: meta.spaceId || job?.spaceId || null,
           teamId: meta.teamId || job?.teamId || meta.spaceId || job?.spaceId || null,
           parentJobId: job?.parentJobId || null,
+          artifactCount: summary.artifactCount,
+          verificationStatus: summary.verificationStatus,
         };
-      }),
+      });
+    })(),
     sessions: store.sessions(),
     knowledge: store.knowledge(),
     spaces: store.teamSpaces().map((space) => ({
