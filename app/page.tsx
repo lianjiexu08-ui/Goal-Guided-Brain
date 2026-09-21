@@ -143,6 +143,7 @@ type TeamMessage = {
   id: string;
   spaceId: string;
   teamId?: string;
+  clientMessageId?: string | null;
   kind: string;
   senderType: 'owner' | 'agent' | 'system' | 'team';
   senderId: string;
@@ -151,6 +152,7 @@ type TeamMessage = {
   taskId?: string | null;
   content: string;
   status: string;
+  error?: string | null;
   createdAt: string;
 };
 type TeamRecruitmentMember = {
@@ -656,6 +658,29 @@ function Workbench() {
       setDrafts((s) => ({ ...s, [role]: '' }));
     });
   }
+  async function retryTeamMessage(message: TeamMessage) {
+    if (!teamSpace || message.status !== 'blocked') return;
+    await action(async () => {
+      const retried = await api<TeamMessage & { sessionId?: string }>(
+        `spaces/${teamSpace.id}/messages`,
+        'POST',
+        {
+          clientMessageId: message.clientMessageId || undefined,
+          content: message.content,
+          ...(selectedModelOption
+            ? {
+                model: selectedModelOption.model.id,
+                providerId: selectedModelOption.providerId,
+                allowModelWithoutTools: !selectedModelOption.model.tools,
+              }
+            : {}),
+        },
+      );
+      if (retried.sessionId) {
+        setSelected((s) => ({ ...s, [role]: retried.sessionId }));
+      }
+    });
+  }
   async function changeTeamModel(value: string) {
     const option = modelOptions.find((item) => item.key === value);
     if (!option) return;
@@ -1028,9 +1053,26 @@ function Workbench() {
                         ? data?.spaces?.find((item) => item.id === message.fromTeamId)?.name || '协作团队'
                         : roles.find((item) => item.id === message.senderId)?.name || '项目经理';
                     return (
-                    <div className={`team-message ${message.senderType === 'owner' ? 'from-user' : 'from-pm'}`} key={message.id}>
-                      <span className="message-label">{author} <small>{formatTime(message.createdAt)}</small></span>
+                    <div className={`team-message ${message.senderType === 'owner' ? 'from-user' : 'from-pm'} ${message.status === 'blocked' ? 'blocked' : ''}`} key={message.id}>
+                      <span className="message-label">
+                        {author} <small>{formatTime(message.createdAt)}</small>
+                        {message.status === 'blocked' && <em className="team-message-state">未发送</em>}
+                      </span>
                       <p>{message.content}</p>
+                      {message.status === 'blocked' && (
+                        <div className="team-message-blocked">
+                          <span>{message.error || '项目经理正在处理上一条消息。'}</span>
+                          {message.senderType === 'owner' && (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => void retryTeamMessage(message)}
+                            >
+                              重新发送
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                     );
                   })}

@@ -418,16 +418,24 @@ export function createWorkbench({
               .teamMessages(space.id)
               .find((message) => message.clientMessageId === clientMessageId && message.kind === 'request');
             if (existing && existing.status !== 'blocked') return send(200, existing);
-            const message = existing || store.saveTeamMessage({
-                spaceId: space.id,
-                teamId: space.id,
-                clientMessageId,
-                kind: 'request',
-                senderType: 'owner',
-                senderId: 'owner',
-                content,
-                status: 'sent',
-              }, `request:${space.id}:${clientMessageId}`);
+            const message = existing
+              ? store.saveTeamMessage(
+                  { ...existing, status: 'sent', taskId: null },
+                  existing.id,
+                )
+              : store.saveTeamMessage(
+                  {
+                    spaceId: space.id,
+                    teamId: space.id,
+                    clientMessageId,
+                    kind: 'request',
+                    senderType: 'owner',
+                    senderId: 'owner',
+                    content,
+                    status: 'sent',
+                  },
+                  `request:${space.id}:${clientMessageId}`,
+                );
             const recruitment = space.recruitment || {};
             const spaceTasks = store.tasks().filter((task) => {
               const meta = store.records.get('task-meta', task.id) || {};

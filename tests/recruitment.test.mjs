@@ -61,7 +61,7 @@ test('team recruitment keeps one PM session across completed discovery turns', a
     assert.equal(directMember.status, 400);
     assert.match(directMember.body.error, /尚未确认/);
     const sessionId = first.body.sessionId;
-    const concurrent = await request(`teams/${team.id}/messages`, { clientMessageId: 'recruit-concurrent', content: '在上一条还没完成时继续发送的需求。' }, 'POST');
+    const concurrent = await request(`teams/${team.id}/messages`, { clientMessageId: 'recruit-concurrent', content: '需要网页端、权限控制和可验收的开发计划。' }, 'POST');
     assert.equal(concurrent.status, 409);
     assert.match(concurrent.body.error, /正在处理上一条消息/);
     const concurrentRecord = (await request(`teams/${team.id}`)).body.messages.find(message => message.clientMessageId === 'recruit-concurrent');
@@ -70,9 +70,10 @@ test('team recruitment keeps one PM session across completed discovery turns', a
     assert.equal(runs.length, 1);
     runs[0].complete();
     await tick();
-    const second = await request(`teams/${team.id}/messages`, { clientMessageId: 'recruit-2', content: '需要网页端、权限控制和可验收的开发计划。' }, 'POST');
-    assert.equal(second.status, 201);
-    assert.equal(second.body.sessionId, sessionId);
+    const retried = await request(`teams/${team.id}/messages`, { clientMessageId: 'recruit-concurrent', content: concurrentRecord.content }, 'POST');
+    assert.equal(retried.status, 201);
+    assert.equal(retried.body.status, 'sent');
+    assert.equal(retried.body.sessionId, sessionId);
     await tick();
     assert.equal(runs.length, 2);
     assert.match(runs[1].prompt, /网页端、权限控制/);
