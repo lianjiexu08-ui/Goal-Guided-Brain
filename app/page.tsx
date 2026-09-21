@@ -1199,7 +1199,11 @@ function Workbench() {
                                 {!!skillNames.length && <small>绑定 Skill：{skillNames.slice(0, 3).join(' · ')}</small>}
                                 {!!member.tools?.length && <small>工具说明：{member.tools.slice(0, 3).join(' · ')}</small>}
                                 {!!capabilityNames.length && <small>绑定能力：{capabilityNames.slice(0, 3).join(' · ')}</small>}
-                                {!!toolLabels.length && <small>工具权限：{toolLabels.join(' · ')}</small>}
+                                {member.toolAccess ? (
+                                  !!toolLabels.length && <small>工具权限：{toolLabels.join(' · ')}</small>
+                                ) : (
+                                  <small>工具权限：沿用角色模板</small>
+                                )}
                                 {!!member.dependencies?.length && <small>依赖：{member.dependencies.slice(0, 2).join(' · ')}</small>}
                               </div>
                             </div>
