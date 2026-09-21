@@ -195,7 +195,12 @@ type TeamSpace = {
   teamType?: string;
   purpose?: string;
   collaboration?: { autoHandoff?: boolean; sharedBoard?: boolean; allowedTeamIds?: string[] };
-  memberSettings?: Record<string, { label?: string; responsibility?: string }>;
+  memberSettings?: Record<string, {
+    label?: string;
+    responsibility?: string;
+    modelHint?: string;
+    providerIds?: string[];
+  }>;
   recruitment?: TeamRecruitment;
   messages: TeamMessage[];
 };
@@ -333,6 +338,7 @@ function Workbench() {
   const [connectionError, setConnectionError] = useState('');
   const [selected, setSelected] = useState<Partial<Record<RoleId, string>>>({});
   const [selectedSpaceId, setSelectedSpaceId] = useState('');
+  const [modelOverrides, setModelOverrides] = useState<Record<string, string>>({});
   const [drafts, setDrafts] = useState<Record<RoleId, string>>({});
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
@@ -450,18 +456,32 @@ function Workbench() {
         model,
       })),
     );
+  const modelOverrideKey = `${teamSpace?.id || 'standalone'}:${role}`;
+  const currentMemberSettings = teamSpace?.memberSettings?.[role];
+  const isTeamMember = !!teamSpace?.memberRoleIds.includes(role);
+  const preferredModelId =
+    currentMemberSettings?.modelHint ||
+    (isTeamConversation ? projectManager?.model : assistant.model) ||
+    data?.config.model;
+  const preferredProviderIds = currentMemberSettings?.providerIds?.length
+    ? currentMemberSettings.providerIds
+    : isTeamConversation
+      ? projectManager?.providerIds || []
+      : assistant.providerIds || [];
   const roleModelOption = modelOptions.find(
     (option) =>
-      option.model.id === (projectManager?.model || data?.config.model) &&
-      (!projectManager?.providerIds?.length ||
-        projectManager.providerIds.includes(option.providerId)),
+      option.model.id === preferredModelId &&
+      (!preferredProviderIds.length || preferredProviderIds.includes(option.providerId)),
+  );
+  const teamModelOption = modelOptions.find(
+    (option) =>
+      option.model.id === teamSpace?.model &&
+      (!teamSpace?.providerId || option.providerId === teamSpace.providerId),
   );
   const selectedModelOption =
-    modelOptions.find(
-      (option) =>
-        option.model.id === teamSpace?.model &&
-        option.providerId === teamSpace?.providerId,
-    ) ||
+    modelOptions.find((option) => option.key === modelOverrides[modelOverrideKey]) ||
+    (currentMemberSettings?.modelHint ? roleModelOption : null) ||
+    (isTeamMember || isTeamConversation ? teamModelOption : null) ||
     roleModelOption ||
     modelOptions[0] ||
     null;
@@ -597,6 +617,9 @@ function Workbench() {
         role,
         sessionId: currentSession,
         prompt: drafts[role],
+        ...(isTeamMember && teamSpace
+          ? { teamId: teamSpace.id, spaceId: teamSpace.id }
+          : {}),
         ...(selectedModelOption
           ? {
               model: selectedModelOption.model.id,
@@ -610,15 +633,34 @@ function Workbench() {
     });
   }
   async function changeTeamModel(value: string) {
-    if (!teamSpace) return;
     const option = modelOptions.find((item) => item.key === value);
     if (!option) return;
     await action(async () => {
+      if (!teamSpace || !isTeamMember) {
+        setModelOverrides((current) => ({ ...current, [modelOverrideKey]: option.key }));
+        setNotice(`本次对话已切换到 ${option.providerName} · ${option.model.name}`);
+        return;
+      }
+      const currentSettings = teamSpace.memberSettings || {};
       await api(`spaces/${teamSpace.id}`, 'PUT', {
-        model: option.model.id,
-        providerId: option.providerId,
+        ...(role === teamSpace.pmRoleId
+          ? { model: option.model.id, providerId: option.providerId }
+          : {}),
+        memberSettings: {
+          ...currentSettings,
+          [role]: {
+            ...currentSettings[role],
+            modelHint: option.model.id,
+            providerIds: [option.providerId],
+          },
+        },
       });
-      setNotice(`已切换到 ${option.providerName} · ${option.model.name}`);
+      setModelOverrides((current) => {
+        const next = { ...current };
+        delete next[modelOverrideKey];
+        return next;
+      });
+      setNotice(`${assistantName} 已切换到 ${option.providerName} · ${option.model.name}`);
     });
   }
   async function confirmTeamRecruitment() {
@@ -1337,12 +1379,15 @@ function Workbench() {
                     </button>
                     <div>
                       {selectedModelOption ? (
-                        <label className="model-switcher" title="切换本次团队招募使用的模型">
+                        <label
+                          className="model-switcher"
+                          title={isTeamMember ? '切换当前团队成员使用的模型' : '仅切换本次独立对话使用的模型'}
+                        >
                           <span className="sr-only">选择模型</span>
                           <select
                             aria-label="选择模型"
                             value={selectedModelOption.key}
-                            disabled={busy || !teamSpace}
+                            disabled={busy}
                             onChange={(event) => void changeTeamModel(event.target.value)}
                           >
                             {modelOptions.map((option) => (

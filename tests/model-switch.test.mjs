@@ -123,3 +123,69 @@ test('team Chat persists its model choice and sends it to the project manager', 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('team member conversations retain team context and member model bindings', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-member-model-'));
+  const runs = [];
+  const app = createWorkbench({
+    dataDir: path.join(dir, 'data'),
+    workspace: path.join(dir, 'workspace'),
+    requireCredential: false,
+    runtimeFactory: (options) => ({
+      async start() {
+        runs.push(options);
+        options.onResult('成员模型已执行');
+        options.onDone('completed', '');
+      },
+      cancel() {
+        options.onDone('cancelled', '');
+      },
+    }),
+  });
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  await app.platform.ready;
+  const provider = app.platform.providers.save({
+    name: 'Member selectable fixture',
+    protocol: 'openai-completions',
+    baseUrl: 'http://127.0.0.1:9/v1',
+    models: [{ id: 'member-model', tools: true }],
+    priority: 1,
+  });
+  const request = async (route, body, method = 'GET') => {
+    const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  try {
+    const created = await request('teams', {
+      name: '成员模型团队',
+      goal: '验证团队成员对话的上下文与模型绑定。',
+      pmRoleId: 'project_manager',
+      memberRoleIds: ['project_manager', 'developer'],
+    }, 'POST');
+    assert.equal(created.status, 201);
+    const configured = await request(`teams/${created.body.id}`, {
+      memberSettings: {
+        project_manager: {},
+        developer: { modelHint: 'member-model', providerIds: [provider.id] },
+      },
+    }, 'PUT');
+    assert.equal(configured.status, 200);
+    const task = await request('tasks', {
+      role: 'developer',
+      teamId: created.body.id,
+      prompt: '在团队上下文中执行成员任务。',
+    }, 'POST');
+    assert.equal(task.status, 201);
+    await waitFor(() => runs.length === 1);
+    assert.equal(runs[0].route.providerId, provider.id);
+    assert.equal(runs[0].route.model, 'member-model');
+    assert.equal(app.platform.control.records.get('task-meta', task.body.id).teamId, created.body.id);
+  } finally {
+    await app.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -53,6 +53,13 @@ test('team recruitment keeps one PM session across completed discovery turns', a
     assert.match(bypass.body.error, /招募阶段只能通过招募流程推进/);
     const unchanged = await request(`teams/${team.id}`);
     assert.equal(unchanged.body.recruitment.phase, 'discovery');
+    const directMember = await request('tasks', {
+      role: 'developer',
+      teamId: team.id,
+      prompt: '在团队确认前直接执行成员任务。',
+    }, 'POST');
+    assert.equal(directMember.status, 400);
+    assert.match(directMember.body.error, /尚未确认/);
     const sessionId = first.body.sessionId;
     runs[0].complete();
     await tick();

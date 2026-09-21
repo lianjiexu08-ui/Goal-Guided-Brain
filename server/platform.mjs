@@ -70,8 +70,12 @@ export function createPlatform({
       const space = store.teamSpace(teamId);
       if (!space) throw new Error('团队空间不存在。');
       if (space.status !== 'active') throw new Error('团队空间当前不可接收新任务。');
-      if (space.pmRoleId !== input.role && input.parentTaskId === undefined)
+      const directTeamMemberTask =
+        space.pmRoleId !== input.role && input.parentTaskId === undefined;
+      if (directTeamMemberTask && input.ownerInitiated !== true)
         throw new Error('团队空间的新任务必须先交给项目经理。');
+      if (directTeamMemberTask && space.recruitment.phase !== 'confirmed')
+        throw new Error('团队招募方案尚未确认，不能直接联系成员。');
       if (input.parentTaskId && space.recruitment.phase !== 'confirmed')
         throw new Error('团队招募方案尚未确认，不能执行子任务。');
       if (!space.memberRoleIds.includes(input.role)) throw new Error('该智能体不属于当前团队。');
