@@ -121,6 +121,19 @@ test('multiple Chat teams keep independent ownership and can hand work to anothe
     assert.equal(collaborators.status, 200);
     assert.ok(collaborators.body.some((item) => item.id === created.body.id));
 
+    const waiting = await request('teams', {
+      name: '待确认团队',
+      goal: '尚未完成招募的团队。',
+      recruitment: { phase: 'discovery' },
+    }, 'POST');
+    const blocked = await request(`teams/${source.id}/collaborate`, {
+      targetTeamId: waiting.body.id,
+      clientMessageId: 'waiting-1',
+      content: '请在确认前接收这条请求。',
+    }, 'POST');
+    assert.equal(blocked.status, 409);
+    assert.match(blocked.body.error, /尚未完成招募/);
+
     const delegated = await request(`teams/${source.id}/collaborate`, {
       targetTeamId: created.body.id,
       clientMessageId: 'ops-1',

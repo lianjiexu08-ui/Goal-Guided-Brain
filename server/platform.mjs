@@ -64,6 +64,8 @@ export function createPlatform({
     if (!assistant || assistant.archived)
       throw new Error('助手不存在或已归档。');
     const teamId = input.teamId || input.spaceId || null;
+    let teamModelHint = '';
+    let teamProviderIds = [];
     if (teamId) {
       const space = store.teamSpace(teamId);
       if (!space) throw new Error('团队空间不存在。');
@@ -73,6 +75,19 @@ export function createPlatform({
       if (input.parentTaskId && space.recruitment.phase !== 'confirmed')
         throw new Error('团队招募方案尚未确认，不能执行子任务。');
       if (!space.memberRoleIds.includes(input.role)) throw new Error('该智能体不属于当前团队。');
+      const memberSettings = space.memberSettings[input.role] || {};
+      teamModelHint = typeof memberSettings.modelHint === 'string' && memberSettings.modelHint.trim()
+        ? memberSettings.modelHint
+        : typeof space.model === 'string' ? space.model : '';
+      teamProviderIds = Array.isArray(memberSettings.providerIds) ? memberSettings.providerIds : [];
+      if (Array.isArray(memberSettings.skillIds) && memberSettings.skillIds.length)
+        assistant = { ...assistant, skillIds: [...new Set([...(assistant.skillIds || []), ...memberSettings.skillIds])].slice(0, 3) };
+      if (Array.isArray(memberSettings.capabilityIds) && memberSettings.capabilityIds.length)
+        assistant = { ...assistant, capabilityIds: [...new Set([...(assistant.capabilityIds || []), ...memberSettings.capabilityIds])] };
+      if (memberSettings.toolAccess && typeof memberSettings.toolAccess === 'object')
+        assistant = { ...assistant, tools: { ...assistant.tools, ...memberSettings.toolAccess } };
+      if (teamProviderIds.length)
+        assistant = { ...assistant, providerIds: teamProviderIds };
       const duty = space.responsibilities[input.role] || space.memberSettings[input.role]?.responsibility;
       if (duty) assistant = { ...assistant, instructions: `${assistant.instructions}\n\n当前团队：${space.name}\n团队目标：${space.goal}\n本团队职责：${duty}` };
     }
@@ -96,12 +111,16 @@ export function createPlatform({
     const modelOverride =
       typeof input.model === 'string' && input.model.trim()
         ? input.model.trim().slice(0, 120)
-        : '';
+        : teamModelHint;
     const providerIds =
       input.providerIds ??
       (typeof input.providerId === 'string' && input.providerId.trim()
         ? [input.providerId.trim()]
-        : assistant.providerIds ?? []);
+        : teamProviderIds.length
+          ? teamProviderIds
+          : teamId && typeof store.teamSpace(teamId)?.providerId === 'string' && store.teamSpace(teamId).providerId
+            ? [store.teamSpace(teamId).providerId]
+            : assistant.providerIds ?? []);
     if (
       !Array.isArray(providerIds) ||
       providerIds.length > 100 ||

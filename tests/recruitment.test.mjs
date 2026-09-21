@@ -43,6 +43,11 @@ test('team recruitment keeps one PM session across completed discovery turns', a
     assert.equal(first.status, 201);
     await tick();
     assert.equal(runs.length, 1);
+    const recruitmentPatch = runs[0].options.capabilityPatch.find(item => item.id === 'workbench-orchestration');
+    const recruitmentToken = recruitmentPatch.config.headers.Authorization.replace(/^Bearer\s+/i, '');
+    const recruitmentPrincipal = app.platform.control.validateInstanceToken(recruitmentToken);
+    const discoveryRoster = app.platform.control.readTeamRoster(recruitmentPrincipal);
+    assert.deepEqual(discoveryRoster.members.map(member => member.id), [team.pmRoleId]);
     const sessionId = first.body.sessionId;
     runs[0].complete();
     await tick();
@@ -108,12 +113,16 @@ test('project manager proposes a Team Charter and owner confirmation materialize
     const client = new Client({ name: 'recruitment-test', version: '1' });
     clients.push(client);
     await client.connect(new StreamableHTTPClientTransport(new URL(patch.config.url), { requestInit: { headers: patch.config.headers } }));
+    const catalog = JSON.parse((await client.callTool({ name: 'list_capability_catalog', arguments: {} })).content[0].text);
+    assert.ok(catalog.skills.some(skill => skill.id === 'development-workflow'));
+    assert.ok(catalog.providers.some(item => item.id === provider.id && item.models.some(model => model.id === 'recruitment-model')));
+    assert.ok(catalog.capabilities.some(item => item.id === capability.id && item.enabled !== false));
     const proposed = JSON.parse((await client.callTool({ name: 'propose_team', arguments: {
       teamName: '交付小队',
       goal: '交付一个可上线的协作工具 MVP。',
       purpose: '完成需求、实现和资料整理。',
       members: [
-        { roleId: 'project_manager', responsibility: '澄清目标并协调交付。', deliverables: ['Team Charter'] },
+        { roleId: 'project_manager', responsibility: '澄清目标并协调交付。', deliverables: ['Team Charter'], capabilityIds: [capability.id], providerIds: [provider.id], modelHint: 'recruitment-model', toolAccess: { terminal: true } },
         { roleId: 'product', responsibility: '整理需求和验收标准。', deliverables: ['需求说明'], tools: ['需要终端执行'] },
         { roleId: 'developer', memberId: 'frontend', name: '前端开发', responsibility: '实现前端功能并运行测试。', deliverables: ['前端代码'], skillIds: ['development-workflow'], capabilityIds: [capability.id], providerIds: [provider.id], modelHint: 'recruitment-model', toolAccess: { files: true, web: false, terminal: true } },
         { roleId: 'developer', memberId: 'backend', name: '后端开发', responsibility: '实现后端功能并运行测试。', deliverables: ['后端代码'], dependencies: ['frontend'] },
@@ -149,6 +158,15 @@ test('project manager proposes a Team Charter and owner confirmation materialize
     assert.equal(frontendRoster.id, frontendId);
     assert.ok(frontendRoster.capabilityIds.includes(capability.id));
     assert.deepEqual(frontendRoster.runtimeTools, frontend.tools);
+    assert.ok(roster.templates.some(template => template.id === 'project_manager'));
+    assert.equal(roster.templates.some(template => template.id === frontendId), false);
+    const child = app.platform.control.createJob({ role: frontendId, prompt: '执行前端成员的模型路由校验。' }, principal);
+    assert.equal(app.platform.control.records.get('task-meta', child.taskId).modelOverride, 'recruitment-model');
+    const pmTask = app.platform.newTask({ role: team.pmRoleId, prompt: '验证项目经理团队能力快照。', teamId: team.id, spaceId: team.id });
+    const pmMeta = app.platform.control.records.get('task-meta', pmTask.id);
+    assert.equal(pmMeta.modelOverride, 'recruitment-model');
+    assert.ok(pmMeta.assistantSnapshot.capabilityIds.includes(capability.id));
+    assert.equal(pmMeta.assistantSnapshot.tools.terminal, true);
     const duplicate = await request(`teams/${team.id}/recruitment/confirm`, {}, 'POST');
     assert.equal(duplicate.status, 200);
     assert.equal(duplicate.body.recruitment.phase, 'confirmed');
@@ -190,6 +208,10 @@ test('team confirmation rejects disabled capabilities and unavailable model hint
     const disabled = app.platform.control.store.records.save('capabilities', {
       name: '未启用插件', kind: 'mcp', enabled: false, transport: 'streamable-http', url: 'https://disabled.example.test/mcp', tools: [],
     }, 'disabled-recruitment-capability');
+    const textProvider = app.platform.providers.save({
+      name: '纯文本招募模型', protocol: 'openai-completions', baseUrl: 'https://text-model.example.test/v1',
+      models: [{ id: 'recruitment-text-model', name: '纯文本招募模型', tools: false }], enabled: true,
+    });
     app.platform.control.proposeTeam({ teamName: '校验团队', goal: '验证绑定前置条件。', purpose: '避免不可执行成员进入团队。', members: [
       { roleId: 'developer', memberId: 'dev', responsibility: '实现功能。', capabilityIds: [disabled.id] },
     ] }, principal);
@@ -198,6 +220,16 @@ test('team confirmation rejects disabled capabilities and unavailable model hint
       { roleId: 'developer', memberId: 'dev', responsibility: '实现功能。', modelHint: 'missing-model' },
     ] }, principal);
     assert.throws(() => app.platform.control.confirmTeamRecruitment(team.id), /模型未在可用供应商中配置/);
+    app.platform.control.proposeTeam({ teamName: '校验团队', goal: '验证绑定前置条件。', purpose: '避免不可执行成员进入团队。', members: [
+      { roleId: 'developer', memberId: 'dev', responsibility: '实现功能。', providerIds: [textProvider.id], modelHint: 'recruitment-text-model' },
+    ] }, principal);
+    assert.throws(() => app.platform.control.confirmTeamRecruitment(team.id), /不支持成员所需的工具或能力/);
+    app.platform.control.proposeTeam({ teamName: '纯文本团队', goal: '只做文本整理。', purpose: '验证显式关闭工具后可以使用纯文本模型。', members: [
+      { roleId: 'developer', memberId: 'writer', responsibility: '整理文字内容。', providerIds: [textProvider.id], modelHint: 'recruitment-text-model', toolAccess: { files: false, web: false, terminal: false } },
+    ] }, principal);
+    const confirmed = app.platform.control.confirmTeamRecruitment(team.id);
+    const writerId = confirmed.recruitment.proposal.members.find(member => member.memberId === 'writer').agentId;
+    assert.deepEqual(app.platform.control.store.role(writerId).tools, { files: false, web: false, terminal: false });
   } finally {
     await app.close();
     fs.rmSync(fixture.dir, { recursive: true, force: true });

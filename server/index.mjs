@@ -341,6 +341,7 @@ export function createWorkbench({
             const targetId = required(body.targetTeamId || body.teamId, '目标团队');
             const target = store.teamSpaces().find((candidate) => candidate.id === targetId || candidate.chatId === targetId);
             if (!target || target.status !== 'active') throw new Error('目标团队不存在或已暂停。');
+            if (target.recruitment.phase !== 'confirmed') throw Object.assign(new Error('目标团队尚未完成招募。'), { status: 409 });
             if (target.id === space.id) throw new Error('目标团队不能是当前团队。');
             const allowed = Array.isArray(space.collaboration?.allowedTeamIds)
               ? space.collaboration.allowedTeamIds
@@ -372,6 +373,8 @@ export function createWorkbench({
               workspace: target.workspace,
               teamId: target.id,
               spaceId: target.id,
+              model: target.model || undefined,
+              providerId: target.providerId || undefined,
               sourceMessageId: message.id,
             });
             const linked = store.saveTeamMessage({ ...message, taskId: task.id }, message.id);

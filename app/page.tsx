@@ -418,9 +418,15 @@ function Workbench() {
     )
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const running = tasks.filter(isActive);
+  const rosterReady = teamSpace?.recruitment?.phase === 'confirmed';
+  const visibleMemberIds = teamSpace
+    ? rosterReady
+      ? teamSpace.memberRoleIds
+      : [teamSpace.pmRoleId]
+    : [];
   const teamMembers = teamSpace
     ? activeRoles
-        .filter((item) => teamSpace.memberRoleIds.includes(item.id))
+        .filter((item) => visibleMemberIds.includes(item.id))
         .sort((a, b) => Number(b.id === teamSpace.pmRoleId) - Number(a.id === teamSpace.pmRoleId))
     : activeRoles;
   const teamMessages = [...(teamSpace?.messages || [])].sort((a, b) =>
@@ -933,7 +939,7 @@ function Workbench() {
                 ) : null}
                 <button className="secondary-button" type="button" disabled={busy || !activeRoles.length} onClick={() => void startRecruitment()}><Plus size={15} /> 新建招募</button>
                 <button className="text-button" type="button" onClick={openTeamCreate}>高级配置</button>
-                <div className="team-health"><span className="live-dot" /> {teamMembers.length} 位成员在线</div>
+                <div className="team-health"><span className="live-dot" /> {rosterReady ? `${teamMembers.length} 位成员已配置` : recruitment?.phase === 'proposed' ? '方案待确认' : '正在招募'}</div>
               </div>
             </div>
             <div className="team-grid">
@@ -1010,6 +1016,7 @@ function Workbench() {
                     );
                   })}
                 </div>
+                {!rosterReady && <div className="team-roster-pending">Team Charter 确认后，候选成员才会创建并出现在这里。</div>}
                 <div className="team-summary"><div className="team-summary-title"><ListChecks size={16} />任务总览</div><div className="team-metrics"><span><strong>{teamOpenTasks.length}</strong><small>进行中</small></span><span><strong>{teamTasks.filter((task) => task.status === 'completed').length}</strong><small>已完成</small></span></div><button className="text-button" onClick={() => setView('tasks')}>查看全部任务 <ArrowRight size={13} /></button></div>
               </aside>
             </div>

@@ -1502,6 +1502,7 @@ h1 {
 .team-member-copy small { margin-top: 3px; color: #91a29f; font-size: 10px; }
 .team-member-state { display: flex; align-items: center; gap: 5px; color: #9aa9a6; font-size: 10px; white-space: nowrap; }
 .team-member-state.working { color: #37816e; }
+.team-roster-pending { margin-top: 12px; padding: 11px 12px; border: 1px dashed #cfe2d9; border-radius: 12px; color: #77918a; background: #f4faf7; font-size: 11px; line-height: 1.55; }
 .team-summary { margin-top: 22px; padding: 17px 14px; border: 1px solid #dfebe6; border-radius: 15px; background: #fff; }
 .team-summary-title { display: flex; align-items: center; gap: 7px; color: #5a7773; font-size: 12px; font-weight: 650; }
 .team-metrics { display: flex; gap: 24px; margin: 17px 0 16px; }

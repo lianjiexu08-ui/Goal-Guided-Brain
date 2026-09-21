@@ -9,12 +9,13 @@ const string = { type: 'string' };
 const objectSchema = (properties = {}, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const tools = [
   { name: 'list_capabilities', description: '查看当前助手本次执行已绑定的 Skill、MCP 和 Plugin 能力；只读，不会授予新权限。', inputSchema: objectSchema() },
+  { name: 'list_capability_catalog', description: '查看当前工作台已启用的 Skill、MCP 和 Plugin 目录及稳定 ID；只读，用于设计 Team Charter，不会自动授予权限。', inputSchema: objectSchema() },
   { name: 'run_capability_command', description: '运行当前助手已绑定 Plugin 中一个可调用的命令；命令会作为受控子任务排队，不会直接获得额外权限。', inputSchema: objectSchema({ capabilityId: string, commandId: string, arguments: string }, ['capabilityId', 'commandId']) },
   { name: 'list_teams', description: '查看当前团队允许协作的其他长期团队；只返回团队摘要，不返回其他团队的私有消息。', inputSchema: objectSchema() },
   { name: 'delegate_to_team', description: '把明确的协作目标委派给另一个长期团队的项目经理；目标团队使用自己的模型、能力、预算和权限。', inputSchema: objectSchema({ teamId: string, prompt: string, acceptance: string, idempotencyKey: string }, ['teamId', 'prompt', 'idempotencyKey']) },
   { name: 'read_team_task', description: '读取已获准协作团队中的一个委派任务状态和结果。', inputSchema: objectSchema({ taskId: string }, ['taskId']) },
   { name: 'read_team_roster', description: '读取当前已确认团队的成员实例、职责和可用角色模板；招募阶段只返回模板和当前方案。', inputSchema: objectSchema() },
-  { name: 'propose_team', description: '在多轮澄清完成后保存待用户确认的 Team Charter。只保存招募草案，不创建成员、不分派任务；最终确认必须由用户在团队招募界面完成。', inputSchema: objectSchema({
+  { name: 'propose_team', description: '在多轮澄清完成后保存待用户确认的 Team Charter。用 skillIds、capabilityIds、providerIds 和 toolAccess 写入实际权限，skills/tools 仅作展示说明。只保存招募草案，不创建成员、不分派任务；最终确认必须由用户在团队招募界面完成。', inputSchema: objectSchema({
     teamName: string, goal: string, purpose: string,
     members: { type: 'array', minItems: 1, maxItems: 8, items: objectSchema({
       memberId: string, roleId: string, name: string, responsibility: string,
@@ -110,6 +111,40 @@ export function createOrchestrationServer({ control, token, capabilities }) {
                 } : null,
               } : { id, name: id, kind: 'unknown', enabled: false, tools: [] };
             }),
+          };
+          break;
+        }
+        case 'list_capability_catalog': {
+          response = {
+            skills: SKILLS.map(skill => ({ id: skill.id, name: skill.name, role: skill.role })),
+            providers: control.records.list('providers')
+              .filter(provider => provider.enabled !== false)
+              .map(provider => ({
+                id: provider.id,
+                name: provider.name,
+                models: (provider.models || []).map(model => ({
+                  id: model.id,
+                  name: model.name,
+                  tools: model.tools === true,
+                  vision: model.vision === true,
+                  contextWindow: model.contextWindow,
+                })),
+              })),
+            capabilities: control.records.list('capabilities')
+              .filter(capability => capability.enabled !== false)
+              .map(capability => ({
+                id: capability.id,
+                name: capability.name,
+                kind: capability.kind,
+                version: capability.version || null,
+                description: capability.description || '',
+                tools: Array.isArray(capability.tools) ? capability.tools : [],
+                health: capability.health ? {
+                  ok: capability.health.ok === true,
+                  checkedAt: capability.health.checkedAt || null,
+                  toolCount: Array.isArray(capability.health.tools) ? capability.health.tools.length : null,
+                } : null,
+              })),
           };
           break;
         }

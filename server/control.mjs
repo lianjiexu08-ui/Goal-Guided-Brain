@@ -223,14 +223,16 @@ export class ControlPlane {
         artifacts: this.records.list('artifacts').filter(artifact => artifact.taskId === item.taskId) })),
       checkpoints: this.records.list('checkpoints').filter(item => item.groupId === job.groupId).slice(0, 20),
     });
+    const parentMeta = this.records.get('task-meta', job.taskId) || {};
     const task = this.createTask({ role: job.role, prompt: `汇总已完成子任务，验证完成条件并交付最终成果。不得再次分派子任务。\n${job.goal}`,
       workspace: job.workspace, nodeId: job.nodeId, workspaceKey: job.workspaceKey, workspaceMode: 'isolated', jobId: job.id,
       spaceId: job.spaceId || undefined,
       teamId: job.teamId || job.spaceId || undefined,
       sourceMessageId: job.sourceMessageId || undefined,
       sourceTaskId: job.taskId, contextExtra, requirementVersion: job.requirementVersion,
-      providerIds: this.records.get('task-meta', job.taskId)?.allowedProviderIds || this.records.get('task-meta', job.taskId)?.providerIds,
-      assistantSnapshot: this.records.get('task-meta', job.taskId)?.assistantSnapshot });
+      model: parentMeta.modelOverride || undefined,
+      providerIds: parentMeta.allowedProviderIds || parentMeta.providerIds,
+      assistantSnapshot: parentMeta.assistantSnapshot });
     this.records.save('task-meta', { ...this.records.get('task-meta', task.id), jobId: job.id, groupId: job.groupId,
       batchId: job.batchId, nodeId: job.nodeId, workspaceKey: job.workspaceKey, permissions: job.permissions,
       requirementVersion: job.requirementVersion, teamId: job.teamId || job.spaceId || null, summary: true }, task.id);
@@ -455,13 +457,32 @@ export class ControlPlane {
       throw fail(`招募方案包含未启用的模型供应商：${unavailableProviders.join('、')}。请先启用供应商或移除该绑定。`, 409);
     const invalidModels = proposal.members.filter(member => {
       if (!member.modelHint) return false;
-      const candidates = member.providerIds?.length
-        ? providerRows.filter(provider => member.providerIds.includes(provider.id) && provider.enabled !== false)
+      const templateProviderIds = this.store.role(member.roleId)?.providerIds || [];
+      const allowedProviderIds = member.providerIds?.length ? member.providerIds : templateProviderIds;
+      const candidates = allowedProviderIds.length
+        ? providerRows.filter(provider => allowedProviderIds.includes(provider.id) && provider.enabled !== false)
         : providerRows.filter(provider => provider.enabled !== false);
       return !candidates.some(provider => provider.models?.some(model => model.id === member.modelHint));
     }).map(member => `${member.memberId || member.roleId}:${member.modelHint}`);
     if (invalidModels.length)
       throw fail(`招募方案中的模型未在可用供应商中配置：${invalidModels.join('、')}。请先配置模型或移除该建议。`, 409);
+    const incompatibleModels = proposal.members.flatMap(member => {
+      if (!member.modelHint) return [];
+      const template = this.store.role(member.roleId);
+      const effectiveTools = { ...template?.tools, ...member.toolAccess };
+      const requiresToolCalling = Object.values(effectiveTools).some(Boolean) || (member.capabilityIds || []).length > 0;
+      if (!requiresToolCalling) return [];
+      const templateProviderIds = template?.providerIds || [];
+      const allowedProviderIds = member.providerIds?.length ? member.providerIds : templateProviderIds;
+      const candidates = allowedProviderIds.length
+        ? providerRows.filter(provider => allowedProviderIds.includes(provider.id) && provider.enabled !== false)
+        : providerRows.filter(provider => provider.enabled !== false);
+      const model = candidates.flatMap(provider => provider.models || [])
+        .find(candidate => candidate.id === member.modelHint && (!requiresToolCalling || candidate.tools === true));
+      return model ? [] : [`${member.memberId || member.roleId}:${member.modelHint}`];
+    });
+    if (incompatibleModels.length)
+      throw fail(`招募方案中的模型不支持成员所需的工具或能力：${incompatibleModels.join('、')}。请更换支持工具调用的模型，或明确关闭该成员的工具权限。`, 409);
     const unavailable = proposal.members
       .map(member => member.roleId)
       .filter(roleId => {
@@ -527,8 +548,12 @@ export class ControlPlane {
   readTeamRoster(principal) {
     const { team } = this.currentTeam(principal);
     const roles = this.store.roles().filter(role => !role.archived);
+    const rosterRoleIds = team.recruitment.phase === 'confirmed' ? team.memberRoleIds : [team.pmRoleId];
+    const dynamicRoleIds = new Set(this.store.teamSpaces().flatMap(space => Object.entries(space.memberSettings || {})
+      .filter(([roleId, settings]) => settings?.templateRoleId && roleId !== space.pmRoleId)
+      .map(([roleId]) => roleId)));
     return { teamId: team.id, name: team.name, recruitment: team.recruitment,
-      members: roles.filter(role => team.memberRoleIds.includes(role.id)).map(role => ({
+      members: roles.filter(role => rosterRoleIds.includes(role.id)).map(role => ({
         id: role.id, name: team.memberSettings[role.id]?.label || role.name,
         responsibility: team.responsibilities[role.id] || '', model: role.model,
         templateRoleId: team.memberSettings[role.id]?.templateRoleId || null,
@@ -543,7 +568,7 @@ export class ControlPlane {
         toolAccess: team.memberSettings[role.id]?.toolAccess || null,
         dependencies: team.memberSettings[role.id]?.dependencies || [],
       })),
-      templates: roles.map(role => ({ id: role.id, name: role.name, desc: role.desc, model: role.model, skillIds: role.skillIds, tools: role.tools })),
+      templates: roles.filter(role => !dynamicRoleIds.has(role.id)).map(role => ({ id: role.id, name: role.name, desc: role.desc, model: role.model, skillIds: role.skillIds, tools: role.tools })),
     };
   }
   collaborationAllowed(source, target) {
