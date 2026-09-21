@@ -433,6 +433,8 @@ function EntityEditor({
     initialForm(collection, initial, data),
   );
   const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState('');
   const [preview, setPreview] = useState<string[]>([]);
   const [envBindings, setEnvBindings] = useState<
@@ -1297,8 +1299,74 @@ function EntityEditor({
               </>
             )}
           </fieldset>
+          {testResult && (
+            <div
+              style={{
+                margin: '10px 0',
+                padding: '10px 14px',
+                borderRadius: '8px',
+                fontSize: '13px',
+                background: testResult.ok ? 'rgba(34, 197, 94, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                color: testResult.ok ? '#4ade80' : '#f87171',
+                border: `1px solid ${testResult.ok ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <span>{String(testResult.message || (testResult.ok ? '测试通过' : '测试失败'))}</span>
+              {typeof testResult.latencyMs === 'number' && (
+                <span style={{ fontSize: '11px', opacity: 0.8 }}>{testResult.latencyMs}ms</span>
+              )}
+            </div>
+          )}
           <ErrorMessage error={error} />
           <div className="manage-form-footer">
+            {['credentials', 'resources'].includes(collection) && (
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={
+                  busy ||
+                  testing ||
+                  (collection === 'credentials'
+                    ? !form.value
+                    : form.kind === 'project'
+                      ? !form.path
+                      : !form.host)
+                }
+                onClick={async () => {
+                  setTesting(true);
+                  setTestResult(null);
+                  setError('');
+                  try {
+                    const endpoint = initial?.id
+                      ? `${collection}/${initial.id}/probe`
+                      : `${collection}/probe`;
+                    const res = await api<Record<string, unknown>>(
+                      endpoint,
+                      'POST',
+                      form,
+                    );
+                    setTestResult(res);
+                  } catch (err) {
+                    setTestResult({
+                      ok: false,
+                      message: (err as Error).message,
+                    });
+                  } finally {
+                    setTesting(false);
+                  }
+                }}
+              >
+                {testing ? (
+                  <LoaderCircle className="spin" size={16} />
+                ) : (
+                  <Activity size={16} />
+                )}
+                测试连通性
+              </button>
+            )}
             <button
               type="button"
               className="secondary-button"
@@ -2738,6 +2806,9 @@ export function Management({
     string,
     unknown
   > | null>(null);
+  const [probeCredentialItem, setProbeCredentialItem] = useState<Entity | null>(null);
+  const [probeCredentialResult, setProbeCredentialResult] = useState<Record<string, unknown> | null>(null);
+  const [probeTargetUrl, setProbeTargetUrl] = useState('');
   const [restoring, setRestoring] = useState<Entity | null>(null);
   const [restoreResult, setRestoreResult] = useState<Entity | null>(null);
   const refresh = useCallback(async () => {
@@ -2873,6 +2944,36 @@ export function Management({
             setProbeModel(entityList(item.models)[0]?.id || '');
             setProbeTools(item.protocol !== 'typesafe-system-one');
             setProbeResult(null);
+          }}
+        />
+      )}
+      {collection === 'credentials' && (
+        <IconButton
+          icon={Activity}
+          label={`测试 ${title(item)}`}
+          disabled={busy}
+          onClick={() => {
+            setProbeCredentialItem(item);
+            setProbeCredentialResult(null);
+            setProbeTargetUrl('');
+          }}
+        />
+      )}
+      {collection === 'resources' && (
+        <IconButton
+          icon={Activity}
+          label={`测试 ${title(item)}`}
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              const res = await api<Record<string, unknown>>(`resources/${item.id}/probe`, 'POST');
+              setNotice(String(res.message || (res.ok ? '资源测试通过' : '资源测试失败')));
+            } catch (err) {
+              setNotice(`测试失败: ${(err as Error).message}`);
+            } finally {
+              setBusy(false);
+            }
           }}
         />
       )}
@@ -4093,6 +4194,69 @@ export function Management({
               <div className="manage-detail">
                 <h3>测试结果</h3>
                 <pre>{JSON.stringify(probeResult, null, 2)}</pre>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+      )}
+      {probeCredentialItem && (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open && !busy) {
+              setProbeCredentialItem(null);
+              setProbeCredentialResult(null);
+            }
+          }}
+        >
+          <DialogContent className="manage-dialog">
+            <DialogTitle>测试凭据：{title(probeCredentialItem)}</DialogTitle>
+            <DialogDescription className="sr-only">
+              凭据可用性与连通测试
+            </DialogDescription>
+            <form
+              className="manage-form"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                setBusy(true);
+                setProbeCredentialResult(null);
+                try {
+                  const res = await api<Record<string, unknown>>(
+                    `credentials/${probeCredentialItem.id}/probe`,
+                    'POST',
+                    { targetUrl: probeTargetUrl },
+                  );
+                  setProbeCredentialResult(res);
+                } catch (err) {
+                  setError((err as Error).message);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              <label>
+                自定义探测地址（可选，留空则自动测试模型服务或格式校验）
+                <input
+                  type="url"
+                  placeholder="https://api.openai.com/v1/models"
+                  value={probeTargetUrl}
+                  onChange={(e) => setProbeTargetUrl(e.target.value)}
+                />
+              </label>
+              <ErrorMessage error={error} />
+              <button className="primary-button" disabled={busy}>
+                {busy ? (
+                  <LoaderCircle className="spin" size={16} />
+                ) : (
+                  <Activity size={16} />
+                )}
+                开始测试
+              </button>
+            </form>
+            {probeCredentialResult && (
+              <div className="manage-detail">
+                <h3>测试结果</h3>
+                <pre>{JSON.stringify(probeCredentialResult, null, 2)}</pre>
               </div>
             )}
           </DialogContent>

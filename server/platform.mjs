@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import net from 'node:net';
 import { randomUUID, createHash } from 'node:crypto';
 import { Vault } from './vault.mjs';
 import { ProviderService } from './providers.mjs';
@@ -969,6 +970,121 @@ export function createPlatform({
     }
     if (collection === 'credentials') {
       if (method === 'GET') return ok(vault.list());
+      if (method === 'POST' && (action === 'probe' || id === 'probe')) {
+        const secret = (id && id !== 'probe') ? vault.get(id) : body.value;
+        if (!secret) throw new Error('凭据内容为空或凭据不存在。');
+        const kind = body.kind || (id && id !== 'probe' ? vault.list().find((e) => e.id === id)?.kind : 'api_key') || 'api_key';
+        const targetUrl = typeof body.targetUrl === 'string' && body.targetUrl.trim() ? body.targetUrl.trim() : '';
+        const started = Date.now();
+
+        // 探测逻辑
+        try {
+          if (targetUrl) {
+            const parsed = new URL(targetUrl);
+            const resp = await fetch(parsed.href, {
+              method: 'GET',
+              headers: { Authorization: `Bearer ${secret}` },
+              signal: AbortSignal.timeout(10000),
+            });
+            return ok({
+              ok: resp.ok,
+              status: resp.status,
+              latencyMs: Date.now() - started,
+              message: resp.ok ? '自定义地址测试成功' : `服务返回状态码 HTTP ${resp.status}`,
+              checkedAt: nowIso(),
+            });
+          }
+
+          if (kind === 'ssh_key') {
+            const hasHeader = /BEGIN [A-Z0-9_-]+ PRIVATE KEY/i.test(secret);
+            return ok({
+              ok: hasHeader,
+              latencyMs: Date.now() - started,
+              message: hasHeader ? 'SSH 私钥格式有效' : '私钥内容缺少标准标头 (BEGIN ... PRIVATE KEY)',
+              checkedAt: nowIso(),
+            });
+          }
+
+          // 默认尝试针对常见 API 进行探测或检测 Key 格式
+          // 1. 如果匹配 sk-ant- (Anthropic)
+          if (secret.startsWith('sk-ant-')) {
+            const resp = await fetch('https://api.anthropic.com/v1/models', {
+              headers: {
+                'x-api-key': secret,
+                'anthropic-version': '2023-06-01',
+              },
+              signal: AbortSignal.timeout(10000),
+            });
+            return ok({
+              ok: resp.ok,
+              status: resp.status,
+              latencyMs: Date.now() - started,
+              message: resp.ok ? 'Anthropic 凭据校验通过' : `Anthropic 返回 HTTP ${resp.status}`,
+              checkedAt: nowIso(),
+            });
+          }
+
+          // 2. 如果包含 AIza (Gemini)
+          if (secret.startsWith('AIza')) {
+            const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${secret}`, {
+              signal: AbortSignal.timeout(10000),
+            });
+            return ok({
+              ok: resp.ok,
+              status: resp.status,
+              latencyMs: Date.now() - started,
+              message: resp.ok ? 'Gemini 凭据校验通过' : `Google API 返回 HTTP ${resp.status}`,
+              checkedAt: nowIso(),
+            });
+          }
+
+          // 3. 通用 OpenAI / DeepSeek 兼容探测
+          const testEndpoint = secret.startsWith('sk-') && secret.length > 40 && !secret.startsWith('sk-proj-')
+            ? 'https://api.deepseek.com/models'
+            : 'https://api.openai.com/v1/models';
+
+          const resp = await fetch(testEndpoint, {
+            headers: { Authorization: `Bearer ${secret}` },
+            signal: AbortSignal.timeout(10000),
+          });
+
+          if (resp.ok) {
+            return ok({
+              ok: true,
+              status: resp.status,
+              latencyMs: Date.now() - started,
+              message: 'API Key 连通并验证通过',
+              checkedAt: nowIso(),
+            });
+          }
+
+          // 如果因为 401 失败
+          if (resp.status === 401 || resp.status === 403) {
+            return ok({
+              ok: false,
+              status: resp.status,
+              latencyMs: Date.now() - started,
+              message: `认证失败 (HTTP ${resp.status})，请检查 Key 是否有效`,
+              checkedAt: nowIso(),
+            });
+          }
+
+          return ok({
+            ok: resp.status < 500,
+            status: resp.status,
+            latencyMs: Date.now() - started,
+            message: `接口响应 HTTP ${resp.status}`,
+            checkedAt: nowIso(),
+          });
+        } catch (err) {
+          return ok({
+            ok: false,
+            latencyMs: Date.now() - started,
+            message: err.name === 'TimeoutError' ? '请求连接超时' : redact(err.message, [secret]),
+            checkedAt: nowIso(),
+          });
+        }
+      }
       if (method === 'POST' || method === 'PUT')
         return ok(await vault.put(body, id));
       if (method === 'DELETE') return ok({ ok: vault.remove(id) });
@@ -983,6 +1099,62 @@ export function createPlatform({
     }
     if (collection === 'resources') {
       if (method === 'GET') return ok(records.list(collection));
+      if (method === 'POST' && (action === 'probe' || id === 'probe')) {
+        const row = (id && id !== 'probe') ? records.get(collection, id) : null;
+        const resData = { ...row, ...body };
+        const started = Date.now();
+        if (resData.kind === 'project') {
+          const p = resData.path ? path.resolve(resData.path) : '';
+          if (!p) throw new Error('项目路径不能为空。');
+          const exists = fs.existsSync(p);
+          if (!exists) {
+            return ok({
+              ok: false,
+              latencyMs: Date.now() - started,
+              message: `路径不存在：${p}`,
+              checkedAt: nowIso(),
+            });
+          }
+          const isDir = fs.statSync(p).isDirectory();
+          const hasGit = fs.existsSync(path.join(p, '.git'));
+          return ok({
+            ok: isDir,
+            latencyMs: Date.now() - started,
+            message: isDir
+              ? `项目目录有效${hasGit ? '（已检测到 Git 仓库）' : ''}`
+              : `路径不是目录：${p}`,
+            checkedAt: nowIso(),
+          });
+        }
+        const host = resData.host ? String(resData.host).trim() : '';
+        const port = Number(resData.port || 22);
+        if (!host) throw new Error('服务器地址不能为空。');
+        const probeResult = await new Promise((resolve) => {
+          const socket = new net.Socket();
+          socket.setTimeout(4000);
+          socket.on('connect', () => {
+            socket.destroy();
+            resolve({ ok: true });
+          });
+          socket.on('timeout', () => {
+            socket.destroy();
+            resolve({ ok: false, error: `连接 ${host}:${port} 超时` });
+          });
+          socket.on('error', (err) => {
+            socket.destroy();
+            resolve({ ok: false, error: err.message });
+          });
+          socket.connect(port, host);
+        });
+        return ok({
+          ok: probeResult.ok,
+          latencyMs: Date.now() - started,
+          message: probeResult.ok
+            ? `TCP 连通成功 (${host}:${port})`
+            : `连接失败: ${probeResult.error}`,
+          checkedAt: nowIso(),
+        });
+      }
       if (method === 'DELETE')
         return ok({ ok: records.remove(collection, id) });
       if (['POST', 'PUT'].includes(method)) {

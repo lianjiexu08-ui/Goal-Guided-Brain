@@ -849,15 +849,18 @@ function Workbench() {
   return (
     <>
       <Sidebar className="work-sidebar">
-        <SidebarHeader>
+        <SidebarHeader className="brand-header">
           <div className="brand">
             <div className="brand-symbol">
-              <Layers3 size={23} />
+              <Layers3 size={20} />
             </div>
-            <div>
-              Goal-Guided<span>BRAIN · DSH WORKSPACE</span>
+            <div className="brand-info">
+              <div className="brand-title-row">
+                <span className="brand-title">Goal-Guided</span>
+                <span className="version">01</span>
+              </div>
+              <span className="brand-subtitle">BRAIN · DSH WORKSPACE</span>
             </div>
-            <span className="version">01</span>
           </div>
         </SidebarHeader>
         <SidebarContent>

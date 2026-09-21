@@ -193,3 +193,32 @@ test('manual monitor checks keep disabled rules disabled and record history', as
     1,
   );
 });
+
+test('resource and credential probes validate project paths and tcp connection', async (t) => {
+  const { request, workspace } = await fixture(t);
+  
+  // 1. 测试项目目录探测
+  const projectProbe = await request('resources/probe', {
+    kind: 'project',
+    path: workspace,
+  });
+  assert.equal(projectProbe.status, 200);
+  assert.equal(projectProbe.body.ok, true);
+
+  // 2. 测试不存在的目录探测
+  const invalidProject = await request('resources/probe', {
+    kind: 'project',
+    path: path.join(workspace, 'non-existent-dir-12345'),
+  });
+  assert.equal(invalidProject.status, 200);
+  assert.equal(invalidProject.body.ok, false);
+
+  // 3. 测试凭据格式校验（如 SSH 私钥）
+  const sshProbe = await request('credentials/probe', {
+    kind: 'ssh_key',
+    value: '-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----',
+  });
+  assert.equal(sshProbe.status, 200);
+  assert.equal(sshProbe.body.ok, true);
+});
+
