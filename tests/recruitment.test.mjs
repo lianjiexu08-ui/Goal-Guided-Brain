@@ -61,6 +61,13 @@ test('team recruitment keeps one PM session across completed discovery turns', a
     assert.equal(directMember.status, 400);
     assert.match(directMember.body.error, /尚未确认/);
     const sessionId = first.body.sessionId;
+    const concurrent = await request(`teams/${team.id}/messages`, { clientMessageId: 'recruit-concurrent', content: '在上一条还没完成时继续发送的需求。' }, 'POST');
+    assert.equal(concurrent.status, 409);
+    assert.match(concurrent.body.error, /正在处理上一条消息/);
+    const concurrentRecord = (await request(`teams/${team.id}`)).body.messages.find(message => message.clientMessageId === 'recruit-concurrent');
+    assert.equal(concurrentRecord.status, 'blocked');
+    assert.match(concurrentRecord.error, /正在处理上一条消息/);
+    assert.equal(runs.length, 1);
     runs[0].complete();
     await tick();
     const second = await request(`teams/${team.id}/messages`, { clientMessageId: 'recruit-2', content: '需要网页端、权限控制和可验收的开发计划。' }, 'POST');

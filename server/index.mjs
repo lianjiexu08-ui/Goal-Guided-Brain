@@ -412,9 +412,12 @@ export function createWorkbench({
               const meta = store.records.get('task-meta', task.id) || {};
               return meta.spaceId === space.id && task.role === space.pmRoleId;
             });
-            const pmTask = spaceTasks.find((task) => ['queued', 'running'].includes(task.status))
+            const activePmTask = spaceTasks.find((task) => ['queued', 'running'].includes(task.status));
+            const pmTask = activePmTask
               || (recruitment.sessionId && spaceTasks.find((task) => task.sessionId === recruitment.sessionId));
             try {
+              if (activePmTask)
+                throw Object.assign(new Error('项目经理正在处理上一条消息，请等待完成后再继续。'), { status: 409 });
               const task = newTask({
                 role: space.pmRoleId,
                 prompt: recruitment.phase === 'confirmed'
