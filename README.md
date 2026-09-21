@@ -2,6 +2,8 @@
 
 Goal-Guided Brain 是一个服务个人目标的智能协作工作空间，使用 DSH 运行模型与工具。支持多个模型供应商、助手协作、隔离开发目录、Skill/MCP/插件、服务器资料、定时任务和监控。可以纯本地部署，也可以由云端控制端调度出站连接的执行节点。
 
+完整的产品定位、架构、团队工作流、模型与能力配置、CLI、API、权限边界和迭代路线见 [项目全景说明](docs/project-overview.md)。
+
 ## 启动
 
 需要 Node.js 22.13+（建议 24+）和 Git。终端 CLI 支持 Windows 10/11（PowerShell 或 cmd）、macOS 和 Linux，不要求 WSL；Linux 常驻服务和远程执行节点仍可按 [部署说明](deploy/README.md) 单独配置。
