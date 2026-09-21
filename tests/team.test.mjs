@@ -184,6 +184,21 @@ test('multiple Chat teams keep independent ownership and can hand work to anothe
     );
     assert.ok(outgoing);
     assert.equal(outgoing.relatedMessageId, detail.body.messages[0].id);
+
+    // A retry must repair a missing source trace instead of creating a second target task.
+    const sourceTraceId = `handoff:${source.id}:${created.body.id}:ops-1:source`;
+    assert.equal(app.platform.control.records.remove('space-messages', sourceTraceId), true);
+    const retried = await request(`teams/${source.id}/collaborate`, {
+      targetTeamId: created.body.id,
+      clientMessageId: 'ops-1',
+      content: '请建立本项目的发布检查和运行监控清单。',
+    }, 'POST');
+    assert.equal(retried.status, 200);
+    assert.equal(retried.body.taskId, delegated.body.taskId);
+    assert.equal(retried.body.sourceMessageId, sourceTraceId);
+    const restoredSource = app.platform.control.records.get('space-messages', sourceTraceId);
+    assert.equal(restoredSource.relatedMessageId, detail.body.messages[0].id);
+    assert.equal(restoredSource.taskId, delegated.body.taskId);
   } finally {
     await app.close();
     fs.rmSync(fixture.dir, { recursive: true, force: true });

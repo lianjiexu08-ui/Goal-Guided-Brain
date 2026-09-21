@@ -382,14 +382,30 @@ export function createWorkbench({
               ? space.collaboration.allowedTeamIds
               : [];
             if (allowed.length && !allowed.includes(target.id) && !allowed.includes(target.chatId)) throw new Error('当前团队未允许与目标团队协作。');
-            const targetJobs = store.records.list('jobs').filter((job) => (job.teamId || job.spaceId) === target.id);
-            if (targetJobs.length >= (target.autonomy?.maxJobs || 32)) throw new Error('目标团队已达到任务上限。');
             const content = required(body.content, '协作目标', 32000);
             const clientMessageId = required(body.clientMessageId || randomUUID(), '消息 ID', 200);
             const handoffId = `handoff:${space.id}:${target.id}:${clientMessageId}`;
             const previous = store.records.get('space-messages', handoffId);
-            if (previous && previous.status !== 'blocked')
-              return send(200, { ...previous, sourceTeamId: space.id, targetTeamId: target.id });
+            if (previous && previous.status !== 'blocked') {
+              const sourceMessageId = `${handoffId}:source`;
+              if (!store.records.get('space-messages', sourceMessageId)) {
+                store.saveTeamMessage({
+                  ...previous,
+                  spaceId: space.id,
+                  teamId: space.id,
+                  relatedMessageId: previous.id,
+                  taskId: previous.taskId,
+                }, sourceMessageId);
+              }
+              return send(200, {
+                ...previous,
+                sourceTeamId: space.id,
+                targetTeamId: target.id,
+                sourceMessageId,
+              });
+            }
+            const targetJobs = store.records.list('jobs').filter((job) => (job.teamId || job.spaceId) === target.id);
+            if (targetJobs.length >= (target.autonomy?.maxJobs || 32)) throw new Error('目标团队已达到任务上限。');
             const message = store.saveTeamMessage({
               spaceId: target.id,
               teamId: target.id,
