@@ -2,7 +2,7 @@
   "name": "goal-guided-brain",
   "version": "0.1.0",
   "private": true,
-  "description": "面向个人目标的多模型智能协作工作空间",
+  "description": "面向个人的多团队多模型智能体协作工作台",
   "bin": {
     "ggb": "./scripts/cli.mjs",
     "dsh": "./scripts/cli.mjs",
