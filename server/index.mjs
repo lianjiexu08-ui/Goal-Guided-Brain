@@ -123,6 +123,8 @@ export function createWorkbench({
           parentJobId: job?.parentJobId || null,
           artifactCount: summary.artifactCount,
           verificationStatus: summary.verificationStatus,
+          attachmentIds: Array.isArray(meta.attachmentIds) ? meta.attachmentIds : [],
+          attachments: platform.attachments.list(meta.attachmentIds),
         };
       });
     })(),
@@ -130,7 +132,11 @@ export function createWorkbench({
     knowledge: store.knowledge(),
     spaces: store.teamSpaces().map((space) => ({
       ...space,
-      messages: store.teamMessages(space.id),
+      messages: store.teamMessages(space.id).map((message) => ({
+        ...message,
+        attachmentIds: Array.isArray(message.attachmentIds) ? message.attachmentIds : [],
+        attachments: platform.attachments.list(message.attachmentIds),
+      })),
     })),
     config: {
       ...store.config,
@@ -204,20 +210,21 @@ export function createWorkbench({
         )
           return send(403, { error: '只接受本地工作台请求。' });
       }
+      const url = new URL(req.url, 'http://127.0.0.1'),
+        parts = url.pathname.split('/').filter(Boolean);
+      if (parts[0] !== 'api') return send(404, { error: '未找到接口。' });
       if (
         !['GET', 'HEAD'].includes(req.method) &&
         !req.headers['content-type']?.startsWith('application/json')
       )
         return send(415, { error: '请求需要 JSON 内容。' });
-      const url = new URL(req.url, 'http://127.0.0.1'),
-        parts = url.pathname.split('/').filter(Boolean);
-      if (parts[0] !== 'api') return send(404, { error: '未找到接口。' });
       let body = {};
       if (!['GET', 'HEAD'].includes(req.method)) {
         let text = '';
+        const bodyLimit = parts[1] === 'attachments' ? 15_000_000 : 512_000;
         for await (const chunk of req) {
           text += chunk;
-          if (text.length > 512_000)
+          if (text.length > bodyLimit)
             return send(413, { error: '请求内容过大。' });
         }
         if (text) body = JSON.parse(text);
@@ -249,6 +256,21 @@ export function createWorkbench({
       const authorization = platform.auth.authorize(req);
       if (!authorization.authorized)
         return send(401, { error: '请先登录工作台。' });
+      if (parts[1] === 'attachments') {
+        if (req.method === 'POST' && !parts[2])
+          return send(201, platform.attachments.create({
+            name: body.name,
+            mime: body.mime,
+            data: body.data,
+          }));
+        if (parts[2] && req.method === 'GET') {
+          const attachment = platform.attachments.metadata(parts[2]);
+          if (!attachment) return send(404, { error: '附件不存在。' });
+          return send(200, attachment);
+        }
+        if (parts[2] && req.method === 'DELETE')
+          return send(200, { ok: platform.attachments.remove(parts[2]) });
+      }
       if (
         req.method === 'GET' &&
         parts[1] === 'backups' &&
@@ -327,10 +349,22 @@ export function createWorkbench({
                 return { ...task, jobId: meta.jobId || null, groupId: meta.groupId || job?.groupId || null, parentTaskId: meta.parentTaskId || null, spaceId: meta.spaceId || job?.spaceId || null, teamId: meta.teamId || job?.teamId || meta.spaceId || job?.spaceId || null };
               })
               .filter((task) => task.spaceId === space.id)
-              .map(({ context: _context, log: _log, ...task }) => ({ ...task, log: '' }));
+              .map(({ context: _context, log: _log, ...task }) => {
+                const attachmentIds = store.records.get('task-meta', task.id)?.attachmentIds || [];
+                return {
+                  ...task,
+                  log: '',
+                  attachmentIds,
+                  attachments: platform.attachments.list(attachmentIds),
+                };
+              });
             return send(200, {
               ...space,
-              messages: store.teamMessages(space.id),
+              messages: store.teamMessages(space.id).map((message) => ({
+                ...message,
+                attachmentIds: Array.isArray(message.attachmentIds) ? message.attachmentIds : [],
+                attachments: platform.attachments.list(message.attachmentIds),
+              })),
               tasks,
               jobs: store.records.list('jobs').filter((job) => job.spaceId === space.id),
             });
@@ -448,7 +482,10 @@ export function createWorkbench({
           }
           if (req.method === 'POST' && parts[3] === 'messages') {
             if (space.status !== 'active') throw new Error('团队空间当前不可接收新消息。');
-            const content = required(body.content, '团队消息');
+            const attachmentIds = platform.attachments.validateIds(body.attachmentIds);
+            const content = typeof body.content === 'string' ? body.content.trim() : '';
+            if (!content && !attachmentIds.length) throw new Error('团队消息不能为空，且不能超过 32000 字符。');
+            const messageContent = content || '请查看随附文件并处理。';
             const clientMessageId = required(body.clientMessageId || randomUUID(), '消息 ID', 200);
             const existing = store
               .teamMessages(space.id)
@@ -456,7 +493,7 @@ export function createWorkbench({
             if (existing && existing.status !== 'blocked') return send(200, existing);
             const message = existing
               ? store.saveTeamMessage(
-                  { ...existing, status: 'sent', taskId: null },
+                  { ...existing, status: 'sent', taskId: null, attachmentIds },
                   existing.id,
                 )
               : store.saveTeamMessage(
@@ -467,7 +504,8 @@ export function createWorkbench({
                     kind: 'request',
                     senderType: 'owner',
                     senderId: 'owner',
-                    content,
+                    content: messageContent,
+                    attachmentIds,
                     status: 'sent',
                   },
                   `request:${space.id}:${clientMessageId}`,
@@ -486,8 +524,8 @@ export function createWorkbench({
               const task = newTask({
                 role: space.pmRoleId,
                 prompt: recruitment.phase === 'confirmed'
-                  ? `你正在负责已经确认的团队「${space.name}」。请阅读团队历史和当前消息，按已确认的成员职责拆解任务，使用 delegate_task 推进，并跟踪结果后汇总。只有用户明确提出重新招募或团队范围发生重大变化时，才回到团队招募流程；否则不要调用 propose_team。\n\n用户本轮消息：\n${content}`
-                  : `你正在负责团队空间「${space.name}」的团队招募。当前阶段：${recruitment.phase || 'discovery'}。请先阅读招募历史和已有团队上下文，继续与用户多轮澄清目标、交付物、约束、质量标准、工作目录、权限和模型/工具需求。需求未清楚前不要分派任务；信息充分后使用 propose_team 保存待用户确认的 Team Charter。Team Charter 确认前不要把成员说成已创建，也不要调用 delegate_task。\n\n用户本轮消息：\n${content}`,
+                  ? `你正在负责已经确认的团队「${space.name}」。请阅读团队历史和当前消息，按已确认的成员职责拆解任务，使用 delegate_task 推进，并跟踪结果后汇总。只有用户明确提出重新招募或团队范围发生重大变化时，才回到团队招募流程；否则不要调用 propose_team。\n\n用户本轮消息：\n${messageContent}`
+                  : `你正在负责团队空间「${space.name}」的团队招募。当前阶段：${recruitment.phase || 'discovery'}。请先阅读招募历史和已有团队上下文，继续与用户多轮澄清目标、交付物、约束、质量标准、工作目录、权限和模型/工具需求。需求未清楚前不要分派任务；信息充分后使用 propose_team 保存待用户确认的 Team Charter。Team Charter 确认前不要把成员说成已创建，也不要调用 delegate_task。\n\n用户本轮消息：\n${messageContent}`,
                 sessionId: pmTask?.sessionId,
                 workspace: space.workspace,
                 spaceId: space.id,
@@ -495,6 +533,7 @@ export function createWorkbench({
                 model: body.model || space.model || undefined,
                 providerId: body.providerId || space.providerId || undefined,
                 allowModelWithoutTools: body.allowModelWithoutTools === true,
+                attachmentIds,
               });
               store.saveTeamSpace({
                 ...space,
@@ -572,7 +611,11 @@ export function createWorkbench({
           201,
           newTask({
             role: roleValue(body.role),
-            prompt: required(body.prompt, '任务'),
+            prompt: typeof body.prompt === 'string' && body.prompt.trim()
+              ? required(body.prompt, '任务')
+              : body.attachmentIds?.length
+                ? '请查看随附文件并处理。'
+                : required(body.prompt, '任务'),
             sessionId: body.sessionId,
             teamId: body.teamId || body.spaceId,
             spaceId: body.spaceId || body.teamId,
@@ -582,6 +625,7 @@ export function createWorkbench({
             providerId: body.providerId,
             model: body.model,
             allowModelWithoutTools: body.allowModelWithoutTools === true,
+            attachmentIds: body.attachmentIds,
             budgetTokens: body.budgetTokens,
             workspaceMode: body.workspaceMode,
             workspaceKey: body.workspaceKey,
@@ -622,6 +666,7 @@ export function createWorkbench({
             sessionId: task.sessionId,
             workspace: task.workspace,
             sourceTaskId: task.sourceTaskId,
+            attachmentIds: previousMeta.attachmentIds,
             contextExtra: `继续执行 ${task.id}。先核验已有成果与外部操作，再完成未完成部分。\n${task.result}`,
           });
           const meta = store.records.get('task-meta', retry.id);

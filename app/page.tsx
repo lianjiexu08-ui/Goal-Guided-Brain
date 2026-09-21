@@ -33,6 +33,7 @@ import {
   LoaderCircle,
   MessageSquare,
   Pencil,
+  Paperclip,
   Plus,
   Search,
   Settings2,
@@ -96,6 +97,18 @@ type Task = {
   spaceId?: string | null;
   artifactCount?: number;
   verificationStatus?: string | null;
+  attachmentIds?: string[];
+  attachments?: Attachment[];
+};
+type Attachment = {
+  id: string;
+  name: string;
+  mime: string;
+  size: number;
+};
+type DraftCache = {
+  drafts?: Record<string, string>;
+  attachments?: Record<string, Attachment[]>;
 };
 type Session = {
   id: string;
@@ -155,6 +168,8 @@ type TeamMessage = {
   status: string;
   error?: string | null;
   createdAt: string;
+  attachmentIds?: string[];
+  attachments?: Attachment[];
 };
 type TeamRecruitmentMember = {
   memberId?: string;
@@ -313,6 +328,37 @@ const formatTime = (s: string) =>
     hour: '2-digit',
     minute: '2-digit',
   });
+const formatBytes = (bytes: number) =>
+  bytes < 1024 * 1024
+    ? `${Math.max(1, Math.round(bytes / 1024))} KB`
+    : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+const DRAFT_CACHE_KEY = 'ggb.composer-drafts.v1';
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const MAX_ATTACHMENTS = 20;
+function readDraftCache(): DraftCache {
+  if (typeof window === 'undefined') return {};
+  try {
+    const value = JSON.parse(window.localStorage.getItem(DRAFT_CACHE_KEY) || '{}') as DraftCache;
+    const drafts = value?.drafts && typeof value.drafts === 'object' && !Array.isArray(value.drafts)
+      ? Object.fromEntries(Object.entries(value.drafts).filter(([, draft]) => typeof draft === 'string'))
+      : {};
+    const attachments = value?.attachments && typeof value.attachments === 'object' && !Array.isArray(value.attachments)
+      ? Object.fromEntries(Object.entries(value.attachments).map(([key, items]) => [
+          key,
+          Array.isArray(items)
+            ? items.filter((item): item is Attachment =>
+                !!item && typeof item === 'object' &&
+                typeof item.id === 'string' && typeof item.name === 'string' &&
+                typeof item.mime === 'string' && Number.isFinite(item.size),
+              ).slice(0, MAX_ATTACHMENTS)
+            : [],
+        ]))
+      : {};
+    return { drafts, attachments };
+  } catch {
+    return {};
+  }
+}
 function Choice({
   value,
   onChange,
@@ -364,12 +410,15 @@ function Workbench() {
   const [selected, setSelected] = useState<Partial<Record<RoleId, string>>>({});
   const [selectedSpaceId, setSelectedSpaceId] = useState('');
   const [modelOverrides, setModelOverrides] = useState<Record<string, string>>({});
-  const [drafts, setDrafts] = useState<Record<RoleId, string>>({});
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [draftAttachments, setDraftAttachments] = useState<Record<string, Attachment[]>>({});
+  const [draggingFiles, setDraggingFiles] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [modal, setModal] = useState<
-    'settings' | 'knowledge' | 'handoff' | 'team' | null
+    'settings' | 'knowledge' | 'handoff' | 'team' | 'rename-team' | null
   >(null);
+  const [teamRenameForm, setTeamRenameForm] = useState({ name: '' });
   const [teamForm, setTeamForm] = useState<TeamForm>({
     name: '',
     goal: '',
@@ -424,6 +473,7 @@ function Workbench() {
   const endRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const routeInitialized = useRef(false);
+  const draftCacheHydrated = useRef(false);
   const roles = data?.roles || [];
   const activeRoles = roles.filter((r) => !r.archived);
   const assistant = roles.find((r) => r.id === role) || {
@@ -438,7 +488,21 @@ function Workbench() {
   const conversationWorkspace =
     sessions.find((s) => s.id === currentSession)?.workspace ||
     data?.config.workspace;
-  const teamSpace = data?.spaces?.find((space) => space.id === selectedSpaceId) || data?.spaces?.[0];
+  const spaces = data?.spaces || [];
+  const confirmedSpaces = spaces.filter(
+    (space) => space.status !== 'archived' && space.recruitment?.phase === 'confirmed',
+  );
+  const recruitmentSpaces = spaces.filter(
+    (space) => space.status !== 'archived' && space.recruitment?.phase !== 'confirmed',
+  );
+  const recruitmentSpace =
+    recruitmentSpaces.find((space) => space.id === selectedSpaceId) ||
+    recruitmentSpaces[0];
+  const teamSpace =
+    spaces.find((space) => space.id === selectedSpaceId) ||
+    spaces[0];
+  const isRecruitmentView = view === 'recruitment';
+  const isConversationView = view === 'workspace' || isRecruitmentView;
   const isTeamConversation = teamSpace?.pmRoleId === role;
   const assistantName = teamSpace?.memberSettings?.[role]?.label || assistant.name;
   const currentTasks = tasks
@@ -486,6 +550,8 @@ function Workbench() {
       })),
     );
   const modelOverrideKey = `${teamSpace?.id || 'standalone'}:${role}`;
+  const draftKey = `${teamSpace?.id || 'standalone'}:${role}`;
+  const attachmentDraftKey = draftKey;
   const currentMemberSettings = teamSpace?.memberSettings?.[role];
   const isTeamMember = !!teamSpace?.memberRoleIds.includes(role);
   const preferredModelId =
@@ -527,6 +593,11 @@ function Workbench() {
     try {
       const next = await api<State>('state');
       setData(next);
+      setSelectedSpaceId((current) =>
+        current && next.spaces?.some((space) => space.id === current)
+          ? current
+          : next.spaces?.[0]?.id || '',
+      );
       if (!routeInitialized.current) {
         const preferred = next.spaces?.[0]?.pmRoleId || next.roles.find((item) => !item.archived)?.id;
         if (preferred) setRole(preferred);
@@ -546,6 +617,26 @@ function Workbench() {
       clearInterval(timer);
     };
   }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const cached = readDraftCache();
+      setDrafts((current) => ({ ...cached.drafts, ...current }));
+      setDraftAttachments((current) => ({ ...cached.attachments, ...current }));
+      draftCacheHydrated.current = true;
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+  useEffect(() => {
+    if (!draftCacheHydrated.current) return;
+    try {
+      window.localStorage.setItem(
+        DRAFT_CACHE_KEY,
+        JSON.stringify({ drafts, attachments: draftAttachments } satisfies DraftCache),
+      );
+    } catch {
+      // Storage quotas and private browsing restrictions are both recoverable.
+    }
+  }, [drafts, draftAttachments]);
   useEffect(() => {
     if (!taskDetail?.id) return;
     const id = taskDetail.id;
@@ -603,7 +694,7 @@ function Workbench() {
     if (currentTasks.length > 0) {
       endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
-  }, [currentTasks.length, role]);
+  }, [currentTasks.length, role, teamSpace?.id]);
   async function action(fn: () => Promise<void>) {
     setBusy(true);
     try {
@@ -615,8 +706,51 @@ function Workbench() {
       setBusy(false);
     }
   }
+  async function uploadAttachments(files: File[]) {
+    const existing = draftAttachments[attachmentDraftKey] || [];
+    const incoming = files
+      .filter((file) => file.size > 0)
+      .slice(0, Math.max(0, MAX_ATTACHMENTS - existing.length));
+    if (!incoming.length) return;
+    const oversized = files.find((file) => file.size > MAX_ATTACHMENT_BYTES);
+    if (oversized) {
+      setNotice(`“${oversized.name || '文件'}”超过 10 MB，未添加。`);
+      return;
+    }
+    if (files.length > incoming.length) {
+      setNotice(`每次对话最多保留 ${MAX_ATTACHMENTS} 个附件。`);
+    }
+    await action(async () => {
+      const uploaded: Attachment[] = [];
+      for (const file of incoming) {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        let binary = '';
+        for (let offset = 0; offset < bytes.length; offset += 0x8000)
+          binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+        uploaded.push(await api<Attachment>('attachments', 'POST', {
+          name: file.name || `粘贴文件-${Date.now()}`,
+          mime: file.type || 'application/octet-stream',
+          data: btoa(binary),
+        }));
+      }
+      setDraftAttachments((current) => ({
+        ...current,
+        [attachmentDraftKey]: [...(current[attachmentDraftKey] || []), ...uploaded].slice(0, MAX_ATTACHMENTS),
+      }));
+      setNotice(`已添加 ${uploaded.length} 个附件，发送时会携带文件内容。`);
+    });
+  }
+  function clipboardFiles(event: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const files = Array.from(event.clipboardData.files);
+    if (files.length) return files;
+    return Array.from(event.clipboardData.items)
+      .filter((item) => item.kind === 'file')
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => !!file);
+  }
   async function submit() {
-    if (!drafts[role]?.trim() || assistant.archived || !assistant.id) return;
+    const attachmentIds = (draftAttachments[attachmentDraftKey] || []).map((item) => item.id);
+    if ((!drafts[draftKey]?.trim() && !attachmentIds.length) || assistant.archived || !assistant.id) return;
     await action(async () => {
       // The single team-recruitment entry is the team's front door. Keep its messages in
       // the same space timeline so PM replies and delegated work stay linked.
@@ -626,7 +760,8 @@ function Workbench() {
           'POST',
           {
             clientMessageId: `chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            content: drafts[role],
+            content: drafts[draftKey],
+            attachmentIds,
             ...(selectedModelOption
               ? {
                   model: selectedModelOption.model.id,
@@ -639,13 +774,15 @@ function Workbench() {
         if (message.sessionId) {
           setSelected((s) => ({ ...s, [role]: message.sessionId }));
         }
-        setDrafts((s) => ({ ...s, [role]: '' }));
+        setDrafts((s) => ({ ...s, [draftKey]: '' }));
+        setDraftAttachments((s) => ({ ...s, [attachmentDraftKey]: [] }));
         return;
       }
       const task = await api<Task>('tasks', 'POST', {
         role,
         sessionId: currentSession,
-        prompt: drafts[role],
+        prompt: drafts[draftKey],
+        attachmentIds,
         ...(isTeamMember && teamSpace
           ? { teamId: teamSpace.id, spaceId: teamSpace.id }
           : {}),
@@ -658,7 +795,8 @@ function Workbench() {
           : {}),
       });
       setSelected((s) => ({ ...s, [role]: task.sessionId }));
-      setDrafts((s) => ({ ...s, [role]: '' }));
+      setDrafts((s) => ({ ...s, [draftKey]: '' }));
+      setDraftAttachments((s) => ({ ...s, [attachmentDraftKey]: [] }));
     });
   }
   async function retryTeamMessage(message: TeamMessage) {
@@ -670,6 +808,7 @@ function Workbench() {
         {
           clientMessageId: message.clientMessageId || undefined,
           content: message.content,
+          attachmentIds: message.attachmentIds || [],
           ...(selectedModelOption
             ? {
                 model: selectedModelOption.model.id,
@@ -728,6 +867,7 @@ function Workbench() {
       setSelectedSpaceId(saved.id);
       setRole(saved.pmRoleId);
       setSelected((current) => ({ ...current, [saved.pmRoleId]: undefined }));
+      setView('workspace');
       setNotice(`团队“${saved.name}”已确认，项目经理可以开始安排任务`);
     });
   }
@@ -750,7 +890,7 @@ function Workbench() {
         scope: 'project',
         projectPath:
           task?.workspace ||
-          (view === 'workspace'
+          (isConversationView
             ? conversationWorkspace
             : data?.config.workspace),
         state: task ? 'draft' : 'confirmed',
@@ -764,6 +904,11 @@ function Workbench() {
     setHandoffRole(activeRoles.find((r) => r.id !== task.role)?.id || '');
     setHandoffNote('');
     setModal('handoff');
+  }
+  function openTeamRename() {
+    if (!teamSpace) return;
+    setTeamRenameForm({ name: teamSpace.name });
+    setModal('rename-team');
   }
   function openTeamCreate() {
     const pm = activeRoles.find((item) => item.id === 'project_manager') || activeRoles[0];
@@ -780,12 +925,20 @@ function Workbench() {
     setModal('team');
   }
   async function startRecruitment() {
+    if (recruitmentSpace) {
+      selectTeam(recruitmentSpace.id);
+      setView('recruitment');
+      if (isMobile) setOpenMobile(false);
+      return;
+    }
     const pm = activeRoles.find((item) => item.id === 'project_manager') || activeRoles[0];
     if (!pm) return;
     await action(async () => {
       const saved = await api<TeamSpace>('spaces', 'POST', {
-        name: '新团队招募',
-        goal: '通过多轮交流明确团队目标和职责。',
+        // This is an internal draft label. The visible team name is chosen
+        // from the actual work described in the Team Charter after approval.
+        name: '待命名需求',
+        goal: '通过多轮交流明确需求、交付物和团队职责。',
         pmRoleId: pm.id,
         memberRoleIds: [pm.id],
         workspace: data?.config.workspace || '',
@@ -794,27 +947,42 @@ function Workbench() {
       setSelectedSpaceId(saved.id);
       setRole(saved.pmRoleId);
       setSelected((current) => ({ ...current, [saved.pmRoleId]: undefined }));
-      setDrafts((current) => ({ ...current, [saved.pmRoleId]: '' }));
-      setView('workspace');
+      setDrafts((current) => ({ ...current, [`${saved.id}:${saved.pmRoleId}`]: '' }));
+      setView('recruitment');
       if (isMobile) setOpenMobile(false);
       setNotice('招募已开始，描述你希望团队完成的目标');
     });
   }
   function openTeamConversation() {
-    if (!teamSpace) {
-      void startRecruitment();
+    if (recruitmentSpace) selectTeam(recruitmentSpace.id);
+    else void startRecruitment();
+    setView('recruitment');
+    if (isMobile) setOpenMobile(false);
+  }
+  function openTeamOverview() {
+    const target =
+      confirmedSpaces.find((space) => space.id === selectedSpaceId) ||
+      confirmedSpaces[0];
+    if (!target) {
+      openTeamConversation();
       return;
     }
-    if (teamSpace) selectTeam(teamSpace.id);
-    setView('workspace');
+    selectTeam(target.id);
+    setView('team');
     if (isMobile) setOpenMobile(false);
   }
   function selectTeam(id: string) {
     const next = data?.spaces?.find((space) => space.id === id);
     if (!next) return;
+    setModal(null);
+    const changed = next.id !== selectedSpaceId;
     setSelectedSpaceId(next.id);
     setRole(next.pmRoleId);
-    setSelected((current) => ({ ...current, [next.pmRoleId]: undefined }));
+    if (changed) {
+      // A team is an independent conversation boundary. The draft is keyed by
+      // team and role, so switching teams restores each team's own composer.
+      setSelected((current) => ({ ...current, [next.pmRoleId]: undefined }));
+    }
   }
   function showTask(task: Task) {
     setRole(task.role);
@@ -870,7 +1038,7 @@ function Workbench() {
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton
-                isActive={view === 'workspace' && isTeamConversation}
+                isActive={isRecruitmentView}
                 onClick={openTeamConversation}
                 className="role-nav chat-entry"
               >
@@ -885,16 +1053,16 @@ function Workbench() {
           </SidebarMenu>
           <div className="team-nav-head">
             <span>我的团队</span>
-            <button type="button" aria-label="新建招募" disabled={busy || !activeRoles.length} onClick={() => void startRecruitment()}>
+            <button type="button" aria-label="发布新需求" disabled={busy || !activeRoles.length} onClick={() => void startRecruitment()}>
               <Plus size={14} />
             </button>
           </div>
           <SidebarMenu className="team-nav-list">
-            {(data?.spaces || []).map((space) => (
+            {confirmedSpaces.map((space) => (
               <SidebarMenuItem key={space.id}>
                 <SidebarMenuButton
                   className="team-nav-item"
-                  isActive={selectedSpaceId === space.id && view === 'workspace'}
+                  isActive={selectedSpaceId === space.id && ['workspace', 'team'].includes(view)}
                   onClick={() => {
                     selectTeam(space.id);
                     setView('workspace');
@@ -910,10 +1078,10 @@ function Workbench() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
             ))}
-            {!data?.spaces?.length && (
+            {!confirmedSpaces.length && (
               <SidebarMenuItem>
                 <button type="button" className="team-nav-empty" disabled={busy || !activeRoles.length} onClick={() => void startRecruitment()}>
-                  <Plus size={14} /> 开始第一次招募
+                  <Plus size={14} /> {recruitmentSpace ? '团队确认后会显示在这里' : '还没有已创建团队'}
                 </button>
               </SidebarMenuItem>
             )}
@@ -933,8 +1101,11 @@ function Workbench() {
                   className="utility-nav"
                   isActive={view === item.id}
                   onClick={() => {
-                    setView(item.id);
-                    if (isMobile) setOpenMobile(false);
+                    if (item.id === 'team') openTeamOverview();
+                    else {
+                      setView(item.id);
+                      if (isMobile) setOpenMobile(false);
+                    }
                   }}
                 >
                   <item.icon />
@@ -949,7 +1120,7 @@ function Workbench() {
           <div className="sidebar-note">
             <span className="live-dot" />
             <p>
-              先把目标告诉团队招募。<small>AI 会先澄清，再给出团队规模、职责和推进方式。</small>
+              先把需求发布给团队招募。<small>AI 会先澄清，再按实际工作内容生成团队名称和职责。</small>
             </p>
           </div>
         </SidebarContent>
@@ -974,8 +1145,8 @@ function Workbench() {
             <span className="breadcrumb">工作空间</span>
             <span className="slash">/</span>
             <strong>
-              {view === 'workspace'
-                ? isRecruiting ? '团队招募' : isTeamConversation ? '团队对话' : assistantName
+              {isConversationView
+                ? isRecruitmentView ? '需求发布' : isTeamConversation ? '团队对话' : assistantName
                 : view === 'tasks'
                   ? '后台任务'
               : view === 'assistants'
@@ -1006,7 +1177,7 @@ function Workbench() {
             <button onClick={refresh}>重试</button>
           </div>
         )}
-        {data && !data.config.hasApiKey && view === 'workspace' && (
+        {data && !data.config.hasApiKey && isConversationView && (
           <div className="setup-banner">
             <Sparkles size={17} />
             <span>尚未配置可用模型。</span>
@@ -1018,7 +1189,7 @@ function Workbench() {
         {managementNavigation.some((item) => item.id === view) ? (
           <Management key={view} view={view} onChanged={refresh} />
         ) : view === 'team' ? (
-          <main className="team-page">
+          <main className="team-page" key={`team-page:${teamSpace?.id || 'none'}`}>
             <div className="team-heading">
               <div>
                 <span className="section-kicker">TEAM ACTIVITY</span>
@@ -1026,15 +1197,16 @@ function Workbench() {
                 <p>{teamSpace?.goal || '项目经理会在后台选择成员、分派任务并汇总进展。新的需求请从团队招募发起。'}</p>
               </div>
               <div className="team-heading-actions">
-                {teamSpace && (data?.spaces || []).length > 0 ? (
+                {teamSpace?.recruitment?.phase === 'confirmed' && confirmedSpaces.length > 0 ? (
                   <Choice
                     label="选择团队"
                     value={teamSpace.id}
                     onChange={selectTeam}
-                    options={(data?.spaces || []).map((space) => ({ value: space.id, label: space.name }))}
+                    options={confirmedSpaces.map((space) => ({ value: space.id, label: space.name }))}
                   />
                 ) : null}
-                <button className="secondary-button" type="button" disabled={busy || !activeRoles.length} onClick={() => void startRecruitment()}><Plus size={15} /> 新建招募</button>
+                <button className="secondary-button" type="button" disabled={busy || !activeRoles.length} onClick={() => void startRecruitment()}><Plus size={15} /> 发布新需求</button>
+                <button className="text-button" type="button" disabled={busy || !teamSpace} onClick={openTeamRename}><Pencil size={13} /> 重命名</button>
                 <button className="text-button" type="button" onClick={openTeamCreate}>高级配置</button>
                 <div className="team-health"><span className="live-dot" /> {rosterReady ? `${teamMembers.length} 位成员已配置` : recruitment?.phase === 'proposed' ? '方案待确认' : '正在招募'}</div>
               </div>
@@ -1076,6 +1248,17 @@ function Workbench() {
                         {message.status === 'blocked' && <em className="team-message-state">未发送</em>}
                       </span>
                       <p>{message.content}</p>
+                      {!!message.attachments?.length && (
+                        <div className="attachment-list" aria-label="消息附件">
+                          {message.attachments.map((attachment) => (
+                            <span className="attachment-chip" key={attachment.id}>
+                              <Paperclip size={13} />
+                              {attachment.name}
+                              <small>{formatBytes(attachment.size)}</small>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                       {message.kind === 'handoff' && relatedTask && (
                         <small className="team-message-collab-status">
                           跨团队任务 · {statusLabels[relatedTask.status] || relatedTask.status}
@@ -1157,33 +1340,36 @@ function Workbench() {
               </aside>
             </div>
           </main>
-        ) : view === 'workspace' ? (
-          <div className="working-grid">
+        ) : isConversationView ? (
+          <div className="working-grid" key={`workspace:${teamSpace?.id || 'none'}:${role}`}>
             <section className="conversation">
               <div className="conversation-top">
                 <div>
-                  <span className="section-kicker">{isRecruiting ? 'TEAM RECRUITMENT · 多轮澄清' : isTeamConversation ? 'TEAM CONVERSATION · 协作推进' : 'AGENT CONVERSATION · 独立讨论'}</span>
+                  <span className="section-kicker">{isRecruitmentView ? 'REQUIREMENT INTAKE · 需求发布' : isTeamConversation ? 'TEAM CONVERSATION · 协作推进' : 'AGENT CONVERSATION · 独立讨论'}</span>
                   <h1>
-                    {isRecruiting ? '一起组建你的团队' : isTeamConversation ? teamSpace?.name : assistantName}
+                    {isRecruitmentView ? '发布需求，招募团队' : isTeamConversation ? teamSpace?.name : assistantName}
                     <span className="quiet-badge">
                       {tasks.some((t) => t.role === role && isActive(t)) ? '工作中' : '随时开始'}
                     </span>
                   </h1>
-                  <p className="conversation-subtitle">{isRecruiting ? '先说目标，AI 会和你一起确定团队规模、职责和推进方式。' : isTeamConversation ? teamSpace?.goal : teamSpace?.memberSettings?.[role]?.responsibility || assistant.desc}</p>
+                  <p className="conversation-subtitle">{isRecruitmentView ? '把要解决的问题、交付物和约束直接发给项目经理。团队名称会根据实际工作内容生成，确认后才会进入“我的团队”。' : isTeamConversation ? teamSpace?.goal : teamSpace?.memberSettings?.[role]?.responsibility || assistant.desc}</p>
                 </div>
                 <div className="conversation-controls">
-                  {teamSpace && (data?.spaces || []).length > 0 ? (
+                  {teamSpace && (isRecruiting ? recruitmentSpace : confirmedSpaces[0]) ? (
                     <Choice
-                      label="选择团队"
+                      label={isRecruiting ? '选择需求草稿' : '选择团队'}
                       value={teamSpace.id}
                       onChange={selectTeam}
-                      options={(data?.spaces || []).map((space) => ({ value: space.id, label: space.name }))}
+                      options={isRecruiting
+                        ? recruitmentSpaces.map((space) => ({ value: space.id, label: `需求草稿 · ${space.name}` }))
+                        : confirmedSpaces.map((space) => ({ value: space.id, label: space.name }))}
                     />
                   ) : null}
                   <button className="secondary-button" type="button" disabled={busy || !activeRoles.length} onClick={() => void startRecruitment()}>
-                    <Plus size={15} /> 新建招募
+                    <Plus size={15} /> {isRecruitmentView ? '另起需求' : '发布新需求'}
                   </button>
-                  <button className="text-button" type="button" onClick={openTeamCreate}>高级配置</button>
+                  {!isRecruitmentView && <button className="text-button" type="button" disabled={busy || !teamSpace} onClick={openTeamRename}><Pencil size={13} /> 重命名</button>}
+                  {!isRecruitmentView && <button className="text-button" type="button" onClick={openTeamCreate}>高级配置</button>}
                   <button
                     className="icon-button"
                     title="编辑助手"
@@ -1328,8 +1514,8 @@ function Workbench() {
                     >
                       <Icon size={31} />
                     </div>
-                    <h2>{isRecruiting ? '开始团队招募' : assistant.greeting || assistantName}</h2>
-                    <p>{isRecruiting ? '描述你想达成的目标、交付物和限制条件。我会和你多轮澄清，再判断需要几个智能体以及每个智能体的职责。' : teamSpace?.memberSettings?.[role]?.responsibility || assistant.desc}</p>
+                    <h2>{isRecruitmentView ? '发布你的需求' : assistant.greeting || assistantName}</h2>
+                    <p>{isRecruitmentView ? '描述要解决的问题、交付物和限制条件。项目经理会和你多轮澄清，再判断需要几个智能体以及每个智能体的职责。' : teamSpace?.memberSettings?.[role]?.responsibility || assistant.desc}</p>
                     {!assistant.id && data && (
                       <button
                         className="primary-button"
@@ -1358,7 +1544,7 @@ function Workbench() {
                         <button
                           key={p}
                           onClick={() =>
-                            setDrafts((d) => ({ ...d, [role]: p }))
+                            setDrafts((d) => ({ ...d, [draftKey]: p }))
                           }
                         >
                           <span>0{i + 1}</span>
@@ -1376,6 +1562,17 @@ function Workbench() {
                           你 <small>{formatTime(task.createdAt)}</small>
                         </span>
                         <p>{task.prompt}</p>
+                        {!!task.attachments?.length && (
+                          <div className="attachment-list" aria-label="任务附件">
+                            {task.attachments.map((attachment) => (
+                              <span className="attachment-chip" key={attachment.id}>
+                                <Paperclip size={13} />
+                                {attachment.name}
+                                <small>{formatBytes(attachment.size)}</small>
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <div className="assistant-message">
                         <div className="message-label">
@@ -1466,16 +1663,39 @@ function Workbench() {
                 <div ref={endRef} />
               </div>
               <div className="composer-area">
-                <div className="composer">
+                <div
+                  className="composer"
+                  onDragEnter={(event) => {
+                    event.preventDefault();
+                    setDraggingFiles(true);
+                  }}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDragLeave={(event) => {
+                    event.preventDefault();
+                    if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+                      setDraggingFiles(false);
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    setDraggingFiles(false);
+                    void uploadAttachments(Array.from(event.dataTransfer.files));
+                  }}
+                >
                   <textarea
                     ref={composerRef}
                     aria-label={`发送给${assistantName}`}
-                    placeholder={isRecruiting ? '描述你想完成的事，先不用决定要几个智能体…' : `告诉${assistantName}，你想完成什么…`}
-                    value={drafts[role] || ''}
+                    placeholder={isRecruitmentView ? '描述你想完成的事，先不用决定要几个智能体…' : `告诉${assistantName}，你想完成什么…`}
+                    value={drafts[draftKey] || ''}
                     disabled={!assistant.id || assistant.archived}
                     onChange={(e) =>
-                      setDrafts((d) => ({ ...d, [role]: e.target.value }))
+                      setDrafts((d) => ({ ...d, [draftKey]: e.target.value }))
                     }
+                    onPaste={(event) => {
+                      const files = clipboardFiles(event);
+                      if (!files.length) return;
+                      event.preventDefault();
+                      void uploadAttachments(files);
+                    }}
                     onKeyDown={(e) => {
                       if (
                         e.key === 'Enter' &&
@@ -1487,6 +1707,29 @@ function Workbench() {
                       }
                     }}
                   />
+                  <div className={`composer-attachments${draggingFiles ? ' is-dragging' : ''}`}>
+                    {draggingFiles ? <span>松开即可添加文件</span> : <span><Paperclip size={13} />拖入或粘贴图片、文件，发送时会携带文件内容</span>}
+                    {!!draftAttachments[attachmentDraftKey]?.length && (
+                      <div className="attachment-list draft-attachments">
+                        {draftAttachments[attachmentDraftKey].map((attachment) => (
+                          <button
+                            type="button"
+                            className="attachment-chip"
+                            key={attachment.id}
+                            title="移除附件"
+                            onClick={() => setDraftAttachments((current) => ({
+                              ...current,
+                              [attachmentDraftKey]: current[attachmentDraftKey].filter((item) => item.id !== attachment.id),
+                            }))}
+                          >
+                            <Paperclip size={13} />
+                            {attachment.name}
+                            <small>{formatBytes(attachment.size)} · 点击移除</small>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <div className="composer-bottom">
                     <button className="workspace-path" onClick={openSettings}>
                       <FolderOpen size={15} />
@@ -1532,7 +1775,7 @@ function Workbench() {
                         aria-label="发送任务"
                         disabled={
                           busy ||
-                          !drafts[role]?.trim() ||
+                          (!drafts[draftKey]?.trim() && !draftAttachments[attachmentDraftKey]?.length) ||
                           !data ||
                           !assistant.id ||
                           assistant.archived
@@ -1549,13 +1792,13 @@ function Workbench() {
                   </div>
                 </div>
                 <p className="composer-hint">
-                  Enter 发送 · Shift + Enter 换行<span>{isRecruiting ? '先澄清需求，再确认团队方案' : '任务在后台执行'}</span>
+                  Enter 发送 · Shift + Enter 换行<span>{isRecruitmentView ? '先澄清需求，再确认团队方案' : '任务在后台执行'}</span>
                 </p>
               </div>
             </section>
             <aside className="context-panel">
               <div className="context-header">
-                  <span>本次招募</span>
+                  <span>{isRecruitmentView ? '需求发布' : '团队上下文'}</span>
                 <button
                   className="icon-button"
                   aria-label="编辑助手配置"
@@ -2023,6 +2266,8 @@ function Workbench() {
                 ? '编辑知识'
                 : modal === 'handoff'
                   ? '交给其他助手'
+                  : modal === 'rename-team'
+                    ? '重命名团队'
               : '手动创建团队'}
           </DialogTitle>
           <DialogDescription>
@@ -2032,6 +2277,8 @@ function Workbench() {
                 ? '保存到本地，后续任务会按相关性读取。'
                 : modal === 'handoff'
                   ? '将目标、成果和补充要求传给目标助手，创建独立会话。'
+                  : modal === 'rename-team'
+                    ? '只修改团队显示名称，团队消息、成员和任务都会保留。'
                   : '每个团队拥有自己的职责、成员和工作目录。你可以在团队招募中切换团队，团队也可以通过项目经理互相协作。'}
           </DialogDescription>
           {modal === 'settings' && (
@@ -2419,6 +2666,42 @@ function Workbench() {
                 disabled={busy || !handoffRole}
               >
                 创建交接任务 <ArrowRight size={16} />
+              </button>
+            </form>
+          )}
+          {modal === 'rename-team' && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void action(async () => {
+                  const saved = await api<TeamSpace>(
+                    `spaces/${teamSpace!.id}`,
+                    'PUT',
+                    { name: teamRenameForm.name.trim() },
+                  );
+                  setModal(null);
+                  setNotice(`团队已重命名为“${saved.name}”`);
+                });
+              }}
+            >
+              <label>
+                团队名称
+                <input
+                  required
+                  maxLength={80}
+                  value={teamRenameForm.name}
+                  onChange={(e) =>
+                    setTeamRenameForm({ name: e.target.value })
+                  }
+                  placeholder="例如：产品开发组、线上运维组"
+                />
+              </label>
+              <button
+                className="primary-button"
+                type="submit"
+                disabled={busy || !teamSpace}
+              >
+                保存名称
               </button>
             </form>
           )}

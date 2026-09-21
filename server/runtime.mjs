@@ -244,6 +244,7 @@ export class DshRun {
     route,
     capabilityPatch = [],
     contextExtra = '',
+    attachments = [],
     maxDurationMinutes = 30,
     env = {},
   }) {
@@ -261,6 +262,7 @@ export class DshRun {
     this.route = route;
     this.capabilityPatch = capabilityPatch;
     this.contextExtra = contextExtra;
+    this.attachments = Array.isArray(attachments) ? attachments : [];
     if (
       !Number.isFinite(maxDurationMinutes) ||
       maxDurationMinutes <= 0 ||
@@ -415,14 +417,28 @@ export class DshRun {
       this.onLog(
         `已连接 ${ready.serverInfo.name} · ${this.route?.model || this.assistant.model || this.config.model}`,
       );
+      const contentBlocks = [
+        {
+          type: 'text',
+          text: [prompt, this.contextExtra].filter(Boolean).join('\n\n'),
+        },
+      ];
+      // DSH admits encoded raster blocks into its durable attachment store. Pass
+      // image bytes inline when the selected model advertises vision support;
+      // other file types remain available at the staged workspace paths listed
+      // in the context, so file-capable agents can inspect their original bytes.
+      if (this.route?.modelSpec?.vision === true) {
+        const imageTypes = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+        for (const attachment of this.attachments) {
+          const mimeType = String(attachment.mime || '').toLowerCase();
+          if (!imageTypes.has(mimeType) || !attachment.path) continue;
+          const data = fs.readFileSync(attachment.path).toString('base64');
+          contentBlocks.push({ type: 'image', data, mimeType });
+        }
+      }
       await this.request('session/prompt', {
         sessionId: this.task.id,
-        contentBlocks: [
-          {
-            type: 'text',
-            text: [prompt, this.contextExtra].filter(Boolean).join('\n\n'),
-          },
-        ],
+        contentBlocks,
       });
     } catch (error) {
       if (!this.done)

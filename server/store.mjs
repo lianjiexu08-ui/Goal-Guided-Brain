@@ -478,6 +478,7 @@ export class Store {
       toTeamId: input.toTeamId || spaceId,
       relatedMessageId: input.relatedMessageId || null,
       taskId: input.taskId || null,
+      attachmentIds: Array.isArray(input.attachmentIds) ? [...new Set(input.attachmentIds.filter((value) => typeof value === 'string').slice(0, 20))] : [],
       content,
       status: input.status || 'sent',
     }, id);

@@ -117,6 +117,27 @@ test('multiple Chat teams keep independent ownership and can hand work to anothe
     assert.equal(created.body.chatId, created.body.id);
     assert.equal(created.body.collaboration.enabled, true);
     assert.deepEqual(created.body.collaboration.allowedTeamIds, []);
+
+    const renamed = await request(`teams/${created.body.id}`, {
+      name: '运维与发布团队',
+    }, 'PUT');
+    assert.equal(renamed.status, 200);
+    assert.equal(renamed.body.id, created.body.id);
+    assert.equal(renamed.body.name, '运维与发布团队');
+    const listedAfterRename = await request('teams');
+    assert.equal(
+      listedAfterRename.body.find((team) => team.id === created.body.id).name,
+      '运维与发布团队',
+    );
+    const invalidRename = await request(`teams/${created.body.id}`, {
+      name: '   ',
+    }, 'PUT');
+    assert.equal(invalidRename.status, 400);
+    assert.equal(
+      (await request(`teams/${created.body.id}`)).body.name,
+      '运维与发布团队',
+    );
+
     const teams = await request('teams');
     assert.equal(teams.body.length, 2);
     const collaborators = await request(`teams/${source.id}/collaborators`);

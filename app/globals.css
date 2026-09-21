@@ -2354,6 +2354,53 @@ h1 {
   font-size: 15px;
 }
 
+.composer-attachments {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 0 18px 10px;
+  color: #8da29d;
+  font-size: 10px;
+}
+.composer-attachments > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.composer-attachments.is-dragging {
+  color: #257a65;
+  background: #ecf8f2;
+}
+.attachment-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  border: 1px solid #cfe4dc;
+  border-radius: 8px;
+  padding: 5px 8px;
+  background: #f5fbf8;
+  color: #397565;
+  font-size: 11px;
+  overflow: hidden;
+}
+.attachment-chip:not(button) { cursor: default; }
+.attachment-chip:hover { border-color: #83bdaa; }
+.attachment-chip small {
+  color: #829b94;
+  font-size: 9px;
+  white-space: nowrap;
+}
+.draft-attachments { margin-top: 0; }
+.draft-attachments .attachment-chip { cursor: pointer; }
+
 .composer-bottom {
   padding: 0 13px 12px 18px;
 }
