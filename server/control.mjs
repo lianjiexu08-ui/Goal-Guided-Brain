@@ -156,6 +156,41 @@ export class ControlPlane {
     this.records.save('executions', { ...execution, expiresAt: this.now() + this.leaseMs }, taskId);
     return true;
   }
+  publishHandoffResult(task, meta, status, content) {
+    if (!meta?.sourceMessageId || !meta.spaceId) return;
+    const sourceHandoff = this.records.list('space-messages').find(message =>
+      message.kind === 'handoff' &&
+      message.relatedMessageId === meta.sourceMessageId &&
+      message.spaceId !== meta.spaceId);
+    if (!sourceHandoff) return;
+    const target = this.store.teamSpace(meta.spaceId);
+    const source = this.store.teamSpace(sourceHandoff.spaceId);
+    if (!target || !source) return;
+    const labels = {
+      completed: '已完成',
+      failed: '失败',
+      cancelled: '已停止',
+      interrupted: '已中断',
+      state_unknown: '状态未知',
+    };
+    const summary = String(content || '').trim() || `目标团队任务${labels[status] || status}。`;
+    this.store.saveTeamMessage({
+      spaceId: source.id,
+      teamId: source.id,
+      kind: 'reply',
+      senderType: 'team',
+      senderId: target.id,
+      fromTeamId: target.id,
+      toTeamId: source.id,
+      relatedMessageId: sourceHandoff.id,
+      taskId: task.id,
+      content: `目标团队「${target.name}」${labels[status] || status}：\n\n${summary}`.slice(0, 32000),
+      status: 'answered',
+    }, `handoff-reply:${task.id}`);
+    const targetHandoff = this.records.get('space-messages', meta.sourceMessageId);
+    if (targetHandoff) this.records.save('space-messages', { ...targetHandoff, status: 'answered' }, targetHandoff.id);
+    this.records.save('space-messages', { ...sourceHandoff, status: 'answered' }, sourceHandoff.id);
+  }
   finishLocal(taskId, epoch, result = {}, nodeId = 'local') {
     return this.atomic(() => {
       const execution = this.records.get('executions', taskId);
@@ -171,12 +206,12 @@ export class ControlPlane {
       const meta = this.records.get('task-meta', taskId);
       const job = meta?.jobId && this.records.get('jobs', meta.jobId);
       if (job?.taskId === taskId) this.completeJob(job, status);
-      if (status === 'completed' && meta?.spaceId && result.result) {
+      if (status === 'completed' && meta?.spaceId) {
         const space = this.store.teamSpace?.(meta.spaceId);
         if (space && task.role === space.pmRoleId) {
           const currentJob = job ? this.records.get('jobs', job.id) : null;
           const finalReply = !currentJob || currentJob.status === 'completed';
-          this.records.save('space-messages', {
+          if (result.result) this.records.save('space-messages', {
             spaceId: meta.spaceId,
             clientMessageId: null,
             kind: finalReply ? 'reply' : 'progress',
@@ -186,11 +221,12 @@ export class ControlPlane {
             content: String(result.result).slice(0, 500000),
             status: finalReply ? 'answered' : 'sent',
           }, `reply:${taskId}`);
-          if (finalReply && meta.sourceMessageId) {
-            const source = this.records.get('space-messages', meta.sourceMessageId);
-            if (source) this.records.save('space-messages', { ...source, status: 'answered' }, source.id);
-          }
+          if (finalReply) this.publishHandoffResult(task, meta, status, result.result);
         }
+      }
+      if (status !== 'completed' && meta?.spaceId) {
+        const space = this.store.teamSpace?.(meta.spaceId);
+        if (space && task.role === space.pmRoleId) this.publishHandoffResult(task, meta, status, result.error || result.result);
       }
       return { accepted: true, duplicate: false };
     });

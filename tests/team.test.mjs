@@ -281,6 +281,18 @@ test('team MCP can discover and delegate to an allowed long-lived team', async (
       idempotencyKey: 'mcp-handoff-1',
     } })).content[0].text);
     assert.equal(duplicate.duplicate, true);
+
+    runs[1].complete('资料团队已整理来源清单并提交摘要。');
+    await tick();
+    const sourceReply = app.store.teamMessages(source.id).find(
+      (message) => message.kind === 'reply' && message.taskId === delegated.taskId,
+    );
+    assert.ok(sourceReply);
+    assert.equal(sourceReply.senderType, 'team');
+    assert.equal(sourceReply.fromTeamId, target.id);
+    assert.equal(sourceReply.relatedMessageId, sourceHandoff.id);
+    assert.match(sourceReply.content, /已整理来源清单/);
+    assert.equal(app.store.records.get('space-messages', sourceHandoff.id).status, 'answered');
   } finally {
     await Promise.allSettled(clients.map((client) => client.close()));
     await app.close();

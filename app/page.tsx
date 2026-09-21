@@ -149,6 +149,7 @@ type TeamMessage = {
   senderId: string;
   fromTeamId?: string | null;
   toTeamId?: string | null;
+  relatedMessageId?: string | null;
   taskId?: string | null;
   content: string;
   status: string;
