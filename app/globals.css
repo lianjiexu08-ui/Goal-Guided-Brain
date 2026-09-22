@@ -1108,8 +1108,195 @@ h1 {
 }
 .knowledge-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(245px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 18px;
+}
+.knowledge-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+.knowledge-toolbar .search-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.clear-search-btn {
+  position: absolute;
+  right: 12px;
+  background: transparent;
+  border: none;
+  color: #8fa0a9;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 50%;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.clear-search-btn:hover {
+  background: #e2e8ea;
+  color: #334155;
+}
+.knowledge-filter-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.filter-pill {
+  border: 1px solid #dce4e8;
+  background: #f8fafb;
+  color: #64748b;
+  padding: 5px 14px;
+  border-radius: 16px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.filter-pill:hover {
+  background: #edf2f5;
+  color: #1e293b;
+  border-color: #cbd5e1;
+}
+.filter-pill.active {
+  background: #2c3e50;
+  color: #ffffff;
+  border-color: #2c3e50;
+  font-weight: 500;
+}
+.knowledge-card-wrapper {
+  position: relative;
+  background: white;
+  border: 1px solid #e1e9ec;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.knowledge-card-wrapper:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
+  border-color: #cbd5e1;
+}
+.knowledge-card-clickable {
+  text-align: left;
+  padding: 22px;
+  background: transparent;
+  border: none;
+  width: 100%;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  flex: 1;
+}
+.knowledge-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  gap: 8px;
+}
+.knowledge-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #7b9aab;
+}
+.knowledge-card-actions {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0.5;
+  transition: opacity 0.15s ease;
+  z-index: 2;
+}
+.knowledge-card-wrapper:hover .knowledge-card-actions {
+  opacity: 1;
+}
+.card-action-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #64748b;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.card-action-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+  border-color: #e2e8f0;
+}
+.card-action-btn.danger:hover {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+.knowledge-card-wrapper h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+.knowledge-card-wrapper p {
+  font-size: 12px;
+  line-height: 1.75;
+  color: #64748b;
+  margin-top: 10px;
+  margin-bottom: 14px;
+  height: 60px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+.knowledge-card-wrapper footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: #94a3b8;
+  border-top: 1px solid #f1f5f9;
+  padding-top: 12px;
+}
+.collection-empty.compact {
+  padding: 48px 24px;
+}
+.history-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.history-item-header h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.history-item-header p {
+  margin: 4px 0 0 0;
+  font-size: 11px;
+  color: #8a9ba6;
+}
+.compact-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
 }
 .knowledge-card {
   text-align: left;

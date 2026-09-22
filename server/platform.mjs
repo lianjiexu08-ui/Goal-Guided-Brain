@@ -55,10 +55,21 @@ export function createPlatform({
   const ready = (async () => {
     await auth.init();
     usageMeter = await loadUsageMeter();
-    if (process.env.WORKBENCH_VAULT_PASSWORD) {
+    const vaultPassphrase =
+      process.env.WORKBENCH_VAULT_PASSWORD ||
+      (() => {
+        const passFile = path.join(dataDir, '.vault_pass');
+        if (fs.existsSync(passFile)) {
+          try {
+            return fs.readFileSync(passFile, 'utf8').trim();
+          } catch {}
+        }
+        return '';
+      })();
+    if (vaultPassphrase) {
       if (vault.status().initialized)
-        await vault.unlock(process.env.WORKBENCH_VAULT_PASSWORD);
-      else await vault.initialize(process.env.WORKBENCH_VAULT_PASSWORD);
+        await vault.unlock(vaultPassphrase);
+      else await vault.initialize(vaultPassphrase);
     }
   })();
   ready.catch(() => {});
@@ -968,9 +979,17 @@ export function createPlatform({
     const ok = (body, status = 200) => ({ status, body });
     if (collection === 'manage' && method === 'GET') return ok(manage());
     if (collection === 'vault' && method === 'POST') {
-      if (id === 'lock') return ok(vault.lock());
+      if (id === 'lock') {
+        const passFile = path.join(dataDir, '.vault_pass');
+        try { fs.rmSync(passFile, { force: true }); } catch {}
+        return ok(vault.lock());
+      }
       if (id === 'initialize' || id === 'unlock') {
         const result = await vault[id](body.passphrase);
+        try {
+          const passFile = path.join(dataDir, '.vault_pass');
+          fs.writeFileSync(passFile, String(body.passphrase || '').trim(), { mode: 0o600 });
+        } catch {}
         void schedule();
         return ok(result);
       }

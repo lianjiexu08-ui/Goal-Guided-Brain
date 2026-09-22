@@ -441,6 +441,10 @@ function Workbench() {
     source: '手动添加',
   });
   const [knowledgeSearch, setKnowledgeSearch] = useState('');
+  const [knowledgeFilterScope, setKnowledgeFilterScope] = useState<string>('all');
+  const [quickRenameKnowledge, setQuickRenameKnowledge] = useState<Knowledge | null>(null);
+  const [quickRenameTitle, setQuickRenameTitle] = useState('');
+  const [knowledgeToDelete, setKnowledgeToDelete] = useState<Knowledge | null>(null);
   const [knowledgeHistory, setKnowledgeHistory] = useState<{
     id: string;
     items: Entity[];
@@ -2156,73 +2160,153 @@ function Workbench() {
                 添加知识
               </button>
             </div>
-            <div className="search-field">
-              <Search size={18} />
-              <input
-                placeholder="搜索知识标题或内容…"
-                aria-label="搜索知识"
-                value={knowledgeSearch}
-                onChange={(e) => setKnowledgeSearch(e.target.value)}
-              />
+            <div className="knowledge-toolbar">
+              <div className="search-field">
+                <Search size={18} />
+                <input
+                  placeholder="搜索知识标题或内容…"
+                  aria-label="搜索知识"
+                  value={knowledgeSearch}
+                  onChange={(e) => setKnowledgeSearch(e.target.value)}
+                />
+                {knowledgeSearch && (
+                  <button
+                    type="button"
+                    className="clear-search-btn"
+                    onClick={() => setKnowledgeSearch('')}
+                    title="清空搜索"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+              <div className="knowledge-filter-tags">
+                {[
+                  { id: 'all', label: '全部' },
+                  { id: 'project', label: '项目共享' },
+                  { id: 'personal', label: '个人知识' },
+                  ...roles.map((r) => ({ id: r.id, label: r.name })),
+                ].map((tag) => (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    className={`filter-pill ${knowledgeFilterScope === tag.id ? 'active' : ''}`}
+                    onClick={() => setKnowledgeFilterScope(tag.id)}
+                  >
+                    {tag.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="knowledge-grid">
-              {(data?.knowledge || [])
-                .filter(
-                  (k) =>
-                    k.scope === 'personal' ||
-                    k.projectPath === data?.config.workspace,
-                )
+            {(() => {
+              const currentWorkspace = data?.config.workspace;
+              const scopedKnowledge = (data?.knowledge || []).filter(
+                (k) => k.scope === 'personal' || k.projectPath === currentWorkspace,
+              );
+              const filteredKnowledge = scopedKnowledge
+                .filter((k) => {
+                  if (knowledgeFilterScope === 'all') return true;
+                  return k.scope === knowledgeFilterScope;
+                })
                 .filter((k) =>
                   `${k.title} ${k.content}`
                     .toLowerCase()
                     .includes(knowledgeSearch.toLowerCase()),
-                )
-                .map((k) => (
-                  <button
-                    className="knowledge-card"
-                    key={k.id}
-                    onClick={() => openKnowledge(undefined, k)}
-                  >
-                    <div>
-                      <FileText size={21} />
-                      <span className="quiet-badge">
-                        {k.scope === 'personal'
-                          ? '个人知识'
-                          : k.scope === 'project'
-                            ? '项目共享'
-                            : roles.find((r) => r.id === k.scope)?.name}
-                      </span>
-                    </div>
-                    <h3>{k.title}</h3>
-                    <p>{k.content}</p>
-                    <footer>
-                      <span
-                        className={k.state === 'confirmed' ? 'confirmed' : ''}
+                );
+
+              if (!scopedKnowledge.length) {
+                return (
+                  <div className="collection-empty">
+                    <BookOpen size={34} />
+                    <h2>给助手一份共同的背景</h2>
+                    <p>从项目介绍、开发约定，或你的工作偏好开始。</p>
+                    <button
+                      className="secondary-button"
+                      onClick={() => openKnowledge()}
+                    >
+                      添加第一份知识
+                    </button>
+                  </div>
+                );
+              }
+
+              if (!filteredKnowledge.length) {
+                return (
+                  <div className="collection-empty compact">
+                    <Search size={28} />
+                    <h2>未找到匹配的知识</h2>
+                    <p>尝试更换搜索关键词或重置分类筛选。</p>
+                    <button
+                      className="secondary-button"
+                      onClick={() => {
+                        setKnowledgeSearch('');
+                        setKnowledgeFilterScope('all');
+                      }}
+                    >
+                      重置筛选条件
+                    </button>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="knowledge-grid">
+                  {filteredKnowledge.map((k) => (
+                    <div className="knowledge-card-wrapper" key={k.id}>
+                      <button
+                        type="button"
+                        className="knowledge-card-clickable"
+                        onClick={() => openKnowledge(undefined, k)}
                       >
-                        {k.state === 'confirmed' ? '已确认' : '待确认草稿'}
-                      </span>
-                      <span>{formatTime(k.updatedAt)}</span>
-                    </footer>
-                  </button>
-                ))}
-            </div>
-            {!(data?.knowledge || []).some(
-              (k) =>
-                k.scope === 'personal' ||
-                k.projectPath === data?.config.workspace,
-            ) && (
-              <div className="collection-empty">
-                <BookOpen size={34} />
-                <h2>给助手一份共同的背景</h2>
-                <p>从项目介绍、开发约定，或你的工作偏好开始。</p>
-                <button
-                  className="secondary-button"
-                  onClick={() => openKnowledge()}
-                >
-                  添加第一份知识
-                </button>
-              </div>
-            )}
+                        <div className="knowledge-card-header">
+                          <div className="knowledge-card-meta">
+                            <FileText size={18} />
+                            <span className="quiet-badge">
+                              {k.scope === 'personal'
+                                ? '个人知识'
+                                : k.scope === 'project'
+                                  ? '项目共享'
+                                  : roles.find((r) => r.id === k.scope)?.name}
+                            </span>
+                          </div>
+                        </div>
+                        <h3>{k.title}</h3>
+                        <p>{k.content}</p>
+                        <footer>
+                          <span
+                            className={k.state === 'confirmed' ? 'confirmed' : ''}
+                          >
+                            {k.state === 'confirmed' ? '已确认' : '待确认草稿'}
+                          </span>
+                          <span>{formatTime(k.updatedAt)}</span>
+                        </footer>
+                      </button>
+                      <div className="knowledge-card-actions">
+                        <button
+                          type="button"
+                          className="card-action-btn"
+                          title="快速重命名"
+                          onClick={() => {
+                            setQuickRenameKnowledge(k);
+                            setQuickRenameTitle(k.title);
+                          }}
+                        >
+                          <Pencil size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          className="card-action-btn danger"
+                          title="删除知识"
+                          onClick={() => setKnowledgeToDelete(k)}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </main>
         )}
       </div>
@@ -2606,8 +2690,36 @@ function Workbench() {
                                 entityText(snapshot, 'updatedAt'),
                             )}
                           </summary>
-                          <h3>{entityText(snapshot, 'title')}</h3>
-                          <p>{entityText(snapshot, 'source')}</p>
+                          <div className="history-item-header">
+                            <div>
+                              <h3>{entityText(snapshot, 'title')}</h3>
+                              <p>{entityText(snapshot, 'source')}</p>
+                            </div>
+                            <button
+                              type="button"
+                              className="secondary-button compact-btn"
+                              title="将此版本内容恢复至上方表单"
+                              onClick={() => {
+                                const restoredTitle = entityText(snapshot, 'title');
+                                const restoredContent = entityText(snapshot, 'content');
+                                const restoredSource = entityText(snapshot, 'source');
+                                const restoredScope = entityText(snapshot, 'scope');
+                                const restoredState = entityText(snapshot, 'state');
+                                setKnowledgeForm((f) => ({
+                                  ...f,
+                                  title: restoredTitle || f.title,
+                                  content: restoredContent || f.content,
+                                  source: restoredSource || f.source,
+                                  scope: restoredScope || f.scope,
+                                  state: restoredState || f.state,
+                                }));
+                                setNotice('已恢复历史版本到表单，点击“保存知识”生效');
+                              }}
+                            >
+                              <Undo2 size={13} />
+                              恢复此版本
+                            </button>
+                          </div>
                           <pre>{entityText(snapshot, 'content')}</pre>
                         </details>
                       );
@@ -2869,6 +2981,101 @@ function Workbench() {
                 )
                 .join('、') || '无'}
             </p>
+          )}
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={quickRenameKnowledge !== null}
+        onOpenChange={(open) => !open && setQuickRenameKnowledge(null)}
+      >
+        <DialogContent className="work-dialog">
+          <DialogTitle>重命名知识</DialogTitle>
+          <DialogDescription>修改知识标题，保存后立即生效。</DialogDescription>
+          {quickRenameKnowledge && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!quickRenameTitle.trim()) return;
+                void action(async () => {
+                  await api(
+                    `knowledge/${quickRenameKnowledge.id}`,
+                    'PUT',
+                    {
+                      ...quickRenameKnowledge,
+                      title: quickRenameTitle.trim(),
+                    },
+                  );
+                  setQuickRenameKnowledge(null);
+                  setNotice('知识已重命名');
+                });
+              }}
+            >
+              <label>
+                知识标题
+                <input
+                  required
+                  maxLength={160}
+                  value={quickRenameTitle}
+                  onChange={(e) => setQuickRenameTitle(e.target.value)}
+                  placeholder="输入新的知识标题"
+                />
+              </label>
+              <div className="manage-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={busy}
+                  onClick={() => setQuickRenameKnowledge(null)}
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  className="primary-button"
+                  disabled={busy || !quickRenameTitle.trim()}
+                >
+                  <Check size={16} /> 保存名称
+                </button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={knowledgeToDelete !== null}
+        onOpenChange={(open) => !open && setKnowledgeToDelete(null)}
+      >
+        <DialogContent className="work-dialog">
+          <DialogTitle>删除知识</DialogTitle>
+          <DialogDescription>
+            确认要删除知识“{knowledgeToDelete?.title}”吗？此操作不可逆。
+          </DialogDescription>
+          {knowledgeToDelete && (
+            <div className="manage-actions" style={{ marginTop: 20 }}>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={busy}
+                onClick={() => setKnowledgeToDelete(null)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                style={{ background: '#b44a3f', borderColor: '#b44a3f' }}
+                disabled={busy}
+                onClick={() => {
+                  void action(async () => {
+                    await api(`knowledge/${knowledgeToDelete.id}`, 'DELETE');
+                    setKnowledgeToDelete(null);
+                    setNotice('知识已删除');
+                  });
+                }}
+              >
+                <Trash2 size={16} /> 确认删除
+              </button>
+            </div>
           )}
         </DialogContent>
       </Dialog>
