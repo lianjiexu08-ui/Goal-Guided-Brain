@@ -87,8 +87,8 @@ export function createPlatform({
     let assistant = store.role(input.role);
     if (!assistant || assistant.archived)
       throw new Error('助手不存在或已归档。');
-    const attachmentIds = attachments.validateIds(input.attachmentIds);
     const teamId = input.teamId || input.spaceId || null;
+    const attachmentIds = attachments.validateIds(input.attachmentIds, teamId);
     let teamModelHint = '';
     let teamProviderIds = [];
     if (teamId) {
@@ -658,7 +658,11 @@ export function createPlatform({
       const workspace = await workspaces.prepare(task, meta.workspaceMode);
       if (meta.attachmentIds?.length) {
         stagedAttachmentRoot = path.join(workspace.path, '.ggb-attachments', task.id);
-        const stagedAttachments = attachments.materialize(meta.attachmentIds, stagedAttachmentRoot);
+        const stagedAttachments = attachments.materialize(
+          meta.attachmentIds,
+          stagedAttachmentRoot,
+          meta.teamId || meta.spaceId || null,
+        );
         records.save('task-meta', { ...meta, stagedAttachments }, task.id);
       }
       if (stopping || stoppingTasks.has(task.id)) {

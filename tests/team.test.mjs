@@ -78,6 +78,133 @@ test('team space routes owner messages to the project manager and persists repli
   }
 });
 
+test('team sessions cannot be reused across teams', async () => {
+  const fixture = sandbox();
+  const runs = [];
+  const app = createWorkbench({
+    ...fixture,
+    requireCredential: false,
+    runtimeFactory: (options) => ({
+      options,
+      start(prompt) { this.prompt = prompt; runs.push(this); },
+      cancel() { options.onDone('cancelled', ''); },
+    }),
+  });
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  const request = async (route, body, method = 'GET') => {
+    const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  try {
+    const source = (await request('teams')).body[0];
+    const target = (await request('teams', {
+      name: '会话隔离目标团队',
+      goal: '验证团队会话不会跨空间复用。',
+      memberRoleIds: ['project_manager'],
+    }, 'POST')).body;
+    const sourceMessage = await request(`teams/${source.id}/messages`, {
+      clientMessageId: 'session-scope-source',
+      content: '源团队上下文，只能留在源团队。',
+    }, 'POST');
+    assert.equal(sourceMessage.status, 201);
+    await tick();
+
+    const rejected = await request('tasks', {
+      role: 'project_manager',
+      teamId: target.id,
+      spaceId: target.id,
+      sessionId: sourceMessage.body.sessionId,
+      prompt: '不应读取源团队上下文。',
+    }, 'POST');
+    assert.equal(rejected.status, 409);
+    assert.match(rejected.body.error, /另一个团队/);
+
+    const targetDetail = await request(`teams/${target.id}`);
+    assert.equal(targetDetail.body.tasks.length, 0);
+    assert.equal(targetDetail.body.messages.length, 0);
+
+    const sameTeam = await request('tasks', {
+      role: 'project_manager',
+      teamId: source.id,
+      spaceId: source.id,
+      sessionId: sourceMessage.body.sessionId,
+      prompt: '在源团队继续推进。',
+    }, 'POST');
+    assert.equal(sameTeam.status, 201);
+    const sourceDetail = await request(`teams/${source.id}`);
+    assert.equal(sourceDetail.body.tasks.length, 2);
+    assert.ok(sourceDetail.body.tasks.some((task) => task.prompt === '在源团队继续推进。'));
+  } finally {
+    await app.close();
+    fs.rmSync(fixture.dir, { recursive: true, force: true });
+  }
+});
+
+test('team task handoff keeps the receiving task in the same team', async () => {
+  const fixture = sandbox();
+  const runs = [];
+  const app = createWorkbench({
+    ...fixture,
+    requireCredential: false,
+    runtimeFactory: (options) => ({
+      options,
+      start(prompt) { this.prompt = prompt; runs.push(this); },
+      cancel() { options.onDone('cancelled', ''); },
+      complete(result = '已完成') {
+        options.onResult(result);
+        options.onDone('completed', '');
+      },
+    }),
+  });
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  const request = async (route, body, method = 'GET') => {
+    const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  try {
+    const team = (await request('teams', {
+      name: '团队交接验证组',
+      goal: '验证团队内的项目经理可以把任务交给开发成员。',
+      memberRoleIds: ['project_manager', 'developer'],
+    }, 'POST')).body;
+    const source = await request('tasks', {
+      role: 'project_manager',
+      teamId: team.id,
+      spaceId: team.id,
+      prompt: '先整理团队交付方案。',
+    }, 'POST');
+    assert.equal(source.status, 201);
+    await tick();
+    assert.equal(runs.length, 1);
+    runs[0].complete('交付方案已整理。');
+    await tick();
+
+    const handoff = await request(`tasks/${source.body.id}/handoff`, {
+      role: 'developer',
+      note: '请根据这份方案实现并运行测试。',
+    }, 'POST');
+    assert.equal(handoff.status, 201);
+    await tick();
+    const detail = await request(`teams/${team.id}`);
+    const received = detail.body.tasks.find((task) => task.id === handoff.body.id);
+    assert.ok(received);
+    assert.equal(received.teamId, team.id);
+    assert.equal(received.role, 'developer');
+    assert.equal(received.sourceTaskId, source.body.id);
+  } finally {
+    await app.close();
+    fs.rmSync(fixture.dir, { recursive: true, force: true });
+  }
+});
+
 test('multiple Chat teams keep independent ownership and can hand work to another team', async () => {
   const fixture = sandbox();
   const runs = [];

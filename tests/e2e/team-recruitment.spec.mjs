@@ -85,16 +85,16 @@ function seedConfirmedTeams() {
   try {
     const teams = [
       {
-        slug: 'development',
-        name: '研发交付团队',
-        goal: '负责产品功能开发、测试和版本交付。',
-        message: '研发交付团队的项目经理动态',
-      },
-      {
         slug: 'operations',
         name: '线上运维团队',
         goal: '负责线上服务稳定性、监控和故障处理。',
         message: '线上运维团队的项目经理动态',
+      },
+      {
+        slug: 'development',
+        name: '研发交付团队',
+        goal: '负责产品功能开发、测试和版本交付。',
+        message: '研发交付团队的项目经理动态',
       },
     ];
     for (const input of teams) {
@@ -291,6 +291,12 @@ test.describe('团队招募核心流程', () => {
     await clickNavigation(page, '团队动态');
     await expect(page.getByText(operations.message, { exact: true })).toBeVisible();
     await expect(page.getByText(development.message, { exact: true })).toHaveCount(0);
+
+    // A reload must preserve the active team route instead of falling back to
+    // the first confirmed team and exposing another team's draft.
+    await page.reload();
+    await expect(page.getByRole('heading', { name: operations.name })).toBeVisible();
+    await expect(page.locator('textarea[aria-label^="发送给"]')).toHaveValue('');
 
     await openTeam(development);
     await expect(page.locator('textarea[aria-label^="发送给"]')).toHaveValue('研发团队专属草稿');

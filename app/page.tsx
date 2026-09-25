@@ -110,6 +110,10 @@ type DraftCache = {
   drafts?: Record<string, string>;
   attachments?: Record<string, Attachment[]>;
 };
+type RouteCache = {
+  spaceId?: string;
+  role?: string;
+};
 type Session = {
   id: string;
   role: RoleId;
@@ -333,6 +337,7 @@ const formatBytes = (bytes: number) =>
     ? `${Math.max(1, Math.round(bytes / 1024))} KB`
     : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 const DRAFT_CACHE_KEY = 'ggb.composer-drafts.v1';
+const ROUTE_CACHE_KEY = 'ggb.workspace-route.v1';
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const MAX_ATTACHMENTS = 20;
 function readDraftCache(): DraftCache {
@@ -355,6 +360,18 @@ function readDraftCache(): DraftCache {
         ]))
       : {};
     return { drafts, attachments };
+  } catch {
+    return {};
+  }
+}
+function readRouteCache(): RouteCache {
+  if (typeof window === 'undefined') return {};
+  try {
+    const value = JSON.parse(window.localStorage.getItem(ROUTE_CACHE_KEY) || '{}') as RouteCache;
+    return {
+      ...(typeof value?.spaceId === 'string' ? { spaceId: value.spaceId } : {}),
+      ...(typeof value?.role === 'string' ? { role: value.role } : {}),
+    };
   } catch {
     return {};
   }
@@ -620,15 +637,26 @@ function Workbench() {
         next.spaces?.find((space) => space.status !== 'archived' && space.recruitment?.phase === 'confirmed') ||
         next.spaces?.find((space) => space.status !== 'archived') ||
         next.spaces?.[0];
+      const cachedRoute = readRouteCache();
+      const cachedSpace = cachedRoute.spaceId
+        ? next.spaces?.find((space) =>
+            space.id === cachedRoute.spaceId && space.status !== 'archived',
+          )
+        : null;
       setSelectedSpaceId((current) =>
         current && next.spaces?.some((space) => space.id === current && space.status !== 'archived')
           ? current
-          : primary?.id || '',
+          : cachedSpace?.id || primary?.id || '',
       );
       if (!routeInitialized.current) {
-        const preferred = primary?.pmRoleId || next.roles.find((item) => !item.archived)?.id;
+        const initialSpace = cachedSpace || primary;
+        const cachedRole = cachedRoute.role && initialSpace?.memberRoleIds.includes(cachedRoute.role) &&
+          next.roles.some((item) => item.id === cachedRoute.role && !item.archived)
+          ? cachedRoute.role
+          : null;
+        const preferred = cachedRole || initialSpace?.pmRoleId || next.roles.find((item) => !item.archived)?.id;
         if (preferred) setRole(preferred);
-        if (primary?.id) setSelectedSpaceId(primary.id);
+        if (initialSpace?.id) setSelectedSpaceId(initialSpace.id);
         routeInitialized.current = true;
       }
       setConnectionError('');
@@ -664,6 +692,17 @@ function Workbench() {
       // Storage quotas and private browsing restrictions are both recoverable.
     }
   }, [drafts, draftAttachments]);
+  useEffect(() => {
+    if (!selectedSpaceId) return;
+    try {
+      window.localStorage.setItem(
+        ROUTE_CACHE_KEY,
+        JSON.stringify({ spaceId: selectedSpaceId, role }),
+      );
+    } catch {
+      // Storage quotas and private browsing restrictions are both recoverable.
+    }
+  }, [selectedSpaceId, role]);
   useEffect(() => {
     if (!taskDetail?.id) return;
     const id = taskDetail.id;
@@ -761,6 +800,9 @@ function Workbench() {
           name: file.name || `粘贴文件-${Date.now()}`,
           mime: file.type || 'application/octet-stream',
           data: btoa(binary),
+          ...((isTeamMember || isTeamConversation) && teamSpace?.id
+            ? { teamId: teamSpace.id }
+            : {}),
         }));
       }
       setDraftAttachments((current) => ({
@@ -934,7 +976,7 @@ function Workbench() {
   }
   function openHandoff(task: Task) {
     setHandoffTask(task);
-    setHandoffRole(activeRoles.find((r) => r.id !== task.role)?.id || '');
+    setHandoffRole(handoffRoles(task)[0]?.id || '');
     setHandoffNote('');
     setModal('handoff');
   }
@@ -1007,6 +1049,9 @@ function Workbench() {
     const next = data?.spaces?.find((space) => space.id === id);
     if (!next) return;
     setModal(null);
+    // Execution records belong to the selected team. Never leave an open
+    // inspector from Team A visible while the user is browsing Team B.
+    setTaskDetail(null);
     setSelectedSpaceId(next.id);
     setRole(next.pmRoleId);
   }
@@ -1018,6 +1063,14 @@ function Workbench() {
       [task.spaceId ? `${task.spaceId}:${task.role}` : task.role]: task.sessionId,
     }));
     setView('workspace');
+  }
+  function handoffRoles(task: Task | null) {
+    const team = task?.spaceId
+      ? data?.spaces?.find((space) => space.id === task.spaceId)
+      : null;
+    return activeRoles.filter((item) =>
+      item.id !== task?.role && (!team || team.memberRoleIds.includes(item.id)),
+    );
   }
   function editRole() {
     setEditingAssistant(assistant);
@@ -2797,8 +2850,7 @@ function Workbench() {
                   label="接收助手"
                   value={handoffRole}
                   onChange={setHandoffRole}
-                  options={roles
-                    .filter((r) => !r.archived && r.id !== handoffTask?.role)
+                  options={handoffRoles(handoffTask)
                     .map((r) => ({ value: r.id, label: r.name }))}
                 />
               </div>

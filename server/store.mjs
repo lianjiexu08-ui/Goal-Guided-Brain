@@ -530,11 +530,14 @@ export class Store {
     prompt,
     sessionId,
     sourceTaskId,
+    teamId,
+    spaceId,
     workspace = this.config.workspace,
   }) {
     const assistant = this.role(role);
     if (!assistant || assistant.archived)
       throw new Error('助手不存在或已归档，请先恢复助手。');
+    const scopeId = teamId || spaceId || null;
     const now = new Date().toISOString(),
       id = randomUUID();
     this.db.exec('SAVEPOINT create_task');
@@ -549,6 +552,29 @@ export class Store {
           session.workspace !== workspace
         )
           throw new Error('这个会话不属于当前助手或工作目录，请新建会话。');
+        const previousTasks = this.db
+          .prepare('SELECT id FROM tasks WHERE sessionId=?')
+          .all(sessionId);
+        if (scopeId) {
+          const crossesTeamBoundary = previousTasks.some(({ id: previousTaskId }) => {
+            const meta = this.records.get('task-meta', previousTaskId);
+            const previousScopeId = meta?.teamId || meta?.spaceId || null;
+            return previousScopeId !== scopeId;
+          });
+          if (crossesTeamBoundary)
+            throw Object.assign(
+              new Error('这个会话属于另一个团队，请为当前团队新建会话。'),
+              { status: 409 },
+            );
+        } else if (previousTasks.some(({ id: previousTaskId }) => {
+          const meta = this.records.get('task-meta', previousTaskId);
+          return Boolean(meta?.teamId || meta?.spaceId);
+        })) {
+          throw Object.assign(
+            new Error('这个会话属于团队空间，请使用团队自己的会话。'),
+            { status: 409 },
+          );
+        }
       } else {
         sessionId = randomUUID();
         this.db

@@ -257,12 +257,21 @@ export function createWorkbench({
       if (!authorization.authorized)
         return send(401, { error: '请先登录工作台。' });
       if (parts[1] === 'attachments') {
-        if (req.method === 'POST' && !parts[2])
+        if (req.method === 'POST' && !parts[2]) {
+          const teamId = typeof body.teamId === 'string' && body.teamId.trim()
+            ? body.teamId.trim()
+            : null;
+          if (teamId) {
+            const team = store.teamSpace(teamId);
+            if (!team || team.status !== 'active') throw new Error('附件所属团队不存在或已暂停。');
+          }
           return send(201, platform.attachments.create({
             name: body.name,
             mime: body.mime,
             data: body.data,
+            teamId,
           }));
+        }
         if (parts[2] && req.method === 'GET') {
           const attachment = platform.attachments.metadata(parts[2]);
           if (!attachment) return send(404, { error: '附件不存在。' });
@@ -484,7 +493,7 @@ export function createWorkbench({
           }
           if (req.method === 'POST' && parts[3] === 'messages') {
             if (space.status !== 'active') throw new Error('团队空间当前不可接收新消息。');
-            const attachmentIds = platform.attachments.validateIds(body.attachmentIds);
+            const attachmentIds = platform.attachments.validateIds(body.attachmentIds, space.id);
             const content = typeof body.content === 'string' ? body.content.trim() : '';
             if (!content && !attachmentIds.length) throw new Error('团队消息不能为空，且不能超过 32000 字符。');
             const messageContent = content || '请查看随附文件并处理。';
@@ -686,6 +695,11 @@ export function createWorkbench({
             throw new Error('请等待原任务完成并生成成果后再交接。');
           const role = roleValue(body.role);
           if (role === task.role) throw new Error('请选择另一个助手。');
+          const previousMeta = store.records.get('task-meta', task.id) || {};
+          const previousJob = previousMeta.jobId
+            ? store.records.get('jobs', previousMeta.jobId)
+            : null;
+          const teamId = previousMeta.teamId || previousMeta.spaceId || previousJob?.teamId || previousJob?.spaceId || null;
           return send(
             201,
             newTask({
@@ -693,6 +707,7 @@ export function createWorkbench({
               prompt: required(body.note, '交接要求'),
               sourceTaskId: task.id,
               workspace: task.workspace,
+              ...(teamId ? { teamId, spaceId: teamId, ownerInitiated: true } : {}),
             }),
           );
         }
