@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 97/97, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 130/130, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Combined parent/frontend/backend/reviewer scenario using real orchestration MCP,
@@ -60,6 +60,12 @@ No paid provider was called during the test suite. Native adapter tests use a
 deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
+
+The current deterministic suite contains 130 passing tests. The repeatable
+Playwright baseline contains four passing desktop/mobile cases covering team
+recruitment navigation, draft restoration across views, and binary drag-and-drop
+attachments against the real API. This is a core-flow baseline; confirmation,
+renaming, task-detail recovery and cross-platform environment gates remain open.
 
 ## Remaining Compatibility And Release Gates
 
