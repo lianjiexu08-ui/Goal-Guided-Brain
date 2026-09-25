@@ -928,8 +928,8 @@ function Workbench() {
     });
     setModal('team');
   }
-  async function startRecruitment() {
-    if (recruitmentSpace) {
+  async function startRecruitment(forceNew = false) {
+    if (!forceNew && recruitmentSpace) {
       selectTeam(recruitmentSpace.id);
       setView('recruitment');
       if (isMobile) setOpenMobile(false);
@@ -1057,7 +1057,7 @@ function Workbench() {
           </SidebarMenu>
           <div className="team-nav-head">
             <span>我的团队</span>
-            <button type="button" aria-label="发布新需求" disabled={busy || !activeRoles.length} onClick={() => void startRecruitment()}>
+            <button type="button" aria-label="发布新需求" disabled={busy || !activeRoles.length} onClick={() => void startRecruitment(true)}>
               <Plus size={14} />
             </button>
           </div>
@@ -1209,7 +1209,7 @@ function Workbench() {
                     options={confirmedSpaces.map((space) => ({ value: space.id, label: space.name }))}
                   />
                 ) : null}
-                <button className="secondary-button" type="button" disabled={busy || !activeRoles.length} onClick={() => void startRecruitment()}><Plus size={15} /> 发布新需求</button>
+                <button className="secondary-button" type="button" disabled={busy || !activeRoles.length} onClick={() => void startRecruitment(true)}><Plus size={15} /> 发布新需求</button>
                 <button className="text-button" type="button" disabled={busy || !teamSpace} onClick={openTeamRename}><Pencil size={13} /> 重命名</button>
                 <button className="text-button" type="button" onClick={openTeamCreate}>高级配置</button>
                 <div className="team-health"><span className="live-dot" /> {rosterReady ? `${teamMembers.length} 位成员已配置` : recruitment?.phase === 'proposed' ? '方案待确认' : '正在招募'}</div>
@@ -1369,7 +1369,7 @@ function Workbench() {
                         : confirmedSpaces.map((space) => ({ value: space.id, label: space.name }))}
                     />
                   ) : null}
-                  <button className="secondary-button" type="button" disabled={busy || !activeRoles.length} onClick={() => void startRecruitment()}>
+                  <button className="secondary-button" type="button" disabled={busy || !activeRoles.length} onClick={() => void startRecruitment(true)}>
                     <Plus size={15} /> {isRecruitmentView ? '另起需求' : '发布新需求'}
                   </button>
                   {!isRecruitmentView && <button className="text-button" type="button" disabled={busy || !teamSpace} onClick={openTeamRename}><Pencil size={13} /> 重命名</button>}
