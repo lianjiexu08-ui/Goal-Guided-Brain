@@ -2,8 +2,83 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
+import { Store } from '../../server/store.mjs';
 
 const dataDir = process.env.GGB_E2E_DATA_DIR || path.join(os.tmpdir(), 'ggb-browser-e2e-fixture');
+
+function seedProposedRecruitment() {
+  const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
+  try {
+    const teamName = '待确认开发团队';
+    // Reuse the fixture team when the desktop project has already exercised
+    // this flow. Playwright projects share one isolated database per run.
+    const team = store.teamSpaces().find((space) =>
+      space.recruitment?.proposal?.teamName === teamName,
+    ) || store.teamSpaces().find((space) => space.recruitment?.phase === 'confirmed');
+    if (!team) throw new Error('E2E fixture requires a seeded team.');
+    const proposal = {
+      version: 1,
+      teamName,
+      goal: '交付一条可测试的产品开发流程。',
+      purpose: '负责需求拆解、代码实现和验收准备。',
+      size: 2,
+      members: [
+        {
+          memberId: 'manager',
+          roleId: 'project_manager',
+          name: '项目经理',
+          responsibility: '澄清目标、安排任务并汇总交付。',
+          deliverables: ['团队计划', '交付总结'],
+          skills: [],
+          skillIds: [],
+          capabilityIds: [],
+          providerIds: [],
+          tools: [],
+          toolAccess: null,
+          modelHint: '',
+          dependencies: [],
+        },
+        {
+          memberId: 'developer',
+          roleId: 'developer',
+          name: '开发交付助手',
+          responsibility: '实现功能并运行自动化测试。',
+          deliverables: ['可运行代码', '测试结果'],
+          skills: [],
+          skillIds: [],
+          capabilityIds: [],
+          providerIds: [],
+          tools: [],
+          toolAccess: null,
+          modelHint: '',
+          dependencies: ['manager'],
+        },
+      ],
+      openQuestions: [],
+      ready: true,
+      createdAt: new Date().toISOString(),
+    };
+    store.saveTeamSpace({
+      ...team,
+      name: '待确认需求',
+      goal: proposal.goal,
+      purpose: proposal.purpose,
+      memberRoleIds: ['project_manager'],
+      recruitment: {
+        ...team.recruitment,
+        phase: 'proposed',
+        sessionId: null,
+        turns: 1,
+        brief: proposal.goal,
+        proposal,
+        confirmedAt: null,
+      },
+    }, team.id);
+    return { teamId: team.id, teamName };
+  } finally {
+    store.close();
+  }
+}
 
 function sidebarLocator(page) {
   const mobile = (page.viewportSize()?.width || 1024) < 768;
@@ -108,5 +183,33 @@ test.describe('团队招募核心流程', () => {
     expect(newFile).toBeTruthy();
     const stored = fs.readFileSync(path.join(attachmentDir, newFile));
     expect([...stored]).toEqual(pngBytes);
+  });
+
+  test('确认 Team Charter 后进入我的团队并保留重命名后的团队身份', async ({ page }) => {
+    const { teamName } = seedProposedRecruitment();
+    const composer = await recruitmentPage(page);
+    const draftPicker = page.getByRole('combobox', { name: '选择需求草稿', exact: true });
+    await draftPicker.click();
+    await page.getByRole('option', { name: `需求草稿 · 待确认需求`, exact: true }).click();
+    await expect(page.getByRole('heading', { name: teamName })).toBeVisible();
+    await expect(page.getByRole('button', { name: '确认创建团队', exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: '确认创建团队', exact: true }).click();
+    await expect(page.getByText(/已确认，项目经理可以开始安排任务/)).toBeVisible();
+    await openMobileSidebar(page);
+    const createdTeamNav = page.getByRole('button', { name: new RegExp(`${teamName}.*交付`) });
+    await expect(createdTeamNav).toBeVisible();
+    if ((page.viewportSize()?.width || 1024) < 768) await createdTeamNav.click({ force: true });
+
+    await page.getByRole('button', { name: '重命名', exact: true }).click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    const renamed = '开发交付团队';
+    await page.getByLabel('团队名称').fill(renamed);
+    await page.getByRole('button', { name: '保存名称', exact: true }).click();
+    await expect(page.getByRole('heading', { name: renamed })).toBeVisible();
+    await expect(page.getByText(`团队已重命名为“${renamed}”`)).toBeVisible();
+    await openMobileSidebar(page);
+    await expect(page.getByRole('button', { name: new RegExp(`${renamed}.*交付`) })).toBeVisible();
+    await expect(composer).toHaveValue('');
   });
 });

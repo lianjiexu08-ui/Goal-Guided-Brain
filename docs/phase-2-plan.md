@@ -62,10 +62,12 @@ and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
 The current deterministic suite contains 130 passing tests. The repeatable
-Playwright baseline contains four passing desktop/mobile cases covering team
-recruitment navigation, draft restoration across views, and binary drag-and-drop
-attachments against the real API. This is a core-flow baseline; confirmation,
-renaming, task-detail recovery and cross-platform environment gates remain open.
+Playwright baseline contains six passing desktop/mobile runs covering team
+recruitment navigation, draft restoration across views, binary drag-and-drop
+attachments, Team Charter confirmation and team renaming against the real API.
+The confirmation fixture exercises the deterministic approval boundary; the
+multi-turn model quality, task-detail recovery and cross-platform environment
+gates remain open.
 
 ## Remaining Compatibility And Release Gates
 
