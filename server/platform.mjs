@@ -28,6 +28,22 @@ const text = (v, max = 32000) =>
     .trim()
     .slice(0, max);
 const statuses = new Set(['queued', 'running', 'waiting', 'state_unknown']);
+const summarizeTaskDelivery = (task, artifacts) => {
+  const verification = artifacts.find((item) => item.kind === 'verification') || null;
+  const acceptanceStatus = verification
+    ? verification.status || (verification.verified === true ? 'verified' : 'pending-review')
+    : task.status === 'completed'
+      ? 'pending-review'
+      : null;
+  return {
+    executionStatus: task.status,
+    acceptanceStatus,
+    evidenceCount: artifacts.length,
+    hasVerificationEvidence: !!verification,
+    latestVerificationId: verification?.id || null,
+    latestVerificationAt: verification?.finishedAt || verification?.updatedAt || null,
+  };
+};
 const publicNode = ({ tokenHash: _token, ...node }) => node;
 const shellQuote = (value) => `'${String(value).replace(/'/g, `'"'"'`)}'`;
 
@@ -1471,6 +1487,7 @@ export function createPlatform({
             .slice(0, 100),
           usage: records.list('usage').filter((e) => e.taskId === id),
           artifacts,
+          delivery: summarizeTaskDelivery(task, artifacts),
           latestVerification:
             artifacts.find((item) => item.kind === 'verification') || null,
         });

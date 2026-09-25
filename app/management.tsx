@@ -13,6 +13,7 @@ import {
   Cpu,
   Download,
   ExternalLink,
+  FileText,
   FolderGit2,
   GitBranch,
   GitMerge,
@@ -1555,6 +1556,10 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
           (item) => item.kind === 'verification',
         );
   const artifacts = entityList(execution?.artifacts);
+  const delivery =
+    execution?.delivery && typeof execution.delivery === 'object'
+      ? (execution.delivery as Entity)
+      : null;
   const taskStatus = execution ? status(execution) : '';
   const verificationState =
     (verification ? status(verification) : '') ||
@@ -1631,6 +1636,16 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
       setBusy(false);
     }
   };
+  const evidenceKind = (artifact: Entity) =>
+    txt(artifact, 'kind') === 'verification'
+      ? '验收证据'
+      : txt(artifact, 'kind') === 'commit'
+        ? '代码提交'
+        : '交付产物';
+  const evidenceDetail = (artifact: Entity) =>
+    txt(artifact, 'output') ||
+    txt(artifact, 'evidence') ||
+    txt(artifact, 'content');
   return (
     <section className="manage-detail">
       <h3>
@@ -1661,6 +1676,54 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
             </div>
             <p>{deliveryDetail}</p>
           </div>
+          <section className="evidence-center" aria-label="交付证据">
+            <div className="evidence-center-heading">
+              <div>
+                <h3><FileText size={16} /> 交付证据</h3>
+                <p>
+                  执行完成代表任务结束；验收证据才代表结果可以交付。
+                  {delivery && ` 当前记录 ${txt(delivery, 'evidenceCount', String(artifacts.length))} 项证据。`}
+                </p>
+              </div>
+              <Badge value={verification ? verificationState : taskStatus === 'completed' ? 'pending-review' : '暂无验收'} />
+            </div>
+            {!artifacts.length ? (
+              <div className="evidence-empty">
+                <strong>还没有交付证据</strong>
+                <span>
+                  {taskStatus === 'completed'
+                    ? '任务已经结束，请运行验证或提交产物后再判断是否交付。'
+                    : '完成任务后，代码提交、测试结果和验证输出会显示在这里。'}
+                </span>
+              </div>
+            ) : (
+              <div className="evidence-list">
+                {artifacts.map((artifact, index) => {
+                  const detail = evidenceDetail(artifact);
+                  const location =
+                    txt(artifact, 'path') ||
+                    txt(artifact, 'location') ||
+                    txt(artifact, 'commit');
+                  return (
+                    <article className="evidence-item" key={artifact.id || index}>
+                      <div className="evidence-item-heading">
+                        <div>
+                          <strong>{evidenceKind(artifact)}</strong>
+                          <span>{title(artifact)}</span>
+                        </div>
+                        <Badge value={status(artifact) || 'submitted'} />
+                      </div>
+                      <div className="evidence-item-meta">
+                        {location && <span>{location}</span>}
+                        <time>{time(artifact.finishedAt || artifact.updatedAt || artifact.createdAt)}</time>
+                      </div>
+                      {detail && <pre>{detail}</pre>}
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
           {!workspace ? (
             <p>尚未分配执行目录；当前判断以任务结果和验证记录为准。</p>
           ) : (

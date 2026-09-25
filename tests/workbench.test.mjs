@@ -400,6 +400,11 @@ test('HTTP journey: concurrent assistants, developer queue, cancellation, handof
     );
     assert.equal(evidenceTask.artifactCount, 1);
     assert.equal(evidenceTask.verificationStatus, 'verified');
+    const inspectedDetail = await request(`tasks/${inspectedTask.id}`, undefined, 'GET');
+    assert.equal(inspectedDetail.body.delivery.executionStatus, inspectedDetail.body.status);
+    assert.equal(inspectedDetail.body.delivery.acceptanceStatus, 'verified');
+    assert.equal(inspectedDetail.body.delivery.evidenceCount, 1);
+    assert.equal(inspectedDetail.body.delivery.hasVerificationEvidence, true);
     assert.equal(
       fs.statSync(path.join(s.dataDir, 'vault.json')).mode & 0o777,
       0o600,
