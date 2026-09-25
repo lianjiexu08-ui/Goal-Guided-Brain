@@ -80,6 +80,60 @@ function seedProposedRecruitment() {
   }
 }
 
+function seedConfirmedTeams() {
+  const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
+  try {
+    const teams = [
+      {
+        slug: 'development',
+        name: '研发交付团队',
+        goal: '负责产品功能开发、测试和版本交付。',
+        message: '研发交付团队的项目经理动态',
+      },
+      {
+        slug: 'operations',
+        name: '线上运维团队',
+        goal: '负责线上服务稳定性、监控和故障处理。',
+        message: '线上运维团队的项目经理动态',
+      },
+    ];
+    for (const input of teams) {
+      const existing = store.teamSpaces().find((space) => space.name === input.name);
+      const saved = store.saveTeamSpace({
+        ...existing,
+        name: input.name,
+        goal: input.goal,
+        purpose: input.goal,
+        workspace: process.cwd(),
+        pmRoleId: 'project_manager',
+        memberRoleIds: ['project_manager'],
+        recruitment: {
+          ...existing?.recruitment,
+          phase: 'confirmed',
+          sessionId: null,
+          turns: 1,
+          brief: input.goal,
+          proposal: null,
+          confirmedAt: new Date().toISOString(),
+        },
+      }, existing?.id);
+      store.saveTeamMessage({
+        spaceId: saved.id,
+        teamId: saved.id,
+        clientMessageId: `e2e-${input.slug}-message`,
+        kind: 'reply',
+        senderType: 'agent',
+        senderId: 'project_manager',
+        content: input.message,
+        status: 'sent',
+      }, `e2e-${input.slug}-message`);
+    }
+    return { development: teams[0], operations: teams[1] };
+  } finally {
+    store.close();
+  }
+}
+
 function sidebarLocator(page) {
   const mobile = (page.viewportSize()?.width || 1024) < 768;
   return page.locator(mobile
@@ -211,5 +265,34 @@ test.describe('团队招募核心流程', () => {
     await openMobileSidebar(page);
     await expect(page.getByRole('button', { name: new RegExp(`${renamed}.*交付`) })).toBeVisible();
     await expect(composer).toHaveValue('');
+  });
+
+  test('两个已创建团队切换时保留各自动态和草稿上下文', async ({ page }) => {
+    const { development, operations } = seedConfirmedTeams();
+    await page.goto('/');
+
+    const openTeam = async (team) => {
+      await openMobileSidebar(page);
+      const navigation = sidebarLocator(page).locator('button').filter({ hasText: team.name }).first();
+      await expect(navigation).toBeVisible();
+      await navigation.click({ force: true });
+      await expect(page.getByRole('heading', { name: team.name })).toBeVisible();
+    };
+
+    await openTeam(development);
+    const developmentComposer = page.locator('textarea[aria-label^="发送给"]');
+    await developmentComposer.fill('研发团队专属草稿');
+    await clickNavigation(page, '团队动态');
+    await expect(page.getByText(development.message, { exact: true })).toBeVisible();
+
+    await openTeam(operations);
+    const operationsComposer = page.locator('textarea[aria-label^="发送给"]');
+    await expect(operationsComposer).toHaveValue('');
+    await clickNavigation(page, '团队动态');
+    await expect(page.getByText(operations.message, { exact: true })).toBeVisible();
+    await expect(page.getByText(development.message, { exact: true })).toHaveCount(0);
+
+    await openTeam(development);
+    await expect(page.locator('textarea[aria-label^="发送给"]')).toHaveValue('研发团队专属草稿');
   });
 });
