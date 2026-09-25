@@ -60,7 +60,7 @@ test('TypeSafe-only configuration does not masquerade as a chat model', async (t
 });
 
 test('management API synchronizes a provider catalog without exposing its credential', async (t) => {
-  const { app, request } = await fixture(t);
+  const { app, request, dataDir } = await fixture(t);
   let authorization = '';
   const remote = http.createServer((req, res) => {
     authorization = req.headers.authorization || '';
@@ -75,6 +75,7 @@ test('management API synchronizes a provider catalog without exposing its creden
   await new Promise((resolve) => remote.listen(0, '127.0.0.1', resolve));
   t.after(() => remote.close());
   await request('vault/initialize', { passphrase: 'fixture-vault-password-123' });
+  assert.equal(fs.existsSync(path.join(dataDir, '.vault_pass')), false);
   const credential = await app.platform.vault.put({ name: 'catalog', value: 'catalog-secret' });
   const created = await request('providers', {
     name: 'Catalog fixture',
@@ -109,6 +110,7 @@ test('legacy key migration preserves the old file until encrypted storage succee
     ).status,
     200,
   );
+  assert.equal(fs.existsSync(path.join(dataDir, '.vault_pass')), false);
   const migrated = await request('vault/import-legacy', {});
   assert.equal(migrated.status, 200);
   assert.equal(migrated.body.removedLegacyFile, true);

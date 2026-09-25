@@ -487,11 +487,7 @@ function Workbench() {
   const Icon =
     assistantIcons[assistant.icon as keyof typeof assistantIcons] || Sparkles;
   const tasks = data?.tasks || [];
-  const sessions = (data?.sessions || []).filter((s) => s.role === role);
-  const currentSession = selected[role];
-  const conversationWorkspace =
-    sessions.find((s) => s.id === currentSession)?.workspace ||
-    data?.config.workspace;
+  const allSessions = (data?.sessions || []).filter((s) => s.role === role);
   const spaces = data?.spaces || [];
   const confirmedSpaces = spaces.filter(
     (space) => space.status !== 'archived' && space.recruitment?.phase === 'confirmed',
@@ -502,20 +498,14 @@ function Workbench() {
   const recruitmentSpace =
     recruitmentSpaces.find((space) => space.id === selectedSpaceId) ||
     recruitmentSpaces[0];
+  const primarySpace = confirmedSpaces[0] || recruitmentSpaces[0] || spaces[0];
   const teamSpace =
     spaces.find((space) => space.id === selectedSpaceId) ||
-    spaces[0];
+    primarySpace;
   const isRecruitmentView = view === 'recruitment';
   const isConversationView = view === 'workspace' || isRecruitmentView;
   const isTeamConversation = teamSpace?.pmRoleId === role;
   const assistantName = teamSpace?.memberSettings?.[role]?.label || assistant.name;
-  const currentTasks = tasks
-    .filter((t) =>
-      teamSpace?.pmRoleId === role
-        ? t.role === role && t.spaceId === teamSpace.id
-        : t.sessionId === currentSession,
-    )
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const running = tasks.filter(isActive);
   const rosterReady = teamSpace?.recruitment?.phase === 'confirmed';
   const visibleMemberIds = teamSpace
@@ -558,6 +548,35 @@ function Workbench() {
   const attachmentDraftKey = draftKey;
   const currentMemberSettings = teamSpace?.memberSettings?.[role];
   const isTeamMember = !!teamSpace?.memberRoleIds.includes(role);
+  const teamSessionIds = teamSpace
+    ? new Set(
+        tasks
+          .filter((task) => task.spaceId === teamSpace.id && task.role === role)
+          .map((task) => task.sessionId),
+      )
+    : new Set<string>();
+  const sessions =
+    teamSpace && (isTeamConversation || isTeamMember)
+      ? allSessions.filter((session) => teamSessionIds.has(session.id))
+      : allSessions;
+  // Team conversations have their own session history. Namespacing the
+  // selected session by team prevents a developer opened in Team A from
+  // showing Team A's messages after the same member is selected in Team B.
+  const sessionSelectionKey =
+    teamSpace && (isTeamConversation || isTeamMember)
+      ? `${teamSpace.id}:${role}`
+      : role;
+  const currentSession = selected[sessionSelectionKey];
+  const conversationWorkspace =
+    sessions.find((s) => s.id === currentSession)?.workspace ||
+    data?.config.workspace;
+  const currentTasks = tasks
+    .filter((t) =>
+      teamSpace?.pmRoleId === role
+        ? t.role === role && t.spaceId === teamSpace.id
+        : t.sessionId === currentSession,
+    )
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const preferredModelId =
     currentMemberSettings?.modelHint ||
     (isTeamConversation ? projectManager?.model : assistant.model) ||
@@ -597,15 +616,19 @@ function Workbench() {
     try {
       const next = await api<State>('state');
       setData(next);
+      const primary =
+        next.spaces?.find((space) => space.status !== 'archived' && space.recruitment?.phase === 'confirmed') ||
+        next.spaces?.find((space) => space.status !== 'archived') ||
+        next.spaces?.[0];
       setSelectedSpaceId((current) =>
-        current && next.spaces?.some((space) => space.id === current)
+        current && next.spaces?.some((space) => space.id === current && space.status !== 'archived')
           ? current
-          : next.spaces?.[0]?.id || '',
+          : primary?.id || '',
       );
       if (!routeInitialized.current) {
-        const preferred = next.spaces?.[0]?.pmRoleId || next.roles.find((item) => !item.archived)?.id;
+        const preferred = primary?.pmRoleId || next.roles.find((item) => !item.archived)?.id;
         if (preferred) setRole(preferred);
-        if (next.spaces?.[0]?.id) setSelectedSpaceId(next.spaces[0].id);
+        if (primary?.id) setSelectedSpaceId(primary.id);
         routeInitialized.current = true;
       }
       setConnectionError('');
@@ -680,7 +703,10 @@ function Workbench() {
         create: async (input) => {
           const task = await api<Task>('tasks', 'POST', input);
           setRole(task.role);
-          setSelected((s) => ({ ...s, [task.role]: task.sessionId }));
+          setSelected((s) => ({
+            ...s,
+            [task.spaceId ? `${task.spaceId}:${task.role}` : task.role]: task.sessionId,
+          }));
           setView('workspace');
           await refresh();
           return { id: task.id, status: task.status };
@@ -776,7 +802,7 @@ function Workbench() {
           },
         );
         if (message.sessionId) {
-          setSelected((s) => ({ ...s, [role]: message.sessionId }));
+          setSelected((s) => ({ ...s, [sessionSelectionKey]: message.sessionId }));
         }
         setDrafts((s) => ({ ...s, [draftKey]: '' }));
         setDraftAttachments((s) => ({ ...s, [attachmentDraftKey]: [] }));
@@ -798,7 +824,10 @@ function Workbench() {
             }
           : {}),
       });
-      setSelected((s) => ({ ...s, [role]: task.sessionId }));
+      setSelected((s) => ({
+        ...s,
+        [task.spaceId ? `${task.spaceId}:${task.role}` : sessionSelectionKey]: task.sessionId,
+      }));
       setDrafts((s) => ({ ...s, [draftKey]: '' }));
       setDraftAttachments((s) => ({ ...s, [attachmentDraftKey]: [] }));
     });
@@ -823,7 +852,7 @@ function Workbench() {
         },
       );
       if (retried.sessionId) {
-        setSelected((s) => ({ ...s, [role]: retried.sessionId }));
+        setSelected((s) => ({ ...s, [sessionSelectionKey]: retried.sessionId }));
       }
     });
   }
@@ -870,7 +899,7 @@ function Workbench() {
       await refresh();
       setSelectedSpaceId(saved.id);
       setRole(saved.pmRoleId);
-      setSelected((current) => ({ ...current, [saved.pmRoleId]: undefined }));
+      setSelected((current) => ({ ...current, [`${saved.id}:${saved.pmRoleId}`]: undefined }));
       setView('workspace');
       setNotice(`团队“${saved.name}”已确认，项目经理可以开始安排任务`);
     });
@@ -950,7 +979,6 @@ function Workbench() {
       });
       setSelectedSpaceId(saved.id);
       setRole(saved.pmRoleId);
-      setSelected((current) => ({ ...current, [saved.pmRoleId]: undefined }));
       setDrafts((current) => ({ ...current, [`${saved.id}:${saved.pmRoleId}`]: '' }));
       setView('recruitment');
       if (isMobile) setOpenMobile(false);
@@ -979,18 +1007,16 @@ function Workbench() {
     const next = data?.spaces?.find((space) => space.id === id);
     if (!next) return;
     setModal(null);
-    const changed = next.id !== selectedSpaceId;
     setSelectedSpaceId(next.id);
     setRole(next.pmRoleId);
-    if (changed) {
-      // A team is an independent conversation boundary. The draft is keyed by
-      // team and role, so switching teams restores each team's own composer.
-      setSelected((current) => ({ ...current, [next.pmRoleId]: undefined }));
-    }
   }
   function showTask(task: Task) {
+    if (task.spaceId) setSelectedSpaceId(task.spaceId);
     setRole(task.role);
-    setSelected((s) => ({ ...s, [task.role]: task.sessionId }));
+    setSelected((s) => ({
+      ...s,
+      [task.spaceId ? `${task.spaceId}:${task.role}` : task.role]: task.sessionId,
+    }));
     setView('workspace');
   }
   function editRole() {
@@ -1386,7 +1412,7 @@ function Workbench() {
                   {!isTeamConversation && <button
                     className="secondary-button"
                     onClick={() =>
-                      setSelected((s) => ({ ...s, [role]: undefined }))
+                      setSelected((s) => ({ ...s, [sessionSelectionKey]: undefined }))
                     }
                   >
                     <Plus size={16} />
@@ -1401,7 +1427,7 @@ function Workbench() {
                     label="选择会话"
                     value={currentSession || ''}
                     onChange={(id) =>
-                      setSelected((s) => ({ ...s, [role]: id }))
+                      setSelected((s) => ({ ...s, [sessionSelectionKey]: id }))
                     }
                     options={[
                       { value: '', label: '新会话' },
@@ -1436,73 +1462,87 @@ function Workbench() {
                       <ChevronDown size={16} className={charterExpanded ? 'charter-chevron expanded' : 'charter-chevron'} />
                     </span>
                   </button>
-                  {charterExpanded && <>
-                    <p className="recruitment-proposal-goal">{recruitmentProposal.goal}</p>
-                    <div className="recruitment-proposal-meta">
-                      <span><Users size={14} />建议 {recruitmentProposal.size || recruitmentProposal.members.length} 位智能体</span>
-                      {recruitmentProposal.purpose && <span>{recruitmentProposal.purpose}</span>}
-                    </div>
-                    <div className="recruitment-member-list">
-                      {recruitmentProposal.members.map((member) => (
-                        (() => {
-                          const skillNames = (member.skillIds || []).map((id) =>
-                            data?.skillCatalog.find((skill) => skill.id === id)?.name || id,
-                          );
-                          const capabilityNames = (member.capabilityIds || []).map((id) =>
-                            data?.capabilities.find((capability) => capability.id === id)?.name || id,
-                          );
-                          const toolLabels = member.toolAccess
-                            ? ([
-                                ['files', '文件'],
-                                ['web', '网页'],
-                                ['terminal', '终端'],
-                              ] as const)
-                                .filter(([key]) => member.toolAccess?.[key] !== undefined)
-                                .map(([key, label]) => `${label}${member.toolAccess?.[key] ? '已启用' : '未启用'}`)
-                            : [];
-                          return (
-                            <div className="recruitment-member" key={member.memberId || `${member.roleId}-${member.name}`}>
-                              <div className="recruitment-member-index">{(member.name || member.roleId || '成').slice(0, 1)}</div>
-                              <div className="recruitment-member-copy">
-                                <strong>{member.name || member.roleId || '未命名成员'}</strong>
-                                <p>{member.responsibility}</p>
-                                {member.modelHint && <small>模型：{member.modelHint}</small>}
-                                {!!member.deliverables?.length && <small>交付：{member.deliverables.slice(0, 2).join(' · ')}</small>}
-                                {!!member.skills?.length && <small>技能说明：{member.skills.slice(0, 3).join(' · ')}</small>}
-                                {!!skillNames.length && <small>绑定 Skill：{skillNames.slice(0, 3).join(' · ')}</small>}
-                                {!!member.tools?.length && <small>工具说明：{member.tools.slice(0, 3).join(' · ')}</small>}
-                                {!!capabilityNames.length && <small>绑定能力：{capabilityNames.slice(0, 3).join(' · ')}</small>}
-                                {member.toolAccess ? (
-                                  !!toolLabels.length && <small>工具权限：{toolLabels.join(' · ')}</small>
-                                ) : (
-                                  <small>工具权限：沿用角色模板</small>
-                                )}
-                                {!!member.dependencies?.length && <small>依赖：{member.dependencies.slice(0, 2).join(' · ')}</small>}
-                              </div>
-                            </div>
-                          );
-                        })()
-                      ))}
-                    </div>
-                    {!!recruitmentProposal.openQuestions?.length && (
-                      <div className="recruitment-open-questions">
-                        <strong>还需要你确认</strong>
-                        <ul>{recruitmentProposal.openQuestions.map((question) => <li key={question}>{question}</li>)}</ul>
+                  {charterExpanded && (
+                    <div className="recruitment-proposal-body">
+                      <p className="recruitment-proposal-goal">{recruitmentProposal.goal}</p>
+                      <div className="recruitment-proposal-meta">
+                        <span><Users size={14} />建议 {recruitmentProposal.size || recruitmentProposal.members.length} 位智能体</span>
+                        {recruitmentProposal.purpose && <span>{recruitmentProposal.purpose}</span>}
                       </div>
-                    )}
-                    <div className="recruitment-proposal-actions">
-                      {recruitment?.phase === 'confirmed' ? (
-                        <span className="recruitment-confirmed"><Check size={15} />团队已创建，下一轮可以直接安排任务</span>
-                      ) : (
-                        <button className="primary-button" type="button" disabled={busy || !!recruitmentProposal.openQuestions?.length} onClick={() => void confirmTeamRecruitment()}>
-                          <Check size={16} />{recruitmentProposal.openQuestions?.length ? '先补充信息' : '确认创建团队'}
-                        </button>
+                      <div className="recruitment-member-list">
+                        {recruitmentProposal.members.map((member) => (
+                          (() => {
+                            const skillNames = (member.skillIds || []).map((id) =>
+                              data?.skillCatalog.find((skill) => skill.id === id)?.name || id,
+                            );
+                            const capabilityNames = (member.capabilityIds || []).map((id) =>
+                              data?.capabilities.find((capability) => capability.id === id)?.name || id,
+                            );
+                            const toolLabels = member.toolAccess
+                              ? ([
+                                  ['files', '文件'],
+                                  ['web', '网页'],
+                                  ['terminal', '终端'],
+                                ] as const)
+                                  .filter(([key]) => member.toolAccess?.[key] !== undefined)
+                                  .map(([key, label]) => `${label}${member.toolAccess?.[key] ? '已启用' : '未启用'}`)
+                              : [];
+                            return (
+                              <div className="recruitment-member" key={member.memberId || `${member.roleId}-${member.name}`}>
+                                <div className="recruitment-member-index">{(member.name || member.roleId || '成').slice(0, 1)}</div>
+                                <div className="recruitment-member-copy">
+                                  <strong>{member.name || member.roleId || '未命名成员'}</strong>
+                                  <p>{member.responsibility}</p>
+                                  {member.modelHint && <small>模型：{member.modelHint}</small>}
+                                  {!!member.deliverables?.length && <small>交付：{member.deliverables.slice(0, 2).join(' · ')}</small>}
+                                  {!!member.skills?.length && <small>技能说明：{member.skills.slice(0, 3).join(' · ')}</small>}
+                                  {!!skillNames.length && <small>绑定 Skill：{skillNames.slice(0, 3).join(' · ')}</small>}
+                                  {!!member.tools?.length && <small>工具说明：{member.tools.slice(0, 3).join(' · ')}</small>}
+                                  {!!capabilityNames.length && <small>绑定能力：{capabilityNames.slice(0, 3).join(' · ')}</small>}
+                                  {member.toolAccess ? (
+                                    !!toolLabels.length && <small>工具权限：{toolLabels.join(' · ')}</small>
+                                  ) : (
+                                    <small>工具权限：沿用角色模板</small>
+                                  )}
+                                  {!!member.dependencies?.length && <small>依赖：{member.dependencies.slice(0, 2).join(' · ')}</small>}
+                                </div>
+                              </div>
+                            );
+                          })()
+                        ))}
+                      </div>
+                      {!!recruitmentProposal.openQuestions?.length && (
+                        <div className="recruitment-open-questions">
+                          <strong>还需要你确认</strong>
+                          <ul>{recruitmentProposal.openQuestions.map((question) => <li key={question}>{question}</li>)}</ul>
+                        </div>
                       )}
-                      <button className="text-button" type="button" onClick={() => composerRef.current?.focus()}>
-                        继续补充需求 <ArrowRight size={13} />
-                      </button>
+                      <div className="recruitment-proposal-actions">
+                        {recruitment?.phase === 'confirmed' ? (
+                          <span className="recruitment-confirmed"><Check size={15} />团队已创建，下一轮可以直接安排任务</span>
+                        ) : (
+                          <button
+                            className="primary-button"
+                            type="button"
+                            disabled={busy}
+                            onClick={() => {
+                              if (recruitmentProposal.openQuestions?.length) {
+                                composerRef.current?.focus();
+                                setNotice('请在下方输入框中补充或确认上述问题，或直接回复“按方案创建”');
+                              } else {
+                                void confirmTeamRecruitment();
+                              }
+                            }}
+                          >
+                            <Check size={16} />{recruitmentProposal.openQuestions?.length ? '先补充信息' : '确认创建团队'}
+                          </button>
+                        )}
+                        <button className="text-button" type="button" onClick={() => composerRef.current?.focus()}>
+                          继续补充需求 <ArrowRight size={13} />
+                        </button>
+                      </div>
                     </div>
-                  </>}
+                  )}
                 </section>
               )}
               <div className="message-area">
@@ -2840,7 +2880,6 @@ function Workbench() {
                   });
                   setSelectedSpaceId(saved.id);
                   setRole(saved.pmRoleId);
-                  setSelected((current) => ({ ...current, [saved.pmRoleId]: undefined }));
                   setModal(null);
                   setView('workspace');
                   setNotice(`团队“${saved.name}”已创建`);

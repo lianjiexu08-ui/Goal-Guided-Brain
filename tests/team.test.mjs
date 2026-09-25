@@ -53,6 +53,7 @@ test('team space routes owner messages to the project manager and persists repli
     assert.equal(spaces.status, 200);
     assert.equal(spaces.body.length, 1);
     assert.equal(spaces.body[0].pmRoleId, 'project_manager');
+    assert.equal(spaces.body[0].recruitment.phase, 'confirmed');
     const message = await request(`spaces/${spaces.body[0].id}/messages`, {
       clientMessageId: 'first-request',
       content: '评估新产品方向，并安排团队给出开发计划。',
@@ -173,6 +174,9 @@ test('multiple Chat teams keep independent ownership and can hand work to anothe
       goal: '尚未完成招募的团队。',
       recruitment: { phase: 'discovery' },
     }, 'POST');
+    const visibleCollaborators = await request(`teams/${source.id}/collaborators`);
+    assert.ok(visibleCollaborators.body.some((item) => item.id === created.body.id));
+    assert.ok(!visibleCollaborators.body.some((item) => item.id === waiting.body.id));
     const blocked = await request(`teams/${source.id}/collaborate`, {
       targetTeamId: waiting.body.id,
       clientMessageId: 'waiting-1',
@@ -180,6 +184,14 @@ test('multiple Chat teams keep independent ownership and can hand work to anothe
     }, 'POST');
     assert.equal(blocked.status, 409);
     assert.match(blocked.body.error, /尚未完成招募/);
+    const blockedSource = await request(`teams/${waiting.body.id}/collaborate`, {
+      targetTeamId: source.id,
+      clientMessageId: 'waiting-source-1',
+      content: '待确认团队不应发起协作。',
+    }, 'POST');
+    assert.equal(blockedSource.status, 409);
+    assert.match(blockedSource.body.error, /尚未完成招募/);
+    assert.deepEqual((await request(`teams/${waiting.body.id}/collaborators`)).body, []);
 
     const delegated = await request(`teams/${source.id}/collaborate`, {
       targetTeamId: created.body.id,
@@ -273,9 +285,9 @@ test('team MCP can discover and delegate to an allowed long-lived team', async (
     clients.push(client);
     await client.connect(new StreamableHTTPClientTransport(new URL(patch.config.url), { requestInit: { headers: patch.config.headers } }));
     const listed = JSON.parse((await client.callTool({ name: 'list_teams', arguments: {} })).content[0].text);
-    assert.equal(listed.items.length, 2);
+    assert.equal(listed.items.length, 1);
     assert.equal(listed.items.find(item => item.id === target.id).memberCount, 2);
-    assert.equal(listed.items.find(item => item.id === pending.id).memberCount, 1);
+    assert.equal(listed.items.find(item => item.id === pending.id), undefined);
     const delegated = JSON.parse((await client.callTool({ name: 'delegate_to_team', arguments: {
       teamId: target.id,
       prompt: '整理资料并提交来源清单。',

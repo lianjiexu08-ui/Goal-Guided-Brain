@@ -178,6 +178,14 @@ export class Store {
         },
         memberSettings: {},
         collaboration: { enabled: true, autoHandoff: true, sharedBoard: true, allowedTeamIds: [] },
+        recruitment: {
+          phase: 'confirmed',
+          sessionId: null,
+          turns: 0,
+          brief: '',
+          proposal: null,
+          confirmedAt: new Date().toISOString(),
+        },
       });
     }
     this.db
@@ -278,6 +286,10 @@ export class Store {
   }
   normalizeTeamSpace(space) {
     if (!space) return space;
+    // Spaces created before recruitment existed were already user-created
+    // teams. Keep them in “我的团队”; new drafts always carry an explicit
+    // recruitment phase when they are saved.
+    const legacyPhase = space.recruitment ? undefined : 'confirmed';
     const collaboration = {
       enabled: true,
       autoHandoff: true,
@@ -296,7 +308,7 @@ export class Store {
       ...space,
       collaboration,
       recruitment: {
-        phase: 'discovery',
+        phase: legacyPhase || 'discovery',
         sessionId: null,
         turns: 0,
         brief: '',

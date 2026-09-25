@@ -14,6 +14,18 @@ const sandbox = () => {
   return { dir, workspace, dataDir: path.join(dir, 'data') };
 };
 const tick = () => new Promise(resolve => setTimeout(resolve, 30));
+async function createRecruitmentTeam(request, name = '待招募团队') {
+  const response = await request('teams', {
+    name,
+    goal: '通过多轮澄清确定实际工作内容和团队职责。',
+    pmRoleId: 'project_manager',
+    memberRoleIds: ['project_manager'],
+    recruitment: { phase: 'discovery' },
+  }, 'POST');
+  assert.equal(response.status, 201);
+  assert.equal(response.body.recruitment.phase, 'discovery');
+  return response.body;
+}
 
 test('team recruitment keeps one PM session across completed discovery turns', async () => {
   const fixture = sandbox();
@@ -38,7 +50,7 @@ test('team recruitment keeps one PM session across completed discovery turns', a
     return { status: response.status, body: await response.json() };
   };
   try {
-    const team = (await request('teams')).body[0];
+    const team = await createRecruitmentTeam(request);
     const first = await request(`teams/${team.id}/messages`, { clientMessageId: 'recruit-1', content: '我想做一个面向小团队的项目协作工具。' }, 'POST');
     assert.equal(first.status, 201);
     await tick();
@@ -110,7 +122,7 @@ test('project manager proposes a Team Charter and owner confirmation materialize
   };
   const clients = [];
   try {
-    const team = (await request('teams')).body[0];
+    const team = await createRecruitmentTeam(request, '交付招募团队');
     const provider = app.platform.providers.save({
       name: '招募测试模型',
       protocol: 'openai-completions',
@@ -156,7 +168,7 @@ test('project manager proposes a Team Charter and owner confirmation materialize
     assert.throws(() => app.platform.control.createJob({ role: 'developer', prompt: '提前实现功能' }, principal), /尚未确认/);
     const before = await request(`teams/${team.id}`);
     assert.equal(before.body.recruitment.phase, 'proposed');
-    assert.deepEqual(before.body.memberRoleIds, ['project_manager', 'product', 'developer', 'assistant']);
+    assert.deepEqual(before.body.memberRoleIds, ['project_manager']);
     const frontendProposal = before.body.recruitment.proposal.members.find(member => member.memberId === 'frontend');
     assert.deepEqual(frontendProposal.skillIds, ['development-workflow', 'team-recruitment', 'product-planning']);
     assert.deepEqual(frontendProposal.capabilityIds, [capability.id]);
@@ -230,7 +242,7 @@ test('team confirmation rejects disabled capabilities and unavailable model hint
     return { status: response.status, body: await response.json() };
   };
   try {
-    const team = (await request('teams')).body[0];
+    const team = await createRecruitmentTeam(request, '验证招募团队');
     await request(`teams/${team.id}/messages`, { clientMessageId: 'recruit-validation', content: '先准备一个开发团队。' }, 'POST');
     await tick();
     const patch = runs[0].options.capabilityPatch.find(item => item.id === 'workbench-orchestration');
@@ -269,6 +281,70 @@ test('team confirmation rejects disabled capabilities and unavailable model hint
     const confirmed = app.platform.control.confirmTeamRecruitment(team.id);
     const writerId = confirmed.recruitment.proposal.members.find(member => member.memberId === 'writer').agentId;
     assert.deepEqual(app.platform.control.store.role(writerId).tools, { files: false, web: false, terminal: false });
+  } finally {
+    await app.close();
+    fs.rmSync(fixture.dir, { recursive: true, force: true });
+  }
+});
+
+test('publishing a new demand creates an independent recruitment draft beside an existing team', async () => {
+  const fixture = sandbox();
+  const app = createWorkbench({
+    ...fixture,
+    requireCredential: false,
+    runtimeFactory: () => ({ start() {}, cancel() {} }),
+  });
+  await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
+  const request = async (route, body, method = 'GET') => {
+    const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  try {
+    const existing = await request('teams', {
+      name: '发布运维团队',
+      goal: '负责线上发布、监控和故障处理。',
+      purpose: '守住线上稳定性并按流程交付版本。',
+      teamType: 'operations',
+      pmRoleId: 'project_manager',
+      memberRoleIds: ['project_manager', 'assistant'],
+      recruitment: { phase: 'confirmed' },
+    }, 'POST');
+    assert.equal(existing.status, 201);
+    assert.equal(existing.body.recruitment.phase, 'confirmed');
+
+    const draft = await request('spaces', {
+      name: '待命名需求',
+      goal: '通过多轮交流明确新产品的目标、交付物和团队职责。',
+      purpose: '这是一个尚未确认的需求入口。',
+      pmRoleId: 'project_manager',
+      memberRoleIds: ['project_manager'],
+      recruitment: { phase: 'discovery' },
+    }, 'POST');
+    assert.equal(draft.status, 201);
+    assert.notEqual(draft.body.id, existing.body.id);
+    assert.equal(draft.body.recruitment.phase, 'discovery');
+    assert.equal(draft.body.recruitment.sessionId, null);
+    assert.equal(draft.body.recruitment.turns, 0);
+    assert.deepEqual(draft.body.memberRoleIds, ['project_manager']);
+
+    const draftDetail = await request(`spaces/${draft.body.id}`);
+    assert.equal(draftDetail.status, 200);
+    assert.equal(draftDetail.body.messages.length, 0);
+    assert.equal(draftDetail.body.tasks.length, 0);
+
+    const existingDetail = await request(`teams/${existing.body.id}`);
+    assert.equal(existingDetail.body.name, '发布运维团队');
+    assert.equal(existingDetail.body.recruitment.phase, 'confirmed');
+    assert.deepEqual(existingDetail.body.memberRoleIds, ['project_manager', 'assistant']);
+    assert.equal(existingDetail.body.messages.length, 0);
+
+    const listed = await request('teams');
+    assert.ok(listed.body.some(team => team.id === existing.body.id && team.recruitment.phase === 'confirmed'));
+    assert.ok(listed.body.some(team => team.id === draft.body.id && team.recruitment.phase === 'discovery'));
   } finally {
     await app.close();
     fs.rmSync(fixture.dir, { recursive: true, force: true });

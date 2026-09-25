@@ -55,17 +55,11 @@ export function createPlatform({
   const ready = (async () => {
     await auth.init();
     usageMeter = await loadUsageMeter();
-    const vaultPassphrase =
-      process.env.WORKBENCH_VAULT_PASSWORD ||
-      (() => {
-        const passFile = path.join(dataDir, '.vault_pass');
-        if (fs.existsSync(passFile)) {
-          try {
-            return fs.readFileSync(passFile, 'utf8').trim();
-          } catch {}
-        }
-        return '';
-      })();
+    // A vault passphrase may be supplied for unattended local startup, but it
+    // must never be persisted as a plaintext companion file. Older builds
+    // created `.vault_pass`; remove that legacy artifact before serving.
+    try { fs.rmSync(path.join(dataDir, '.vault_pass'), { force: true }); } catch {}
+    const vaultPassphrase = process.env.WORKBENCH_VAULT_PASSWORD || '';
     if (vaultPassphrase) {
       if (vault.status().initialized)
         await vault.unlock(vaultPassphrase);
@@ -979,17 +973,9 @@ export function createPlatform({
     const ok = (body, status = 200) => ({ status, body });
     if (collection === 'manage' && method === 'GET') return ok(manage());
     if (collection === 'vault' && method === 'POST') {
-      if (id === 'lock') {
-        const passFile = path.join(dataDir, '.vault_pass');
-        try { fs.rmSync(passFile, { force: true }); } catch {}
-        return ok(vault.lock());
-      }
+      if (id === 'lock') return ok(vault.lock());
       if (id === 'initialize' || id === 'unlock') {
         const result = await vault[id](body.passphrase);
-        try {
-          const passFile = path.join(dataDir, '.vault_pass');
-          fs.writeFileSync(passFile, String(body.passphrase || '').trim(), { mode: 0o600 });
-        } catch {}
         void schedule();
         return ok(result);
       }

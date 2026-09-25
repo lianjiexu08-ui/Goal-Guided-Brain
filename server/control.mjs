@@ -309,7 +309,12 @@ export class ControlPlane {
     const parentTeam = parent && (parent.teamId || parent.spaceId)
       ? this.store.teamSpace(parent.teamId || parent.spaceId)
       : null;
-    if (parentTeam?.recruitment.proposal && parentTeam.recruitment.phase !== 'confirmed')
+    if (parentTeam && parentTeam.recruitment.phase !== 'confirmed')
+      throw fail('团队招募方案尚未确认，请先完成澄清并等待用户确认创建。', 409);
+    const requestedTeam = !parent && (body.teamId || body.spaceId)
+      ? this.store.teamSpace(body.teamId || body.spaceId)
+      : null;
+    if (requestedTeam && requestedTeam.recruitment.phase !== 'confirmed')
       throw fail('团队招募方案尚未确认，请先完成澄清并等待用户确认创建。', 409);
     if (parentTeam && !parentTeam.memberRoleIds.includes(role))
       throw fail('只能向当前团队已确认的成员分派任务，请使用 read_team_roster 查看成员 ID。', 403);
@@ -631,7 +636,7 @@ export class ControlPlane {
   listTeamSpaces(principal) {
     const { team: source } = this.currentTeam(principal);
     const teams = this.store.teamSpaces()
-      .filter(team => team.status === 'active' && team.id !== source.id && this.collaborationAllowed(source, team));
+      .filter(team => team.status === 'active' && team.recruitment?.phase === 'confirmed' && team.id !== source.id && this.collaborationAllowed(source, team));
     return {
       current: { id: source.id, teamId: teamKey(source), chatId: source.chatId || source.id, name: source.name },
       items: teams.map(team => ({
@@ -651,7 +656,7 @@ export class ControlPlane {
   }
   delegateToTeam(body, principal) {
     const { task: sourceTask, meta: sourceMeta, team: source } = this.currentTeam(principal);
-    if (source.recruitment.proposal && source.recruitment.phase !== 'confirmed') throw fail('团队招募方案尚未确认，不能发起跨团队任务。', 409);
+    if (source.recruitment.phase !== 'confirmed') throw fail('团队招募方案尚未确认，不能发起跨团队任务。', 409);
     const target = findTeam(this.store, body.targetTeamId || body.teamId);
     if (!target || target.status !== 'active') throw fail('目标团队不存在或未启用。', 404);
     if (target.recruitment.phase !== 'confirmed') throw fail('目标团队尚未完成招募。', 409);
