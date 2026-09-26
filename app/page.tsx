@@ -81,6 +81,7 @@ type Task = {
   role: RoleId;
   sessionId: string;
   workspace: string;
+  workspaceMode?: 'shared' | 'isolated' | 'worktree' | 'snapshot' | null;
   title: string;
   prompt: string;
   status: string;
@@ -221,6 +222,7 @@ type TeamSpace = {
   status: string;
   model?: string | null;
   providerId?: string | null;
+  workspaceMode?: 'shared' | 'isolated' | 'worktree' | 'snapshot';
   autonomy: { mode: string; maxDepth: number; maxJobs: number; budgetTokens: number };
   teamType?: string;
   purpose?: string;
@@ -240,6 +242,7 @@ type TeamForm = {
   pmRoleId: string;
   memberRoleIds: string[];
   workspace: string;
+  workspaceMode: 'isolated' | 'worktree' | 'snapshot' | 'shared';
   teamType: 'custom' | 'development' | 'operations' | 'product' | 'project';
   allowCollaboration: boolean;
   autonomyMode: 'auto' | 'assist';
@@ -442,6 +445,7 @@ function Workbench() {
     pmRoleId: 'project_manager',
     memberRoleIds: ['project_manager'],
     workspace: '',
+    workspaceMode: 'isolated',
     teamType: 'custom',
     allowCollaboration: true,
     autonomyMode: 'auto',
@@ -993,6 +997,7 @@ function Workbench() {
       pmRoleId: pm?.id || 'project_manager',
       memberRoleIds: pm ? [pm.id] : [],
       workspace: data?.config.workspace || '',
+      workspaceMode: 'isolated',
       teamType: 'custom',
       allowCollaboration: true,
       autonomyMode: 'auto',
@@ -1375,6 +1380,7 @@ function Workbench() {
                           <span>
                             <strong>{roles.find((item) => item.id === task.role)?.name || task.role}</strong>
                             <small>{task.title}</small>
+                            <small className="team-task-mode">工作目录 · {task.workspaceMode === 'shared' ? '共享' : task.workspaceMode === 'worktree' ? 'Git worktree' : task.workspaceMode === 'snapshot' ? '快照' : '隔离'}</small>
                             {(task.result || task.error) && <small className="team-task-result">{(task.result || task.error).replace(/\s+/g, ' ').slice(0, 180)}</small>}
                             {taskVerification(task) && <small className={`team-task-proof ${task.verificationStatus || 'pending-review'}`}>验收 · {taskVerification(task)}{task.artifactCount ? ` · ${task.artifactCount} 项证据` : ''}</small>}
                           </span>
@@ -2922,6 +2928,7 @@ function Workbench() {
                     pmRoleId: teamForm.pmRoleId,
                     memberRoleIds: teamForm.memberRoleIds,
                     workspace: teamForm.workspace,
+                    workspaceMode: teamForm.workspaceMode,
                     autonomy: { mode: teamForm.autonomyMode },
                     collaboration: {
                       enabled: teamForm.allowCollaboration,
@@ -2999,6 +3006,20 @@ function Workbench() {
                     placeholder="沿用工作空间目录"
                   />
                 </label>
+                <div className="field-label">
+                  默认执行目录
+                  <Choice
+                    label="默认执行目录"
+                    value={teamForm.workspaceMode}
+                    onChange={(workspaceMode) => setTeamForm((form) => ({ ...form, workspaceMode: workspaceMode as TeamForm['workspaceMode'] }))}
+                    options={[
+                      { value: 'isolated', label: '隔离目录（推荐）' },
+                      { value: 'worktree', label: 'Git worktree' },
+                      { value: 'snapshot', label: '快照目录' },
+                      { value: 'shared', label: '共享源目录' },
+                    ]}
+                  />
+                </div>
               </div>
               <label className="team-collaboration-toggle" aria-label="允许与其他团队协作">
                 <input

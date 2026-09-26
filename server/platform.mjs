@@ -68,6 +68,10 @@ export function createPlatform({
     scheduledAgain = false;
   let usageMeter = null;
   const stoppingTasks = new Set();
+  // A task is claimed before its isolated workspace and runtime are ready.
+  // Keep those launch promises visible so shutdown cannot close SQLite while
+  // a launch is still writing its snapshot or attachment metadata.
+  const launches = new Map();
   const ready = (async () => {
     await auth.init();
     usageMeter = await loadUsageMeter();
@@ -128,6 +132,7 @@ export function createPlatform({
     )
       throw new Error('请先配置模型供应商或 DeepSeek API Key。');
     const workspace = input.workspace || store.config.workspace;
+    const teamWorkspaceMode = teamId ? store.teamSpace(teamId)?.workspaceMode : null;
     const jobId = input.jobId || randomUUID();
     const groupId =
       input.groupId ||
@@ -206,7 +211,7 @@ export function createPlatform({
         nodeId,
         workspaceKey: input.workspaceKey || 'default',
         workspaceMode:
-          input.workspaceMode || assistant.workspaceMode || 'shared',
+          input.workspaceMode || teamWorkspaceMode || assistant.workspaceMode || 'shared',
         providerIds,
         allowedProviderIds:
           input.allowedProviderIds ??
@@ -522,6 +527,23 @@ export function createPlatform({
         { exclude: excluded },
       );
       if (next) {
+        recordEvent(task, {
+          type: 'routing/fallback',
+          data: {
+            from: {
+              providerId: route.providerId,
+              providerName: route.providerName,
+              model: route.model,
+            },
+            to: {
+              providerId: next.providerId,
+              providerName: next.providerName,
+              model: next.model,
+            },
+            reason: error.slice(0, 500),
+            excludedProviders: excluded,
+          },
+        }, [route?.secret]);
         const retry = newTask({
           ...current,
           role: task.role,
@@ -548,6 +570,19 @@ export function createPlatform({
         );
       }
     } catch {
+      recordEvent(task, {
+        type: 'routing/fallback-unavailable',
+        data: {
+          from: {
+            providerId: route.providerId,
+            providerName: route.providerName,
+            model: route.model,
+          },
+          reason: error.slice(0, 500),
+          excludedProviders: excluded,
+          message: '没有可用的降级模型。',
+        },
+      }, [route?.secret]);
       control.attention(
         {
           kind: 'model',
@@ -782,8 +817,17 @@ export function createPlatform({
           )
         )
           continue;
-        void launch(task).catch((error) =>
+        const pending = launch(task).catch((error) =>
           control.attention({ title: '执行器错误', detail: error.message }),
+        );
+        launches.set(task.id, pending);
+        void pending.then(
+          () => {
+            if (launches.get(task.id) === pending) launches.delete(task.id);
+          },
+          () => {
+            if (launches.get(task.id) === pending) launches.delete(task.id);
+          },
         );
       }
     } finally {
@@ -1649,7 +1693,9 @@ export function createPlatform({
     async close() {
       stopping = true;
       clearInterval(timer);
+      for (const taskId of launches.keys()) stoppingTasks.add(taskId);
       await Promise.allSettled([...runs.keys()].map((id) => stopTask(id)));
+      await Promise.allSettled(launches.values());
       while (automation.busy)
         await new Promise((resolve) => setTimeout(resolve, 20));
       await gateway.close();

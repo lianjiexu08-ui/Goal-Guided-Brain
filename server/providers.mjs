@@ -230,7 +230,30 @@ export class ProviderService {
     );
     const requestedModel = modelOverride || '';
     const failures = [];
+    const routingCandidates = candidates.map((provider) => {
+      const model = [...provider.models].sort(
+        (a, b) => Number(b.id === assistant.model) - Number(a.id === assistant.model),
+      ).find((item) =>
+        (!exactModel || !requestedModel || item.id === requestedModel) &&
+        (!needsTools || item.tools) &&
+        (!assistant.requiresVision || item.vision) &&
+        item.contextWindow >= (assistant.requiredContextWindow ?? 1),
+      );
+      return {
+        providerId: provider.id,
+        providerName: provider.name,
+        priority: provider.priority,
+        models: provider.models.map((item) => item.id),
+        ...(model ? { model: model.id, status: 'considered' } : {
+          status: 'ineligible',
+          reason: exactModel && requestedModel
+            ? `没有满足模型 ${requestedModel} 能力要求的候选。`
+            : '没有满足工具、视觉或上下文能力要求的候选。',
+        }),
+      };
+    });
     for (const provider of candidates) {
+      const candidate = routingCandidates.find((item) => item.providerId === provider.id);
       const models = [...provider.models].sort(
         (a, b) =>
           Number(b.id === assistant.model) - Number(a.id === assistant.model),
@@ -242,13 +265,21 @@ export class ProviderService {
           (!assistant.requiresVision || item.vision) &&
           item.contextWindow >= (assistant.requiredContextWindow ?? 1),
       );
-      if (!model) continue;
+      if (!model) {
+        candidate.status = 'ineligible';
+        candidate.reason = exactModel && requestedModel
+          ? `没有满足模型 ${requestedModel} 能力要求的候选。`
+          : '没有满足工具、视觉或上下文能力要求的候选。';
+        continue;
+      }
+      candidate.model = model.id;
       try {
         const secret = provider.credentialId
           ? this.vault.get(provider.credentialId)
           : '';
         if (provider.credentialId && !secret)
           throw new Error('供应商凭据不存在。');
+        candidate.status = 'selected';
         return {
           providerId: provider.id,
           providerName: provider.name,
@@ -258,8 +289,11 @@ export class ProviderService {
           modelSpec: model,
           credentialId: provider.credentialId,
           secret: secret || 'local-keyless-endpoint',
+          routingCandidates: routingCandidates.map(({ models: _models, ...item }) => ({ ...item })),
         };
       } catch (error) {
+        candidate.status = 'unavailable';
+        candidate.reason = error.message;
         failures.push(error.message);
       }
     }

@@ -14,6 +14,13 @@ const sandbox = () => {
   return { dir, workspace, dataDir: path.join(dir, 'data') };
 };
 const tick = () => new Promise((resolve) => setTimeout(resolve, 30));
+const waitFor = async (predicate, message) => {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (predicate()) return;
+    await tick();
+  }
+  assert.fail(message);
+};
 
 test('team space routes owner messages to the project manager and persists replies', async () => {
   const fixture = sandbox();
@@ -54,6 +61,7 @@ test('team space routes owner messages to the project manager and persists repli
     assert.equal(spaces.body.length, 1);
     assert.equal(spaces.body[0].pmRoleId, 'project_manager');
     assert.equal(spaces.body[0].recruitment.phase, 'confirmed');
+    assert.equal(spaces.body[0].workspaceMode, 'isolated');
     const message = await request(`spaces/${spaces.body[0].id}/messages`, {
       clientMessageId: 'first-request',
       content: '评估新产品方向，并安排团队给出开发计划。',
@@ -72,6 +80,7 @@ test('team space routes owner messages to the project manager and persists repli
     assert.ok(detail.body.messages.some((item) => item.kind === 'request'));
     assert.ok(detail.body.messages.some((item) => item.kind === 'reply' && /完成汇总/.test(item.content)));
     assert.ok(detail.body.tasks.some((item) => item.role === 'project_manager'));
+    assert.equal(detail.body.tasks.find((item) => item.role === 'project_manager').workspaceMode, 'isolated');
   } finally {
     await app.close();
     fs.rmSync(fixture.dir, { recursive: true, force: true });
@@ -434,7 +443,7 @@ test('team MCP can discover and delegate to an allowed long-lived team', async (
     );
     assert.equal(sourceHandoff.id, delegated.sourceMessageId);
     assert.equal(sourceHandoff.relatedMessageId, delegated.messageId);
-    assert.equal(runs.length, 2);
+    await waitFor(() => runs.length === 2, '目标团队执行实例未启动。');
     const duplicate = JSON.parse((await client.callTool({ name: 'delegate_to_team', arguments: {
       teamId: target.id,
       prompt: '整理资料并提交来源清单。',

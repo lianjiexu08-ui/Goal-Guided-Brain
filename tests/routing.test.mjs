@@ -119,11 +119,29 @@ for (const error of [
       assert.equal(f.runs[0].route.providerId, f.primary.id);
       assert.equal(f.runs[1].route.providerId, f.alternate.id);
       assert.equal(f.runs[1].route.model, 'alternate-model');
+      assert.equal(f.runs[0].route.routingCandidates[0].providerId, f.primary.id);
+      assert.equal(f.runs[0].route.routingCandidates[0].model, 'primary-model');
+      assert.equal(f.runs[0].route.routingCandidates[0].status, 'selected');
+      assert.ok(f.runs[0].route.routingCandidates.some(({ providerId }) => providerId === f.alternate.id));
       assert.notEqual(f.runs[0].task.id, f.runs[1].task.id);
       const first = f.app.store.records.get('task-meta', f.task.id),
         second = f.app.store.records.get('task-meta', f.runs[1].task.id);
       assert.equal(first.jobId, second.jobId);
       assert.ok(second.excludedProviders.includes(f.primary.id));
+      const fallbackEvent = f.app.store.records
+        .list('task-events')
+        .find((item) => item.taskId === f.task.id && item.type === 'routing/fallback');
+      assert.deepEqual(fallbackEvent.data.from, {
+        providerId: f.primary.id,
+        providerName: 'Primary fixture',
+        model: 'primary-model',
+      });
+      assert.deepEqual(fallbackEvent.data.to, {
+        providerId: f.alternate.id,
+        providerName: 'Alternate fixture',
+        model: 'alternate-model',
+      });
+      assert.equal(fallbackEvent.data.reason, error);
       assert.equal(
         f.app.platform.providers.list().find((item) => item.id === f.primary.id)
           .enabled,

@@ -129,6 +129,10 @@ const statuses: Record<string, string> = {
   'needs-review': '需要复核',
   verified: '验证通过',
   skipped: '已跳过',
+  selected: '已选用',
+  considered: '候选',
+  unavailable: '不可用',
+  ineligible: '能力不满足',
 };
 const time = (value: unknown) =>
   typeof value === 'string' && value
@@ -185,7 +189,7 @@ function IconButton({
 }
 function Badge({ value }: { value: string }) {
   if (!value) return null;
-  const tone = ['failed', 'error', 'unhealthy', 'revoked'].includes(value)
+  const tone = ['failed', 'error', 'unhealthy', 'revoked', 'unavailable'].includes(value)
     ? 'error'
     : [
           'blocked',
@@ -1547,6 +1551,22 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
     typeof execution.executionWorkspace === 'object'
       ? (execution.executionWorkspace as Entity)
       : null;
+  const snapshot =
+    execution?.snapshot && typeof execution.snapshot === 'object'
+      ? (execution.snapshot as Entity)
+      : null;
+  const route =
+    snapshot?.route && typeof snapshot.route === 'object'
+      ? (snapshot.route as Entity)
+      : null;
+  const routingCandidates = entityList(route?.routingCandidates);
+  const routingEvents = entityList(execution?.events).filter((event) =>
+    txt(event, 'type').startsWith('routing/'),
+  );
+  const eventData = (event: Entity) =>
+    event.data && typeof event.data === 'object'
+      ? (event.data as Entity)
+      : ({} as Entity);
   const latestVerification =
     execution?.latestVerification || execution?.verification;
   const verification =
@@ -1676,6 +1696,80 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
             </div>
             <p>{deliveryDetail}</p>
           </div>
+          <section className="evidence-center" aria-label="模型路由">
+            <div className="evidence-center-heading">
+              <div>
+                <h3>模型路由</h3>
+                <p>
+                  记录这次执行实际使用的供应商、模型和候选变化，方便解释切换和失败原因。
+                </p>
+              </div>
+              <Badge value={route ? 'selected' : 'pending-review'} />
+            </div>
+            {!route ? (
+              <div className="evidence-empty">
+                <strong>尚未记录实际模型</strong>
+                <span>任务开始后，实际路由和候选模型会显示在这里。</span>
+              </div>
+            ) : (
+              <>
+                <dl>
+                  <dt>供应商</dt>
+                  <dd>{txt(route, 'providerName') || txt(route, 'providerId')}</dd>
+                  <dt>模型</dt>
+                  <dd>{txt(route, 'model')}</dd>
+                  <dt>协议</dt>
+                  <dd>{txt(route, 'protocol')}</dd>
+                </dl>
+                {!!routingCandidates.length && (
+                  <div className="evidence-list">
+                    {routingCandidates.map((candidate, index) => (
+                      <article className="evidence-item" key={candidate.id || index}>
+                        <div className="evidence-item-heading">
+                          <div>
+                            <strong>{txt(candidate, 'providerName') || txt(candidate, 'providerId')}</strong>
+                            <span>{txt(candidate, 'model') || '未选定模型'}</span>
+                          </div>
+                          <Badge value={txt(candidate, 'status')} />
+                        </div>
+                        {(txt(candidate, 'reason') || candidate.priority !== undefined) && (
+                          <div className="evidence-item-meta">
+                            {candidate.priority !== undefined && <span>优先级 {txt(candidate, 'priority')}</span>}
+                            {txt(candidate, 'reason') && <span>{txt(candidate, 'reason')}</span>}
+                          </div>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+                )}
+                {!!routingEvents.length && (
+                  <div className="evidence-list">
+                    {routingEvents.map((event, index) => {
+                      const data = eventData(event);
+                      const from = data.from && typeof data.from === 'object' ? (data.from as Entity) : ({} as Entity);
+                      const to = data.to && typeof data.to === 'object' ? (data.to as Entity) : ({} as Entity);
+                      return (
+                        <article className="evidence-item" key={event.id || index}>
+                          <div className="evidence-item-heading">
+                            <div>
+                              <strong>{txt(event, 'type') === 'routing/fallback' ? '已自动切换模型' : '没有可用的降级模型'}</strong>
+                              <span>{txt(from, 'providerName') || txt(from, 'providerId')} · {txt(from, 'model')}</span>
+                            </div>
+                            <Badge value={txt(event, 'type') === 'routing/fallback' ? 'selected' : 'unavailable'} />
+                          </div>
+                          <div className="evidence-item-meta">
+                            {txt(to, 'providerName') && <span>→ {txt(to, 'providerName')} · {txt(to, 'model')}</span>}
+                            {txt(data, 'reason') && <span>原因：{txt(data, 'reason')}</span>}
+                            <time>{time(event.at || event.createdAt)}</time>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+          </section>
           <section className="evidence-center" aria-label="交付证据">
             <div className="evidence-center-heading">
               <div>

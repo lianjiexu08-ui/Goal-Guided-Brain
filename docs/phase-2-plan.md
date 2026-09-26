@@ -66,9 +66,11 @@ Playwright baseline contains twelve passing desktop/mobile runs covering team
 recruitment navigation, draft restoration across views, binary drag-and-drop
 attachments, Team Charter confirmation, team renaming, two-team context
 switching, cross-team model selection and failed-task recovery against the
-real API. The confirmation fixture exercises the deterministic approval
+real API. Team tasks now default to isolated execution directories, and task
+details expose the selected model, routing candidates and fallback events when
+they exist. The confirmation fixture exercises the deterministic approval
 boundary; multi-turn model quality, sustained 20-switch isolation, real
-provider fallback and cross-platform environment gates remain open.
+provider fallback quality and cross-platform environment gates remain open.
 
 ## Remaining Compatibility And Release Gates
 

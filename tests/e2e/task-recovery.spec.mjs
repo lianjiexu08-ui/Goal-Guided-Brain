@@ -78,6 +78,45 @@ function seedFailedJob() {
       },
       'e2e-recovery-provider',
     );
+    store.records.save(
+      'runtime-snapshots',
+      {
+        route: {
+          providerId: 'e2e-recovery-provider',
+          providerName: 'E2E recovery provider',
+          protocol: 'openai-completions',
+          model: 'e2e-recovery-model',
+          routingCandidates: [
+            {
+              providerId: 'e2e-recovery-provider',
+              providerName: 'E2E recovery provider',
+              model: 'e2e-recovery-model',
+              priority: 1,
+              status: 'selected',
+            },
+          ],
+        },
+      },
+      task.id,
+    );
+    store.records.save('task-events', {
+      taskId: task.id,
+      type: 'routing/fallback',
+      data: {
+        from: {
+          providerId: 'e2e-primary-provider',
+          providerName: 'E2E primary provider',
+          model: 'e2e-primary-model',
+        },
+        to: {
+          providerId: 'e2e-recovery-provider',
+          providerName: 'E2E recovery provider',
+          model: 'e2e-recovery-model',
+        },
+        reason: 'E2E fixture：主模型暂时不可用。',
+      },
+      at: new Date().toISOString(),
+    });
     return { taskId: task.id, jobId: job.id };
   } finally {
     store.close();
@@ -102,6 +141,10 @@ test('协作任务详情提供失败原因和执行实例重试入口', async ({
   await expect(detail.getByText('恢复说明', { exact: true })).toBeVisible();
   await expect(detail.getByText('E2E fixture：模型供应商暂时不可用。', { exact: true }).first()).toBeVisible();
   await expect(detail.getByRole('button', { name: '重试此执行实例', exact: true })).toBeVisible();
+  await detail.getByRole('button', { name: 'E2E 验证失败执行可以恢复并保留旧结果', exact: true }).click();
+  await expect(detail.getByText('模型路由', { exact: true })).toBeVisible();
+  await expect(detail.getByRole('definition').filter({ hasText: 'e2e-recovery-model' })).toBeVisible();
+  await expect(detail.getByText('已自动切换模型', { exact: true })).toBeVisible();
 
   await detail.getByRole('button', { name: '重试此执行实例', exact: true }).click();
   await expect.poll(async () =>

@@ -300,6 +300,9 @@ export class Store {
     return {
       teamType: 'custom',
       purpose: space.goal || '',
+      // Team work defaults to a private execution directory. Callers can
+      // explicitly opt into shared mode for teams that need it.
+      workspaceMode: 'isolated',
       chatId: space.id,
       model: null,
       providerId: null,
@@ -364,6 +367,9 @@ export class Store {
         ? null
         : String(providerValue).trim().slice(0, 160);
     if (providerId && !providerValue) throw new Error('团队供应商无效。');
+    const workspaceMode = input.workspaceMode ?? existing?.workspaceMode ?? 'isolated';
+    if (!['isolated', 'worktree', 'snapshot', 'shared'].includes(workspaceMode))
+      throw new Error('团队执行目录模式无效。');
     const responsibilities = {};
     const suppliedResponsibilities = input.responsibilities ?? existing?.responsibilities ?? {};
     if (suppliedResponsibilities && typeof suppliedResponsibilities === 'object' && !Array.isArray(suppliedResponsibilities)) {
@@ -457,6 +463,7 @@ export class Store {
       purpose,
       model,
       providerId,
+      workspaceMode,
       teamType,
       workspace: input.workspace || existing?.workspace || this.config.workspace,
       pmRoleId,
