@@ -7,20 +7,23 @@ const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ggb-browser-e2e-'));
 const cli = path.resolve('node_modules/@playwright/test/cli.js');
 const vinextLock = path.resolve('.vinext/dev/lock.json');
 let savedVinextLock = null;
+let shouldRemoveVinextLock = false;
 try {
   const current = JSON.parse(fs.readFileSync(vinextLock, 'utf8'));
   if (Number.isInteger(current.pid) && current.pid > 1) {
     try {
       process.kill(current.pid, 0);
       savedVinextLock = fs.readFileSync(vinextLock);
+      shouldRemoveVinextLock = true;
     } catch (error) {
-      if (error.code !== 'ESRCH') throw error;
+      if (error.code === 'ESRCH') shouldRemoveVinextLock = true;
+      else throw error;
     }
   }
 } catch (error) {
   if (error.code !== 'ENOENT') throw error;
 }
-if (savedVinextLock) fs.rmSync(vinextLock, { force: true });
+if (shouldRemoveVinextLock) fs.rmSync(vinextLock, { force: true });
 const environment = {
   ...process.env,
   GGB_E2E_DATA_DIR: dataDir,

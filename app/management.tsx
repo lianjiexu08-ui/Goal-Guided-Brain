@@ -1951,6 +1951,10 @@ function JobDetail({
   const artifacts = entityList(detail.artifacts);
   const checkpoints = entityList(detail.checkpoints);
   const board = entityList(detail.board || detail.boardItems);
+  const executionError = txt(
+    executions.find((item) => Boolean(item.error)) || {},
+    'error',
+  );
   const [requirements, setRequirements] = useState(
     txt(job, 'goal') || txt(job, 'requirements') || txt(job, 'prompt'),
   );
@@ -1968,6 +1972,13 @@ function JobDetail({
     'budget-exceeded',
     'budget_exceeded',
   ].includes(status(job));
+  const recoveryReason =
+    status(job) === 'blocked' && txt(job, 'blockedReason') === 'child-failed'
+      ? '子任务执行失败，先重试失败的执行实例；成功后系统会重新排队汇总。'
+      : status(job) === 'budget-exceeded' || status(job) === 'budget_exceeded'
+        ? '任务组已达到 Token 预算。请先修改预算，再创建新的执行实例。'
+        : txt(job, 'error') || executionError || txt(job, 'blockedReason') ||
+          '上一轮没有完成。恢复会创建新的隔离执行实例，并保留原实例的结果和证据。';
   const [selectedExecutions, setSelectedExecutions] = useState<string[]>([]);
   const [inspecting, setInspecting] = useState<string | null>(null);
   const [integration, setIntegration] = useState<Entity | null>(null);
@@ -2027,6 +2038,22 @@ function JobDetail({
           </>
         )}
       </div>
+      {resumable && (
+        <section
+          className="delivery-summary"
+          data-tone={
+            status(job) === 'failed' || status(job) === 'state_unknown'
+              ? 'error'
+              : 'warning'
+          }
+        >
+          <div className="delivery-summary-heading">
+            <strong>恢复说明</strong>
+            <Badge value={status(job)} />
+          </div>
+          <p>{recoveryReason}</p>
+        </section>
+      )}
       <h3>目标与完成条件</h3>
       <p>
         {txt(job, 'goal') || txt(job, 'requirements') || txt(job, 'prompt')}
@@ -2136,9 +2163,22 @@ function JobDetail({
                   {txt(item, 'workspaceMode')} · {txt(item, 'workspace')}
                 </small>
               )}
+              {Boolean(item.sourceTaskId) && (
+                <small>恢复自执行实例 · {txt(item, 'sourceTaskId')}</small>
+              )}
               {Boolean(item.error) && <small>{txt(item, 'error')}</small>}
             </div>
             <Badge value={status(item)} />
+            {['failed', 'interrupted', 'cancelled', 'state_unknown'].includes(
+              status(item),
+            ) && (
+              <IconButton
+                icon={RefreshCw}
+                label="重试此执行实例"
+                disabled={busy}
+                onClick={() => void onAction(`tasks/${item.id}/retry`)}
+              />
+            )}
           </div>
         ))
       ) : (

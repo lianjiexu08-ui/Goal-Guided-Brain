@@ -80,6 +80,113 @@ function seedProposedRecruitment() {
   }
 }
 
+function seedModelTeams() {
+  const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
+  try {
+    const providers = [
+      {
+        id: 'e2e-provider-alpha',
+        name: 'E2E Alpha Provider',
+        protocol: 'openai-completions',
+        baseUrl: 'http://127.0.0.1:1',
+        credentialId: '',
+        enabled: true,
+        priority: 1,
+        health: null,
+        models: [{
+          id: 'e2e-alpha-model',
+          name: 'Alpha Model',
+          tools: false,
+          vision: false,
+          contextWindow: 128000,
+          inputPrice: null,
+          outputPrice: null,
+        }],
+      },
+      {
+        id: 'e2e-provider-beta',
+        name: 'E2E Beta Provider',
+        protocol: 'openai-completions',
+        baseUrl: 'http://127.0.0.1:1',
+        credentialId: '',
+        enabled: true,
+        priority: 2,
+        health: null,
+        models: [{
+          id: 'e2e-beta-model',
+          name: 'Beta Model',
+          tools: false,
+          vision: false,
+          contextWindow: 128000,
+          inputPrice: null,
+          outputPrice: null,
+        }],
+      },
+    ];
+    for (const provider of providers) store.records.save('providers', provider, provider.id);
+    const seeded = store.teamSpaces().find((space) => space.recruitment?.phase === 'confirmed');
+    if (!seeded) throw new Error('E2E fixture requires a seeded team.');
+    const teams = [
+      {
+        slug: 'alpha',
+        name: 'Alpha 模型团队',
+        goal: '验证 Alpha 团队的模型路由隔离。',
+        providerId: 'e2e-provider-alpha',
+        model: 'e2e-alpha-model',
+      },
+      {
+        slug: 'beta',
+        name: 'Beta 模型团队',
+        goal: '验证 Beta 团队的模型路由隔离。',
+        providerId: 'e2e-provider-beta',
+        model: 'e2e-beta-model',
+      },
+    ];
+    const result = {};
+    for (const input of teams) {
+      const existing = store.teamSpaces().find((space) => space.name === input.name) || (input.slug === 'alpha' ? seeded : undefined);
+      const saved = store.saveTeamSpace({
+        ...existing,
+        name: input.name,
+        goal: input.goal,
+        purpose: input.goal,
+        model: input.model,
+        providerId: input.providerId,
+        workspace: process.cwd(),
+        pmRoleId: 'project_manager',
+        memberRoleIds: ['project_manager'],
+        responsibilities: { project_manager: '验证团队模型路由。' },
+        memberSettings: {
+          project_manager: {
+            label: '项目经理',
+            responsibility: '验证团队模型路由。',
+            modelHint: input.model,
+            providerIds: [input.providerId],
+          },
+        },
+        recruitment: {
+          ...existing?.recruitment,
+          phase: 'confirmed',
+          sessionId: null,
+          turns: 1,
+          brief: input.goal,
+          proposal: null,
+          confirmedAt: new Date().toISOString(),
+        },
+      }, existing?.id);
+      result[input.slug] = {
+        id: saved.id,
+        name: saved.name,
+        providerId: input.providerId,
+        model: input.model,
+      };
+    }
+    return result;
+  } finally {
+    store.close();
+  }
+}
+
 function seedConfirmedTeams() {
   const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
   try {
@@ -301,4 +408,111 @@ test.describe('团队招募核心流程', () => {
     await openTeam(development);
     await expect(page.locator('textarea[aria-label^="发送给"]')).toHaveValue('研发团队专属草稿');
   });
+
+  test('两个团队切换模型后将 provider 与 model 精确传给团队消息', async ({ page }) => {
+    const teams = seedModelTeams();
+    const requests = [];
+    await page.route('**/api/spaces/*/messages', async (route) => {
+      const request = route.request();
+      const body = request.postDataJSON();
+      requests.push({ url: request.url(), body });
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: `e2e-message-${requests.length}`,
+          spaceId: new URL(request.url()).pathname.split('/')[3],
+          clientMessageId: body.clientMessageId,
+          kind: 'request',
+          senderType: 'owner',
+          senderId: 'owner',
+          content: body.content,
+          status: 'sent',
+          sessionId: `e2e-session-${requests.length}`,
+        }),
+      });
+    });
+    await page.goto('/');
+
+    const openTeam = async (team) => {
+      await openMobileSidebar(page);
+      const navigation = sidebarLocator(page).locator('button').filter({ hasText: team.name }).first();
+      await expect(navigation).toBeVisible();
+      await navigation.click({ force: true });
+      await expect(page.getByRole('heading', { name: team.name })).toBeVisible();
+    };
+    const selectModelAndSend = async (team, initialKey, selectedKey, prompt) => {
+      await openTeam(team);
+      const selector = page.getByRole('combobox', { name: '选择模型', exact: true });
+      const initial = initialKey === 'alpha'
+        ? 'e2e-provider-alpha::e2e-alpha-model'
+        : 'e2e-provider-beta::e2e-beta-model';
+      await expect(selector).toHaveValue(initial);
+      const selected = selectedKey === 'alpha'
+        ? 'e2e-provider-alpha::e2e-alpha-model'
+        : 'e2e-provider-beta::e2e-beta-model';
+      await selector.selectOption(selected);
+      await expect(selector).toHaveValue(selected);
+      const composer = page.locator('textarea[aria-label^="发送给"]');
+      await composer.fill(prompt);
+      const previousRequestCount = requests.length;
+      await page.getByRole('button', { name: '发送任务', exact: true }).click();
+      await expect.poll(() => requests.length).toBe(previousRequestCount + 1);
+      return requests[requests.length - 1];
+    };
+
+    // Each team starts on a different route. Switch to the other team/model
+    // pair before sending so a visible label change alone cannot pass.
+    const alphaRequest = await selectModelAndSend(teams.alpha, 'alpha', 'beta', 'Alpha 团队使用 Beta 模型');
+    expect(alphaRequest.url).toContain(`/api/spaces/${teams.alpha.id}/messages`);
+    expect(alphaRequest.body).toMatchObject({
+      providerId: 'e2e-provider-beta',
+      model: 'e2e-beta-model',
+      content: 'Alpha 团队使用 Beta 模型',
+    });
+    expect(alphaRequest.body.allowModelWithoutTools).toBe(true);
+
+    const betaRequest = await selectModelAndSend(teams.beta, 'beta', 'alpha', 'Beta 团队使用 Alpha 模型');
+    expect(betaRequest.url).toContain(`/api/spaces/${teams.beta.id}/messages`);
+    expect(betaRequest.body).toMatchObject({
+      providerId: 'e2e-provider-alpha',
+      model: 'e2e-alpha-model',
+      content: 'Beta 团队使用 Alpha 模型',
+    });
+    expect(betaRequest.body.allowModelWithoutTools).toBe(true);
+    expect(requests).toHaveLength(2);
+
+    // The PUT performed by the switcher is durable and scoped per team; read
+    // the real API state to guard against a request-body-only false positive.
+    const state = await page.evaluate(async ({ alphaId, betaId }) => {
+      const next = await fetch('/api/state').then((response) => response.json());
+      return {
+        alpha: next.spaces.find((space) => space.id === alphaId),
+        beta: next.spaces.find((space) => space.id === betaId),
+      };
+    }, { alphaId: teams.alpha.id, betaId: teams.beta.id });
+    const alpha = state.alpha;
+    const beta = state.beta;
+    expect(alpha).toMatchObject({
+      providerId: 'e2e-provider-beta',
+      model: 'e2e-beta-model',
+      memberSettings: {
+        project_manager: {
+          providerIds: ['e2e-provider-beta'],
+          modelHint: 'e2e-beta-model',
+        },
+      },
+    });
+    expect(beta).toMatchObject({
+      providerId: 'e2e-provider-alpha',
+      model: 'e2e-alpha-model',
+      memberSettings: {
+        project_manager: {
+          providerIds: ['e2e-provider-alpha'],
+          modelHint: 'e2e-alpha-model',
+        },
+      },
+    });
+  });
+
 });

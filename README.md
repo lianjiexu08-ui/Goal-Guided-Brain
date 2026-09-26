@@ -220,7 +220,7 @@ npm run test:e2e
 npm run build
 ```
 
-`npm run test:e2e` 会启动隔离的 API/UI 服务，在桌面和移动 Chromium 尺寸下验证团队招募、草稿恢复、页面切换和真实二进制附件；首次运行若本机没有 Playwright 浏览器，请执行 `npx playwright install chromium`。测试使用临时数据库、本地确定性模型和 MCP fixture，不调用付费模型。每次功能迭代都应补充对应验证，检查 `git diff --check`，提交清晰的 Git commit，并推送到远程仓库：
+`npm run test:e2e` 会启动隔离的 API/UI 服务，在桌面和移动 Chromium 尺寸下验证团队招募、草稿恢复、页面切换、模型切换、失败任务恢复和真实二进制附件；首次运行若本机没有 Playwright 浏览器，请执行 `npx playwright install chromium`。测试使用临时数据库、本地确定性模型和 MCP fixture，不调用付费模型。每次功能迭代都应补充对应验证，检查 `git diff --check`，提交清晰的 Git commit，并推送到远程仓库：
 
 ```text
 https://github.com/lianjiexu08-ui/Goal-Guided-Brain.git
