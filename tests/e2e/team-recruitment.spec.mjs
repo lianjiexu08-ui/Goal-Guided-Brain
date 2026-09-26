@@ -347,7 +347,7 @@ test.describe('团队招募核心流程', () => {
   });
 
   test('确认 Team Charter 后进入我的团队并保留重命名后的团队身份', async ({ page }) => {
-    const { teamName } = seedProposedRecruitment();
+    const { teamName, teamId } = seedProposedRecruitment();
     const composer = await recruitmentPage(page);
     const draftPicker = page.getByRole('combobox', { name: '选择需求草稿', exact: true });
     await draftPicker.click();
@@ -369,6 +369,19 @@ test.describe('团队招募核心流程', () => {
     await page.getByRole('button', { name: '保存名称', exact: true }).click();
     await expect(page.getByRole('heading', { name: renamed })).toBeVisible();
     await expect(page.getByText(`团队已重命名为“${renamed}”`)).toBeVisible();
+    await page.getByRole('button', { name: '团队设置', exact: true }).click();
+    const settings = page.getByRole('dialog');
+    await expect(settings).toBeVisible();
+    const workspaceMode = settings.getByRole('combobox', { name: '默认执行目录', exact: true });
+    await workspaceMode.click();
+    await page.getByRole('option', { name: '快照目录', exact: true }).click();
+    await settings.getByRole('button', { name: '保存团队设置', exact: true }).click();
+    await expect(page.getByText(`团队“${renamed}”设置已保存`)).toBeVisible();
+    const savedTeam = await page.evaluate(async ({ id }) => {
+      const state = await fetch('/api/state').then((response) => response.json());
+      return state.spaces.find((space) => space.id === id);
+    }, { id: teamId });
+    expect(savedTeam).toMatchObject({ id: teamId, name: renamed, workspaceMode: 'snapshot' });
     await openMobileSidebar(page);
     await expect(page.getByRole('button', { name: new RegExp(`${renamed}.*交付`) })).toBeVisible();
     await expect(composer).toHaveValue('');

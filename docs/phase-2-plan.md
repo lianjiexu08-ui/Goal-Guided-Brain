@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 134/134, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 135/135, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Combined parent/frontend/backend/reviewer scenario using real orchestration MCP,
@@ -61,16 +61,18 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 134 passing tests. The repeatable
+The current deterministic suite contains 135 passing tests. The repeatable
 Playwright baseline contains twelve passing desktop/mobile runs covering team
 recruitment navigation, draft restoration across views, binary drag-and-drop
 attachments, Team Charter confirmation, team renaming, two-team context
 switching, cross-team model selection and failed-task recovery against the
 real API. Team tasks now default to isolated execution directories, and task
 details expose the selected model, routing candidates and fallback events when
-they exist. The confirmation fixture exercises the deterministic approval
-boundary; multi-turn model quality, sustained 20-switch isolation, real
-provider fallback quality and cross-platform environment gates remain open.
+they exist. A local API fixture also alternates between two teams for 20
+messages and checks task, message, model and route ownership. The confirmation
+fixture exercises the deterministic approval boundary; browser-level sustained
+20-switch isolation, multi-turn model quality, real provider fallback quality
+and cross-platform environment gates remain open.
 
 ## Remaining Compatibility And Release Gates
 

@@ -355,7 +355,21 @@ export function createWorkbench({
               .map((task) => {
                 const meta = store.records.get('task-meta', task.id) || {};
                 const job = meta.jobId ? store.records.get('jobs', meta.jobId) : null;
-                return { ...task, jobId: meta.jobId || null, groupId: meta.groupId || job?.groupId || null, parentTaskId: meta.parentTaskId || null, spaceId: meta.spaceId || job?.spaceId || null, teamId: meta.teamId || job?.teamId || meta.spaceId || job?.spaceId || null, workspaceMode: meta.workspaceMode || job?.workspaceMode || null };
+                const artifacts = store.records.list('artifacts').filter((artifact) => artifact.taskId === task.id);
+                const verification = artifacts.find((artifact) => artifact.kind === 'verification');
+                return {
+                  ...task,
+                  jobId: meta.jobId || null,
+                  groupId: meta.groupId || job?.groupId || null,
+                  parentTaskId: meta.parentTaskId || null,
+                  spaceId: meta.spaceId || job?.spaceId || null,
+                  teamId: meta.teamId || job?.teamId || meta.spaceId || job?.spaceId || null,
+                  workspaceMode: meta.workspaceMode || job?.workspaceMode || null,
+                  artifactCount: artifacts.length,
+                  verificationStatus: verification
+                    ? verification.status || (verification.verified === true ? 'verified' : 'pending-review')
+                    : null,
+                };
               })
               .filter((task) => task.spaceId === space.id)
               .map(({ context: _context, log: _log, ...task }) => {

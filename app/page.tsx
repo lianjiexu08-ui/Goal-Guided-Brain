@@ -439,6 +439,7 @@ function Workbench() {
     'settings' | 'knowledge' | 'handoff' | 'team' | 'rename-team' | null
   >(null);
   const [teamRenameForm, setTeamRenameForm] = useState({ name: '' });
+  const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
   const [teamForm, setTeamForm] = useState<TeamForm>({
     name: '',
     goal: '',
@@ -989,18 +990,24 @@ function Workbench() {
     setTeamRenameForm({ name: teamSpace.name });
     setModal('rename-team');
   }
-  function openTeamCreate() {
-    const pm = activeRoles.find((item) => item.id === 'project_manager') || activeRoles[0];
+  function openTeamSettings() {
+    if (!teamSpace) return;
+    const pm = activeRoles.find((item) => item.id === teamSpace.pmRoleId) || activeRoles[0];
+    setEditingTeamId(teamSpace.id);
     setTeamForm({
-      name: '',
-      goal: '',
-      pmRoleId: pm?.id || 'project_manager',
-      memberRoleIds: pm ? [pm.id] : [],
-      workspace: data?.config.workspace || '',
-      workspaceMode: 'isolated',
-      teamType: 'custom',
-      allowCollaboration: true,
-      autonomyMode: 'auto',
+      name: teamSpace.name,
+      goal: teamSpace.goal,
+      pmRoleId: teamSpace.pmRoleId || pm?.id || 'project_manager',
+      memberRoleIds: teamSpace.memberRoleIds?.length
+        ? [...teamSpace.memberRoleIds]
+        : pm
+          ? [pm.id]
+          : [],
+      workspace: teamSpace.workspace || data?.config.workspace || '',
+      workspaceMode: teamSpace.workspaceMode || 'isolated',
+      teamType: (teamSpace.teamType as TeamForm['teamType']) || 'custom',
+      allowCollaboration: teamSpace.collaboration?.enabled !== false,
+      autonomyMode: teamSpace.autonomy?.mode === 'assist' ? 'assist' : 'auto',
     });
     setModal('team');
   }
@@ -1295,7 +1302,7 @@ function Workbench() {
                 ) : null}
                 <button className="secondary-button" type="button" disabled={busy || !activeRoles.length} onClick={() => void startRecruitment(true)}><Plus size={15} /> 发布新需求</button>
                 <button className="text-button" type="button" disabled={busy || !teamSpace} onClick={openTeamRename}><Pencil size={13} /> 重命名</button>
-                <button className="text-button" type="button" onClick={openTeamCreate}>高级配置</button>
+                <button className="text-button" type="button" onClick={openTeamSettings}>团队设置</button>
                 <div className="team-health"><span className="live-dot" /> {rosterReady ? `${teamMembers.length} 位成员已配置` : recruitment?.phase === 'proposed' ? '方案待确认' : '正在招募'}</div>
               </div>
             </div>
@@ -1458,7 +1465,7 @@ function Workbench() {
                     <Plus size={15} /> {isRecruitmentView ? '另起需求' : '发布新需求'}
                   </button>
                   {!isRecruitmentView && <button className="text-button" type="button" disabled={busy || !teamSpace} onClick={openTeamRename}><Pencil size={13} /> 重命名</button>}
-                  {!isRecruitmentView && <button className="text-button" type="button" onClick={openTeamCreate}>高级配置</button>}
+                  {!isRecruitmentView && <button className="text-button" type="button" onClick={openTeamSettings}>团队设置</button>}
                   <button
                     className="icon-button"
                     title="编辑助手"
@@ -2451,7 +2458,9 @@ function Workbench() {
                   ? '交给其他助手'
                   : modal === 'rename-team'
                     ? '重命名团队'
-              : '手动创建团队'}
+              : editingTeamId
+                ? '团队设置'
+                : '手动创建团队'}
           </DialogTitle>
           <DialogDescription>
             {modal === 'settings'
@@ -2462,7 +2471,9 @@ function Workbench() {
                   ? '将目标、成果和补充要求传给目标助手，创建独立会话。'
                   : modal === 'rename-team'
                     ? '只修改团队显示名称，团队消息、成员和任务都会保留。'
-                  : '每个团队拥有自己的职责、成员和工作目录。你可以在团队招募中切换团队，团队也可以通过项目经理互相协作。'}
+                  : editingTeamId
+                    ? '调整当前团队的职责、成员、执行目录和自驱模式；已有任务保持原来的执行快照。'
+                    : '每个团队拥有自己的职责、成员和工作目录。你可以在团队招募中切换团队，团队也可以通过项目经理互相协作。'}
           </DialogDescription>
           {modal === 'settings' && (
             <form
@@ -2920,7 +2931,7 @@ function Workbench() {
               onSubmit={(e) => {
                 e.preventDefault();
                 void action(async () => {
-                  const saved = await api<TeamSpace>('spaces', 'POST', {
+                  const payload = {
                     name: teamForm.name,
                     goal: teamForm.goal,
                     purpose: teamForm.goal,
@@ -2931,17 +2942,22 @@ function Workbench() {
                     workspaceMode: teamForm.workspaceMode,
                     autonomy: { mode: teamForm.autonomyMode },
                     collaboration: {
+                      ...(editingTeamId && teamSpace?.collaboration
+                        ? teamSpace.collaboration
+                        : { autoHandoff: true, sharedBoard: true, allowedTeamIds: [] }),
                       enabled: teamForm.allowCollaboration,
-                      autoHandoff: true,
-                      sharedBoard: true,
-                      allowedTeamIds: [],
                     },
-                  });
+                  };
+                  const saved = await api<TeamSpace>(
+                    editingTeamId ? `spaces/${editingTeamId}` : 'spaces',
+                    editingTeamId ? 'PUT' : 'POST',
+                    payload,
+                  );
                   setSelectedSpaceId(saved.id);
                   setRole(saved.pmRoleId);
                   setModal(null);
-                  setView('workspace');
-                  setNotice(`团队“${saved.name}”已创建`);
+                  if (!editingTeamId) setView('workspace');
+                  setNotice(editingTeamId ? `团队“${saved.name}”设置已保存` : `团队“${saved.name}”已创建`);
                 });
               }}
             >
@@ -3065,7 +3081,7 @@ function Workbench() {
                 />
               </div>
               <button className="primary-button" type="submit" disabled={busy || !activeRoles.length}>
-                <Plus size={16} /> 创建团队
+                <Plus size={16} /> {editingTeamId ? '保存团队设置' : '创建团队'}
               </button>
             </form>
           )}

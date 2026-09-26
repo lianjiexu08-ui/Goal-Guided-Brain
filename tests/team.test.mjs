@@ -75,12 +75,22 @@ test('team space routes owner messages to the project manager and persists repli
     assert.match(runs[0].prompt, /评估新产品方向/);
     runs[0].complete();
     await tick();
+    const completedTask = app.store.tasks().find((item) => item.role === 'project_manager');
+    app.store.records.save('artifacts', {
+      taskId: completedTask.id,
+      kind: 'verification',
+      status: 'verified',
+      verified: true,
+    }, `verification:${completedTask.id}`);
     const detail = await request(`spaces/${spaces.body[0].id}`);
     assert.equal(detail.status, 200);
     assert.ok(detail.body.messages.some((item) => item.kind === 'request'));
     assert.ok(detail.body.messages.some((item) => item.kind === 'reply' && /完成汇总/.test(item.content)));
     assert.ok(detail.body.tasks.some((item) => item.role === 'project_manager'));
-    assert.equal(detail.body.tasks.find((item) => item.role === 'project_manager').workspaceMode, 'isolated');
+    const taskSummary = detail.body.tasks.find((item) => item.role === 'project_manager');
+    assert.equal(taskSummary.workspaceMode, 'isolated');
+    assert.equal(taskSummary.artifactCount, 1);
+    assert.equal(taskSummary.verificationStatus, 'verified');
   } finally {
     await app.close();
     fs.rmSync(fixture.dir, { recursive: true, force: true });
@@ -368,6 +378,90 @@ test('multiple Chat teams keep independent ownership and can hand work to anothe
     const restoredSource = app.platform.control.records.get('space-messages', sourceTraceId);
     assert.equal(restoredSource.relatedMessageId, detail.body.messages[0].id);
     assert.equal(restoredSource.taskId, delegated.body.taskId);
+  } finally {
+    await app.close();
+    fs.rmSync(fixture.dir, { recursive: true, force: true });
+  }
+});
+
+test('twenty alternating messages keep two confirmed teams, models, and tasks isolated', async () => {
+  const fixture = sandbox();
+  const runs = [];
+  const app = createWorkbench({
+    ...fixture,
+    requireCredential: false,
+    runtimeFactory: (options) => ({
+      options,
+      start() { runs.push(this); },
+      cancel() { options.onDone('cancelled', ''); },
+      complete() { options.onResult('本地 fixture 回复'); options.onDone('completed', ''); },
+    }),
+  });
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  const request = async (route, body, method = 'GET') => {
+    const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  try {
+    const provider = app.platform.providers.save({
+      name: 'Team isolation fixture',
+      protocol: 'openai-completions',
+      baseUrl: 'http://127.0.0.1:9/v1',
+      models: [
+        { id: 'team-alpha-model', tools: true },
+        { id: 'team-beta-model', tools: true },
+      ],
+      priority: 1,
+    });
+    const source = (await request('teams')).body[0];
+    const target = (await request('teams', {
+      name: '连续切换验收团队',
+      goal: '验证连续切换时上下文和任务归属不串线。',
+      memberRoleIds: ['project_manager', 'assistant'],
+    }, 'POST')).body;
+    for (const [teamId, model] of [[source.id, 'team-alpha-model'], [target.id, 'team-beta-model']]) {
+      const configured = await request(`teams/${teamId}`, { model, providerId: provider.id }, 'PUT');
+      assert.equal(configured.status, 200);
+      assert.equal(configured.body.model, model);
+      assert.equal(configured.body.providerId, provider.id);
+    }
+    const expected = new Map([[source.id, 'team-alpha-model'], [target.id, 'team-beta-model']]);
+    for (let index = 0; index < 20; index += 1) {
+      const team = index % 2 === 0 ? source : target;
+      const model = expected.get(team.id);
+      const content = `隔离压力消息 ${index} (${team.id})`;
+      const sent = await request(`teams/${team.id}/messages`, {
+        clientMessageId: `isolation-${index}`,
+        content,
+        model,
+        providerId: provider.id,
+      }, 'POST');
+      assert.equal(sent.status, 201);
+      assert.ok(sent.body.taskId);
+      await waitFor(() => runs.length === index + 1, `第 ${index + 1} 次切换未启动任务`);
+      const run = runs[index];
+      const meta = app.platform.control.records.get('task-meta', run.options.task.id);
+      assert.equal(meta.teamId, team.id);
+      assert.equal(meta.spaceId, team.id);
+      assert.equal(meta.modelOverride, model);
+      assert.deepEqual(meta.providerIds, [provider.id]);
+      assert.equal(run.options.route.model, model);
+      assert.equal(run.options.route.providerId, provider.id);
+      run.complete();
+    }
+    for (const team of [source, target]) {
+      const detail = await request(`teams/${team.id}`);
+      assert.equal(detail.status, 200);
+      const own = detail.body.messages.filter((message) => message.content?.startsWith('隔离压力消息'));
+      assert.equal(own.length, 10);
+      assert.ok(own.every((message) => message.content.includes(`(${team.id})`)));
+      assert.equal(detail.body.tasks.length, 10);
+      assert.ok(detail.body.tasks.every((task) => task.teamId === team.id));
+    }
   } finally {
     await app.close();
     fs.rmSync(fixture.dir, { recursive: true, force: true });
