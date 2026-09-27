@@ -1039,6 +1039,61 @@ export function createPlatform({
     const [collection, id, action] = parts;
     const ok = (body, status = 200) => ({ status, body });
     if (collection === 'manage' && method === 'GET') return ok(manage());
+    if (collection === 'drafts') {
+      const spaceId = (method === 'GET' ? query.get('spaceId') : body.spaceId) || null;
+      const roleId = (method === 'GET' ? query.get('role') : body.roleId) || '';
+      if (typeof spaceId !== 'string' && spaceId !== null)
+        throw new Error('草稿团队无效。');
+      if (typeof roleId !== 'string' || !roleId.trim())
+        throw new Error('草稿所属助手不能为空。');
+      const normalizedRoleId = roleId.trim();
+      const role = store.role(normalizedRoleId);
+      if (!role || role.archived) throw new Error('草稿所属助手不存在或已归档。');
+      if (spaceId) {
+        const space = store.teamSpace(spaceId);
+        if (!space) throw new Error('草稿所属团队不存在。');
+        if (space.status !== 'active') throw new Error('草稿所属团队当前不可编辑。');
+        if (!space.memberRoleIds.includes(normalizedRoleId))
+          throw new Error('该助手不属于当前团队。');
+      }
+      const publicDraft = (draft) => draft ? {
+        ...draft,
+        attachments: attachments.list(draft.attachmentIds),
+      } : {
+        spaceId,
+        roleId: normalizedRoleId,
+        content: '',
+        attachmentIds: [],
+        attachments: [],
+      };
+      if (method === 'GET') {
+        return ok(publicDraft(store.teamDraft(spaceId, normalizedRoleId)));
+      }
+      if (method === 'DELETE') {
+        const expectedRevision = Number.isSafeInteger(body.revision) ? body.revision : undefined;
+        try {
+          return ok({ ok: store.removeTeamDraft(spaceId, normalizedRoleId, expectedRevision) });
+        } catch (error) {
+          if (error.status !== 409) throw error;
+          return ok({ error: error.message, draft: publicDraft(store.teamDraft(spaceId, normalizedRoleId)) }, 409);
+        }
+      }
+      if (method === 'PUT' || method === 'POST') {
+        const attachmentIds = attachments.validateIds(body.attachmentIds, spaceId);
+        try {
+          const draft = store.saveTeamDraft({
+            spaceId,
+            roleId: normalizedRoleId,
+            content: body.content,
+            attachmentIds,
+          }, Number.isSafeInteger(body.revision) ? body.revision : undefined);
+          return ok(publicDraft(draft));
+        } catch (error) {
+          if (error.status !== 409) throw error;
+          return ok({ error: error.message, draft: publicDraft(store.teamDraft(spaceId, normalizedRoleId)) }, 409);
+        }
+      }
+    }
     if (collection === 'vault' && method === 'POST') {
       if (id === 'lock') return ok(vault.lock());
       if (id === 'initialize' || id === 'unlock') {

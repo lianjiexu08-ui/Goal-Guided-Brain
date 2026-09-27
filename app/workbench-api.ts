@@ -30,7 +30,13 @@ export async function api<T = unknown>(
       typeof data === 'object' && data !== null && 'error' in data
         ? String(data.error)
         : '请求失败，请稍后重试';
-    throw new Error(error);
+    const failure = new Error(error) as Error & {
+      status?: number;
+      data?: unknown;
+    };
+    failure.status = response.status;
+    failure.data = data;
+    throw failure;
   }
   return data as T;
 }

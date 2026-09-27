@@ -2622,6 +2622,20 @@ h1 {
   color: #96a7a5;
 }
 
+.draft-sync-status {
+  margin-left: 12px;
+  color: #6d8d87;
+}
+
+.draft-sync-status.saving {
+  color: #7a8b92;
+}
+
+.draft-sync-status.offline,
+.draft-sync-status.conflict {
+  color: #b36f28;
+}
+
 .context-panel {
   border: 1px solid #dce8e4;
   border-radius: 22px;

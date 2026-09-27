@@ -481,6 +481,67 @@ export class Store {
       .list('space-messages')
       .filter((message) => message.spaceId === spaceId);
   }
+  draftKey(spaceId, roleId) {
+    const scope = spaceId ? String(spaceId).trim() : 'standalone';
+    const role = String(roleId || '').trim();
+    return `draft:${encodeURIComponent(scope)}:${encodeURIComponent(role)}`;
+  }
+  teamDraft(spaceId, roleId) {
+    const key = this.draftKey(spaceId, roleId);
+    return this.records.get('space-drafts', key);
+  }
+  teamDrafts() {
+    return this.records.list('space-drafts');
+  }
+  saveTeamDraft(input, expectedRevision) {
+    const spaceId = typeof input.spaceId === 'string' && input.spaceId.trim()
+      ? input.spaceId.trim()
+      : null;
+    const roleId = String(input.roleId || '').trim();
+    if (!roleId || !this.role(roleId) || this.role(roleId).archived)
+      throw new Error('草稿所属助手不存在或已归档。');
+    if (spaceId) {
+      const space = this.teamSpace(spaceId);
+      if (!space) throw new Error('草稿所属团队不存在。');
+      if (space.status !== 'active') throw new Error('草稿所属团队当前不可编辑。');
+      if (!space.memberRoleIds.includes(roleId))
+        throw new Error('该助手不属于当前团队。');
+    }
+    const content = String(input.content ?? '').trim();
+    const attachmentIds = Array.isArray(input.attachmentIds)
+      ? [...new Set(input.attachmentIds.filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim()))]
+      : [];
+    const key = this.draftKey(spaceId, roleId);
+    const existing = this.records.get('space-drafts', key);
+    const revisionConflict = () => Object.assign(
+      new Error('草稿已在其他窗口更新，请刷新后重试。'),
+      { status: 409 },
+    );
+    // A missing revision is safe for the first write only. Once a draft
+    // exists, requiring the caller to send the revision prevents an offline
+    // tab from overwriting newer work after it reconnects.
+    if (existing && (expectedRevision === undefined || existing.revision !== expectedRevision))
+      throw revisionConflict();
+    if (!content && !attachmentIds.length) {
+      if (existing) this.records.remove('space-drafts', key);
+      return null;
+    }
+    if (content.length > 32000) throw new Error('草稿不能超过 32000 字符。');
+    return this.records.save('space-drafts', {
+      spaceId,
+      roleId,
+      content,
+      attachmentIds: attachmentIds.slice(0, 20),
+    }, key, expectedRevision);
+  }
+  removeTeamDraft(spaceId, roleId, expectedRevision) {
+    const key = this.draftKey(spaceId, roleId);
+    const existing = this.records.get('space-drafts', key);
+    if (!existing) return false;
+    if (expectedRevision === undefined || existing.revision !== expectedRevision)
+      throw Object.assign(new Error('草稿已在其他窗口更新，请刷新后重试。'), { status: 409 });
+    return this.records.remove('space-drafts', key);
+  }
   saveTeamMessage(input, id) {
     const spaceId = input.spaceId || input.teamId;
     if (!this.teamSpace(spaceId)) throw new Error('团队空间不存在。');

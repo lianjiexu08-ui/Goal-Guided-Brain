@@ -110,10 +110,22 @@ type Attachment = {
 type DraftCache = {
   drafts?: Record<string, string>;
   attachments?: Record<string, Attachment[]>;
+  updatedAt?: Record<string, string>;
+  revisions?: Record<string, number>;
+};
+type ServerDraft = {
+  spaceId: string | null;
+  roleId: string;
+  content: string;
+  attachmentIds: string[];
+  attachments: Attachment[];
+  revision?: number;
+  updatedAt?: string;
 };
 type RouteCache = {
   spaceId?: string;
   role?: string;
+  view?: string;
 };
 type Session = {
   id: string;
@@ -342,6 +354,22 @@ const formatBytes = (bytes: number) =>
     : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 const DRAFT_CACHE_KEY = 'ggb.composer-drafts.v1';
 const ROUTE_CACHE_KEY = 'ggb.workspace-route.v1';
+const ROUTE_VIEWS = new Set([
+  'workspace',
+  'recruitment',
+  'team',
+  'assistants',
+  'tasks',
+  'knowledge',
+  'jobs',
+  'models',
+  'resources',
+  'nodes',
+  'capabilities',
+  'schedules',
+  'attention',
+  'backups',
+]);
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const MAX_ATTACHMENTS = 20;
 function readDraftCache(): DraftCache {
@@ -363,7 +391,13 @@ function readDraftCache(): DraftCache {
             : [],
         ]))
       : {};
-    return { drafts, attachments };
+    const updatedAt = value?.updatedAt && typeof value.updatedAt === 'object' && !Array.isArray(value.updatedAt)
+      ? Object.fromEntries(Object.entries(value.updatedAt).filter(([, timestamp]) => typeof timestamp === 'string'))
+      : {};
+    const revisions = value?.revisions && typeof value.revisions === 'object' && !Array.isArray(value.revisions)
+      ? Object.fromEntries(Object.entries(value.revisions).filter(([, revision]) => Number.isSafeInteger(revision)))
+      : {};
+    return { drafts, attachments, updatedAt, revisions };
   } catch {
     return {};
   }
@@ -375,6 +409,7 @@ function readRouteCache(): RouteCache {
     return {
       ...(typeof value?.spaceId === 'string' ? { spaceId: value.spaceId } : {}),
       ...(typeof value?.role === 'string' ? { role: value.role } : {}),
+      ...(typeof value?.view === 'string' && ROUTE_VIEWS.has(value.view) ? { view: value.view } : {}),
     };
   } catch {
     return {};
@@ -501,6 +536,16 @@ function Workbench() {
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const routeInitialized = useRef(false);
   const draftCacheHydrated = useRef(false);
+  const [draftCacheReady, setDraftCacheReady] = useState(false);
+  const draftDirtyRef = useRef<Set<string>>(new Set());
+  const draftRevisionRef = useRef<Record<string, number>>({});
+  const draftUpdatedAtRef = useRef<Record<string, string>>({});
+  const draftVersionRef = useRef<Record<string, number>>({});
+  const draftTimersRef = useRef<Record<string, number>>({});
+  const activeDraftKeyRef = useRef('');
+  const draftsRef = useRef<Record<string, string>>({});
+  const draftAttachmentsRef = useRef<Record<string, Attachment[]>>({});
+  const [draftSyncState, setDraftSyncState] = useState<'idle' | 'saving' | 'saved' | 'offline' | 'conflict'>('idle');
   const roles = data?.roles || [];
   const activeRoles = roles.filter((r) => !r.archived);
   const assistant = roles.find((r) => r.id === role) || {
@@ -573,6 +618,7 @@ function Workbench() {
   const draftKey = `${teamSpace?.id || 'standalone'}:${role}`;
   const attachmentDraftKey = draftKey;
   const currentMemberSettings = teamSpace?.memberSettings?.[role];
+  const dataReady = !!data;
   const isTeamMember = !!teamSpace?.memberRoleIds.includes(role);
   const teamSessionIds = teamSpace
     ? new Set(
@@ -638,6 +684,144 @@ function Workbench() {
       (k.projectPath === conversationWorkspace &&
         ['project', role].includes(k.scope)),
   );
+  function draftQuery(spaceId: string | null, roleId: string) {
+    const query = new URLSearchParams({ role: roleId });
+    if (spaceId) query.set('spaceId', spaceId);
+    return `drafts?${query.toString()}`;
+  }
+  async function loadServerDraft(spaceId: string | null, roleId: string) {
+    return api<ServerDraft>(draftQuery(spaceId, roleId));
+  }
+  function setDraftSyncStateFor(key: string, state: 'idle' | 'saving' | 'saved' | 'offline' | 'conflict') {
+    if (activeDraftKeyRef.current === key) setDraftSyncState(state);
+  }
+  function markDraftDirty(key: string) {
+    draftDirtyRef.current.add(key);
+    draftVersionRef.current[key] = (draftVersionRef.current[key] || 0) + 1;
+    draftUpdatedAtRef.current[key] = new Date().toISOString();
+    setDraftSyncStateFor(key, 'saving');
+  }
+  function clearDraftTimer(key: string) {
+    const timer = draftTimersRef.current[key];
+    if (timer !== undefined && typeof window !== 'undefined') window.clearTimeout(timer);
+    delete draftTimersRef.current[key];
+  }
+  function queueDraftSync(
+    key: string,
+    spaceId: string | null,
+    roleId: string,
+    content: string,
+    attachmentIds: string[],
+    delay = 650,
+  ) {
+    if (typeof window === 'undefined' || !draftDirtyRef.current.has(key)) return;
+    clearDraftTimer(key);
+    const version = draftVersionRef.current[key] || 0;
+    draftTimersRef.current[key] = window.setTimeout(() => {
+      delete draftTimersRef.current[key];
+      void persistDraft(key, spaceId, roleId, content, attachmentIds, version);
+    }, delay);
+  }
+  async function persistDraft(
+    key: string,
+    spaceId: string | null,
+    roleId: string,
+    content: string,
+    attachmentIds: string[],
+    version: number,
+  ) {
+    if (!draftDirtyRef.current.has(key) || draftVersionRef.current[key] !== version) return;
+    setDraftSyncStateFor(key, 'saving');
+    const revision = draftRevisionRef.current[key];
+    try {
+      const saved = await api<ServerDraft>('drafts', 'PUT', {
+        spaceId,
+        roleId,
+        content,
+        attachmentIds,
+        ...(revision !== undefined ? { revision } : {}),
+      });
+      if (saved.revision !== undefined) draftRevisionRef.current[key] = saved.revision;
+      else delete draftRevisionRef.current[key];
+      if (draftVersionRef.current[key] !== version || !draftDirtyRef.current.has(key)) return;
+      draftDirtyRef.current.delete(key);
+      draftUpdatedAtRef.current[key] = saved.updatedAt || draftUpdatedAtRef.current[key] || new Date().toISOString();
+      setDraftSyncStateFor(key, 'saved');
+    } catch (rawError) {
+      const error = rawError as Error & { status?: number };
+      if (error.status === 409) {
+        try {
+          const latest = await loadServerDraft(spaceId, roleId);
+          if (latest.revision !== undefined) draftRevisionRef.current[key] = latest.revision;
+          // Keep the local text visible and dirty, but do not silently use the
+          // newer revision to overwrite another window's draft. The next
+          // deliberate edit retries against the revision we just observed.
+          setDraftSyncStateFor(key, 'conflict');
+          return;
+        } catch {
+          // The local draft remains dirty and will be retried after a later edit.
+        }
+      }
+      setDraftSyncStateFor(key, 'offline');
+    }
+  }
+  async function clearServerDraft(
+    key: string,
+    spaceId: string | null,
+    roleId: string,
+    sentContent = '',
+    sentAttachmentIds: string[] = [],
+  ) {
+    clearDraftTimer(key);
+    try {
+      let revision = draftRevisionRef.current[key];
+      // A user can send before the 650 ms debounce finishes. Read the remote
+      // record first so the successful send does not leave the just-sent text
+      // queued for restoration on the next visit. Preserve a different remote
+      // draft owned by another window, including an optimistic-concurrency
+      // conflict discovered while saving this draft.
+      try {
+        const latest = await loadServerDraft(spaceId, roleId);
+        if (!latest.revision) {
+          delete draftRevisionRef.current[key];
+          delete draftUpdatedAtRef.current[key];
+          draftDirtyRef.current.delete(key);
+          setDraftSyncStateFor(key, 'saved');
+          return;
+        }
+        const sameContent = latest.content.trim() === sentContent.trim() &&
+          JSON.stringify(latest.attachmentIds || []) === JSON.stringify(sentAttachmentIds);
+        if (!sameContent) {
+          delete draftRevisionRef.current[key];
+          delete draftUpdatedAtRef.current[key];
+          draftDirtyRef.current.delete(key);
+          setDraftSyncStateFor(key, 'saved');
+          return;
+        }
+        revision = latest.revision;
+      } catch (error) {
+        if (revision === undefined) throw error;
+      }
+      await api('drafts', 'DELETE', {
+        spaceId,
+        roleId,
+        revision,
+      });
+      delete draftRevisionRef.current[key];
+      delete draftUpdatedAtRef.current[key];
+      draftDirtyRef.current.delete(key);
+      setDraftSyncStateFor(key, 'saved');
+    } catch (rawError) {
+      const error = rawError as Error & { status?: number };
+      // Sending succeeded, so clear the local composer even if a stale remote
+      // draft could not be removed. A 409 means another window owns a newer
+      // revision; preserving it is safer than deleting that user's text.
+      draftDirtyRef.current.delete(key);
+      delete draftRevisionRef.current[key];
+      delete draftUpdatedAtRef.current[key];
+      setDraftSyncStateFor(key, error.status === 409 ? 'saved' : 'offline');
+    }
+  }
   async function refresh() {
     try {
       const next = await api<State>('state');
@@ -666,6 +850,7 @@ function Workbench() {
         const preferred = cachedRole || initialSpace?.pmRoleId || next.roles.find((item) => !item.archived)?.id;
         if (preferred) setRole(preferred);
         if (initialSpace?.id) setSelectedSpaceId(initialSpace.id);
+        if (cachedRoute.view) setView(cachedRoute.view);
         routeInitialized.current = true;
       }
       setConnectionError('');
@@ -686,7 +871,10 @@ function Workbench() {
       const cached = readDraftCache();
       setDrafts((current) => ({ ...cached.drafts, ...current }));
       setDraftAttachments((current) => ({ ...cached.attachments, ...current }));
+      draftUpdatedAtRef.current = cached.updatedAt || {};
+      draftRevisionRef.current = cached.revisions || {};
       draftCacheHydrated.current = true;
+      setDraftCacheReady(true);
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
@@ -695,23 +883,105 @@ function Workbench() {
     try {
       window.localStorage.setItem(
         DRAFT_CACHE_KEY,
-        JSON.stringify({ drafts, attachments: draftAttachments } satisfies DraftCache),
+        JSON.stringify({
+          drafts,
+          attachments: draftAttachments,
+          updatedAt: draftUpdatedAtRef.current,
+          revisions: draftRevisionRef.current,
+        } satisfies DraftCache),
       );
     } catch {
       // Storage quotas and private browsing restrictions are both recoverable.
     }
+  }, [drafts, draftAttachments, draftSyncState]);
+  useEffect(() => {
+    activeDraftKeyRef.current = draftKey;
+  }, [draftKey]);
+  useEffect(() => {
+    draftsRef.current = drafts;
+    draftAttachmentsRef.current = draftAttachments;
   }, [drafts, draftAttachments]);
+  useEffect(() => {
+    if (!draftCacheReady || !dataReady || !role || role === '__router__') return;
+    const key = draftKey;
+    const spaceId = teamSpace?.id || null;
+    let cancelled = false;
+    const restore = async () => {
+      try {
+        const remote = await loadServerDraft(spaceId, role);
+        if (cancelled) return;
+        const remoteAttachments = Array.isArray(remote.attachments)
+          ? remote.attachments.filter((item): item is Attachment =>
+              !!item && typeof item.id === 'string' && typeof item.name === 'string' &&
+              typeof item.mime === 'string' && Number.isFinite(item.size),
+            ).slice(0, MAX_ATTACHMENTS)
+          : [];
+        if (remote.revision !== undefined) draftRevisionRef.current[key] = remote.revision;
+        else delete draftRevisionRef.current[key];
+        if (draftDirtyRef.current.has(key)) return;
+        const localContent = draftsRef.current[key] || '';
+        const localAttachments = draftAttachmentsRef.current[key] || [];
+        const remoteContent = typeof remote.content === 'string' ? remote.content : '';
+        const remoteHasContent = !!remoteContent.trim() || remoteAttachments.length > 0;
+        const localHasContent = !!localContent.trim() || localAttachments.length > 0;
+        const localUpdatedAt = draftUpdatedAtRef.current[key];
+        const remoteUpdatedAt = typeof remote.updatedAt === 'string' ? remote.updatedAt : '';
+        const remoteIsNewer = remoteHasContent && (
+          !localHasContent ||
+          (!!remoteUpdatedAt && (!localUpdatedAt || remoteUpdatedAt > localUpdatedAt))
+        );
+        const localIsNewer = localHasContent && (
+          !remoteHasContent ||
+          (!!localUpdatedAt && !!remoteUpdatedAt && localUpdatedAt > remoteUpdatedAt)
+        );
+        if (remoteIsNewer) {
+          setDrafts((current) => ({ ...current, [key]: remoteContent }));
+          setDraftAttachments((current) => ({ ...current, [key]: remoteAttachments }));
+          draftUpdatedAtRef.current[key] = remoteUpdatedAt || new Date().toISOString();
+          setDraftSyncStateFor(key, 'saved');
+        } else if (localIsNewer) {
+          markDraftDirty(key);
+          queueDraftSync(
+            key,
+            spaceId,
+            role,
+            localContent,
+            localAttachments.map((item) => item.id),
+          );
+        } else if (!localHasContent && !remoteHasContent) {
+          setDraftSyncStateFor(key, 'idle');
+        }
+      } catch {
+        if (!cancelled) setDraftSyncStateFor(key, 'offline');
+      }
+    };
+    void restore();
+    return () => {
+      cancelled = true;
+      clearDraftTimer(key);
+    };
+  }, [dataReady, draftCacheReady, draftKey, role, teamSpace?.id]);
+  useEffect(() => {
+    if (!draftCacheReady || !draftDirtyRef.current.has(draftKey)) return;
+    queueDraftSync(
+      draftKey,
+      teamSpace?.id || null,
+      role,
+      draftsRef.current[draftKey] || '',
+      (draftAttachmentsRef.current[attachmentDraftKey] || []).map((item) => item.id),
+    );
+  }, [attachmentDraftKey, draftCacheReady, draftKey, role, teamSpace?.id, drafts, draftAttachments]);
   useEffect(() => {
     if (!selectedSpaceId) return;
     try {
       window.localStorage.setItem(
         ROUTE_CACHE_KEY,
-        JSON.stringify({ spaceId: selectedSpaceId, role }),
+        JSON.stringify({ spaceId: selectedSpaceId, role, view }),
       );
     } catch {
       // Storage quotas and private browsing restrictions are both recoverable.
     }
-  }, [selectedSpaceId, role]);
+  }, [selectedSpaceId, role, view]);
   useEffect(() => {
     if (!taskDetail?.id) return;
     const id = taskDetail.id;
@@ -818,6 +1088,7 @@ function Workbench() {
         ...current,
         [attachmentDraftKey]: [...(current[attachmentDraftKey] || []), ...uploaded].slice(0, MAX_ATTACHMENTS),
       }));
+      markDraftDirty(attachmentDraftKey);
       setNotice(`已添加 ${uploaded.length} 个附件，发送时会携带文件内容。`);
     });
   }
@@ -831,7 +1102,9 @@ function Workbench() {
   }
   async function submit() {
     const attachmentIds = (draftAttachments[attachmentDraftKey] || []).map((item) => item.id);
-    if ((!drafts[draftKey]?.trim() && !attachmentIds.length) || assistant.archived || !assistant.id) return;
+    const content = drafts[draftKey] || '';
+    const sentVersion = draftVersionRef.current[draftKey] || 0;
+    if ((!content.trim() && !attachmentIds.length) || assistant.archived || !assistant.id) return;
     await action(async () => {
       // The single team-recruitment entry is the team's front door. Keep its messages in
       // the same space timeline so PM replies and delegated work stay linked.
@@ -841,7 +1114,7 @@ function Workbench() {
           'POST',
           {
             clientMessageId: `chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            content: drafts[draftKey],
+            content,
             attachmentIds,
             ...(selectedModelOption
               ? {
@@ -855,14 +1128,17 @@ function Workbench() {
         if (message.sessionId) {
           setSelected((s) => ({ ...s, [sessionSelectionKey]: message.sessionId }));
         }
-        setDrafts((s) => ({ ...s, [draftKey]: '' }));
-        setDraftAttachments((s) => ({ ...s, [attachmentDraftKey]: [] }));
+        if (draftVersionRef.current[draftKey] === sentVersion) {
+          await clearServerDraft(draftKey, teamSpace?.id || null, role, content, attachmentIds);
+          setDrafts((s) => ({ ...s, [draftKey]: '' }));
+          setDraftAttachments((s) => ({ ...s, [attachmentDraftKey]: [] }));
+        }
         return;
       }
       const task = await api<Task>('tasks', 'POST', {
         role,
         sessionId: currentSession,
-        prompt: drafts[draftKey],
+        prompt: content,
         attachmentIds,
         ...(isTeamMember && teamSpace
           ? { teamId: teamSpace.id, spaceId: teamSpace.id }
@@ -879,8 +1155,11 @@ function Workbench() {
         ...s,
         [task.spaceId ? `${task.spaceId}:${task.role}` : sessionSelectionKey]: task.sessionId,
       }));
-      setDrafts((s) => ({ ...s, [draftKey]: '' }));
-      setDraftAttachments((s) => ({ ...s, [attachmentDraftKey]: [] }));
+      if (draftVersionRef.current[draftKey] === sentVersion) {
+        await clearServerDraft(draftKey, teamSpace?.id || null, role, content, attachmentIds);
+        setDrafts((s) => ({ ...s, [draftKey]: '' }));
+        setDraftAttachments((s) => ({ ...s, [attachmentDraftKey]: [] }));
+      }
     });
   }
   async function retryTeamMessage(message: TeamMessage) {
@@ -1658,7 +1937,10 @@ function Workbench() {
                         <button
                           key={p}
                           onClick={() =>
-                            setDrafts((d) => ({ ...d, [draftKey]: p }))
+                            (() => {
+                              markDraftDirty(draftKey);
+                              setDrafts((d) => ({ ...d, [draftKey]: p }));
+                            })()
                           }
                         >
                           <span>0{i + 1}</span>
@@ -1801,9 +2083,10 @@ function Workbench() {
                     placeholder={isRecruitmentView ? '描述你想完成的事，先不用决定要几个智能体…' : `告诉${assistantName}，你想完成什么…`}
                     value={drafts[draftKey] || ''}
                     disabled={!assistant.id || assistant.archived}
-                    onChange={(e) =>
-                      setDrafts((d) => ({ ...d, [draftKey]: e.target.value }))
-                    }
+                    onChange={(e) => {
+                      markDraftDirty(draftKey);
+                      setDrafts((d) => ({ ...d, [draftKey]: e.target.value }));
+                    }}
                     onPaste={(event) => {
                       const files = clipboardFiles(event);
                       if (!files.length) return;
@@ -1831,10 +2114,13 @@ function Workbench() {
                             className="attachment-chip"
                             key={attachment.id}
                             title="移除附件"
-                            onClick={() => setDraftAttachments((current) => ({
-                              ...current,
-                              [attachmentDraftKey]: current[attachmentDraftKey].filter((item) => item.id !== attachment.id),
-                            }))}
+                            onClick={() => {
+                              markDraftDirty(attachmentDraftKey);
+                              setDraftAttachments((current) => ({
+                                ...current,
+                                [attachmentDraftKey]: current[attachmentDraftKey].filter((item) => item.id !== attachment.id),
+                              }));
+                            }}
                           >
                             <Paperclip size={13} />
                             {attachment.name}
@@ -1919,6 +2205,17 @@ function Workbench() {
                 </div>
                 <p className="composer-hint">
                   Enter 发送 · Shift + Enter 换行<span>{isRecruitmentView ? '先澄清需求，再确认团队方案' : '任务在后台执行'}</span>
+                  <span className={`draft-sync-status ${draftSyncState}`}>
+                    {draftSyncState === 'saving'
+                      ? '草稿同步中…'
+                      : draftSyncState === 'conflict'
+                        ? '草稿有新版本，继续编辑后再同步'
+                      : draftSyncState === 'offline'
+                        ? '服务暂不可用，已保存在本机'
+                        : draftSyncState === 'saved'
+                          ? '草稿已同步'
+                          : ''}
+                  </span>
                 </p>
               </div>
             </section>

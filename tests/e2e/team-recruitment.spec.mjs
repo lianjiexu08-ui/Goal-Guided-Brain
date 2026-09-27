@@ -219,6 +219,7 @@ function seedConfirmedTeams() {
         message: '研发交付团队的项目经理动态',
       },
     ];
+    const result = {};
     for (const input of teams) {
       const existing = store.teamSpaces().find((space) => space.name === input.name);
       const saved = store.saveTeamSpace({
@@ -249,8 +250,53 @@ function seedConfirmedTeams() {
         content: input.message,
         status: 'sent',
       }, `e2e-${input.slug}-message`);
+      result[input.slug] = { ...input, id: saved.id };
     }
-    return { development: teams[0], operations: teams[1] };
+    // Keep the historic keys used by the existing tests while returning the
+    // durable ids needed by route-cache assertions.
+    return { development: result.operations, operations: result.development };
+  } finally {
+    store.close();
+  }
+}
+
+function seedDraftRecoveryTeams() {
+  const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
+  try {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const inputs = [
+      {
+        slug: 'alpha',
+        name: `服务端草稿团队 A ${suffix}`,
+        goal: '验证草稿跨刷新恢复，并保持团队隔离。',
+      },
+      {
+        slug: 'beta',
+        name: `服务端草稿团队 B ${suffix}`,
+        goal: '验证不同团队拥有独立的服务端草稿。',
+      },
+    ];
+    const result = {};
+    for (const input of inputs) {
+      const saved = store.saveTeamSpace({
+        name: input.name,
+        goal: input.goal,
+        purpose: input.goal,
+        workspace: process.cwd(),
+        pmRoleId: 'project_manager',
+        memberRoleIds: ['project_manager'],
+        recruitment: {
+          phase: 'confirmed',
+          sessionId: null,
+          turns: 1,
+          brief: input.goal,
+          proposal: null,
+          confirmedAt: new Date().toISOString(),
+        },
+      });
+      result[input.slug] = { ...input, id: saved.id };
+    }
+    return result;
   } finally {
     store.close();
   }
@@ -327,6 +373,89 @@ test.describe('团队招募核心流程', () => {
       return raw ? Object.values(JSON.parse(raw).drafts || {}) : [];
     });
     expect(cachedDrafts).toContain(draft);
+  });
+
+  test('服务端草稿可跨刷新恢复，并按团队保持隔离', async ({ page }) => {
+    const teams = seedDraftRecoveryTeams();
+    const openTeam = async (team) => {
+      await openMobileSidebar(page);
+      const navigation = sidebarLocator(page).locator('button').filter({ hasText: team.name }).first();
+      await expect(navigation).toBeVisible();
+      await navigation.click({ force: true });
+      await expect(page.getByRole('heading', { name: team.name })).toBeVisible();
+    };
+    const readDraft = (team) => page.evaluate(async ({ spaceId }) => {
+      const response = await fetch(`/api/drafts?spaceId=${encodeURIComponent(spaceId)}&role=project_manager`);
+      return { status: response.status, body: await response.json() };
+    }, { spaceId: team.id });
+
+    await page.goto('/');
+    await openTeam(teams.alpha);
+    const alphaComposer = page.locator('textarea[aria-label^="发送给"]');
+    const alphaDraft = `服务端恢复草稿 ${Date.now()}`;
+    await alphaComposer.fill(alphaDraft);
+    await expect.poll(async () => {
+      const result = await readDraft(teams.alpha);
+      return result.body.content;
+    }).toBe(alphaDraft);
+    const stored = await readDraft(teams.alpha);
+    expect(stored).toMatchObject({
+      status: 200,
+      body: { content: alphaDraft, roleId: 'project_manager' },
+    });
+
+    // Remove the browser-only copy so a reload proves that the server draft,
+    // rather than localStorage, restores the composer.
+    await page.evaluate(() => window.localStorage.removeItem('ggb.composer-drafts.v1'));
+    await page.reload();
+    await openTeam(teams.alpha);
+    await expect(page.locator('textarea[aria-label^="发送给"]')).toHaveValue(alphaDraft);
+
+    await openTeam(teams.beta);
+    const betaComposer = page.locator('textarea[aria-label^="发送给"]');
+    await expect(betaComposer).toHaveValue('');
+    const betaDraft = `另一团队草稿 ${Date.now()}`;
+    await betaComposer.fill(betaDraft);
+    await expect.poll(async () => {
+      const result = await readDraft(teams.beta);
+      return result.body.content;
+    }).toBe(betaDraft);
+
+    await openTeam(teams.alpha);
+    await expect(page.locator('textarea[aria-label^="发送给"]')).toHaveValue(alphaDraft);
+    const betaRemote = await readDraft(teams.beta);
+    expect(betaRemote.body.content).toBe(betaDraft);
+  });
+
+  test('刷新后保留后台任务视图和当前团队上下文', async ({ page }) => {
+    const teams = seedConfirmedTeams();
+    const team = teams.development;
+    await page.goto('/');
+    await openMobileSidebar(page);
+    const teamNavigation = sidebarLocator(page).locator('button').filter({ hasText: team.name }).first();
+    await expect(teamNavigation).toBeVisible();
+    await teamNavigation.click({ force: true });
+    await expect(page.getByRole('heading', { name: team.name })).toBeVisible();
+
+    await clickNavigation(page, '后台任务');
+    await expect(page.getByRole('heading', { name: '让工作持续推进。' })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => {
+      const raw = window.localStorage.getItem('ggb.workspace-route.v1');
+      return raw ? JSON.parse(raw) : null;
+    })).toMatchObject({ spaceId: team.id, view: 'tasks' });
+
+    await page.reload();
+    await expect(page.getByRole('heading', { name: '让工作持续推进。' })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => {
+      const raw = window.localStorage.getItem('ggb.workspace-route.v1');
+      return raw ? JSON.parse(raw) : null;
+    })).toMatchObject({ spaceId: team.id, view: 'tasks' });
+
+    // Switching back to the team view proves the selected team survived the
+    // utility-page remount; a reset to the first team would expose a different
+    // heading or activity stream here.
+    await clickNavigation(page, '团队动态');
+    await expect(page.getByRole('heading', { name: team.name })).toBeVisible();
   });
 
   test('拖入图片保存真实二进制附件，并在需求草稿中显示文件卡片', async ({ page }) => {
@@ -431,6 +560,9 @@ test.describe('团队招募核心流程', () => {
     // the first confirmed team and exposing another team's draft.
     await page.reload();
     await expect(page.getByRole('heading', { name: operations.name })).toBeVisible();
+    // RouteCache now also restores the last utility view. Re-enter the team's
+    // conversation explicitly before asserting the composer state.
+    await openTeam(operations);
     await expect(page.locator('textarea[aria-label^="发送给"]')).toHaveValue('');
 
     await openTeam(development);
