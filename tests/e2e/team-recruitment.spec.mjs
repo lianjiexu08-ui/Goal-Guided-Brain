@@ -436,6 +436,10 @@ test.describe('团队招募核心流程', () => {
     await expect(teamNavigation).toBeVisible();
     await teamNavigation.click({ force: true });
     await expect(page.getByRole('heading', { name: team.name })).toBeVisible();
+    await clickNavigation(page, '团队动态');
+    await expect(page.getByRole('heading', { name: team.name })).toBeVisible();
+    await expect(page.getByText('风险/阻塞', { exact: true })).toBeVisible();
+    await expect(page.getByText('最近交付证据 0 项', { exact: true })).toBeVisible();
 
     await clickNavigation(page, '后台任务');
     await expect(page.getByRole('heading', { name: '让工作持续推进。' })).toBeVisible();

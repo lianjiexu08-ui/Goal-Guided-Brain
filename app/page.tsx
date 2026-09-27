@@ -394,6 +394,9 @@ const taskNeedsOwnerAction = (task: Task) =>
   ['pending-review', 'awaiting-owner', 'rejected'].includes(
     task.deliveryStatus || task.verificationStatus || '',
   );
+const taskNeedsAttention = (task: Task) =>
+  ['blocked', 'failed', 'interrupted', 'state_unknown', 'budget-exceeded', 'budget_exceeded'].includes(task.status) ||
+  (task.status !== 'completed' && Boolean(task.error));
 const formatTime = (s: string) =>
   new Date(s).toLocaleString('zh-CN', {
     month: '2-digit',
@@ -685,6 +688,11 @@ function Workbench() {
   ];
   const teamOpenTasks = teamTasks.filter(isActive);
   const teamReviewTasks = teamTasks.filter(taskNeedsOwnerAction);
+  const teamRiskTasks = teamTasks.filter(taskNeedsAttention);
+  const teamEvidenceCount = teamTasks.reduce(
+    (total, task) => total + (task.artifactCount || 0),
+    0,
+  );
   const projectManager = roles.find((item) => item.id === teamSpace?.pmRoleId);
   const recruitment = teamSpace?.recruitment;
   const recruitmentProposal = recruitment?.proposal;
@@ -1865,7 +1873,7 @@ function Workbench() {
                   })}
                 </div>
                 {!rosterReady && <div className="team-roster-pending">Team Charter 确认后，候选成员才会创建并出现在这里。</div>}
-                <div className="team-summary"><div className="team-summary-title"><ListChecks size={16} />任务总览</div><div className="team-metrics"><span><strong>{teamOpenTasks.length}</strong><small>进行中</small></span><span><strong>{teamReviewTasks.length}</strong><small>待处理</small></span><span><strong>{teamTasks.filter((task) => task.status === 'completed').length}</strong><small>已完成</small></span></div><div className="team-summary-actions"><button className="text-button" onClick={() => { setTaskFilter('all'); setView('tasks'); }}>查看全部任务 <ArrowRight size={13} /></button>{teamReviewTasks.length > 0 && <button className="text-button" onClick={() => { setTaskFilter('review'); setView('tasks'); }}>打开待处理 <ArrowRight size={13} /></button>}</div></div>
+                <div className="team-summary"><div className="team-summary-title"><ListChecks size={16} />任务总览</div><div className="team-metrics"><span><strong>{teamOpenTasks.length}</strong><small>进行中</small></span><span><strong>{teamReviewTasks.length}</strong><small>待处理</small></span><span><strong>{teamRiskTasks.length}</strong><small>风险/阻塞</small></span><span><strong>{teamTasks.filter((task) => task.status === 'completed').length}</strong><small>已完成</small></span></div><div className="team-summary-evidence">最近交付证据 {teamEvidenceCount} 项</div><div className="team-summary-actions"><button className="text-button" onClick={() => { setTaskFilter('all'); setView('tasks'); }}>查看全部任务 <ArrowRight size={13} /></button>{teamReviewTasks.length > 0 && <button className="text-button" onClick={() => { setTaskFilter('review'); setView('tasks'); }}>打开待处理 <ArrowRight size={13} /></button>}</div></div>
               </aside>
             </div>
           </main>
