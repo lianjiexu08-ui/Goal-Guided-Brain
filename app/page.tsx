@@ -198,6 +198,9 @@ type TeamTimelineItem = {
   id: string;
   type: 'message' | 'task' | 'task-event' | 'artifact' | 'verification' | 'acceptance' | 'attention';
   at: string;
+  teamId?: string | null;
+  teamName?: string | null;
+  teamType?: string | null;
   messageId?: string;
   clientMessageId?: string | null;
   senderType?: TeamMessage['senderType'];
@@ -669,6 +672,175 @@ function RiskInbox({
   );
 }
 
+function CrossTeamTimeline({
+  teams,
+  onOpenTeam,
+  onOpenTask,
+}: {
+  teams: TeamSpace[];
+  onOpenTeam: (teamId: string) => void;
+  onOpenTask: (taskId: string) => void;
+}) {
+  const [teamFilter, setTeamFilter] = useState('all');
+  const [kindFilter, setKindFilter] = useState('all');
+  const [items, setItems] = useState<TeamTimelineItem[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const kindLabels: Record<string, string> = {
+    all: '全部动态',
+    messages: '消息',
+    execution: '执行',
+    evidence: '证据',
+    risk: '风险',
+  };
+  const loadFirstPage = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const query = new URLSearchParams({ limit: '60' });
+      if (teamFilter !== 'all') query.set('teamId', teamFilter);
+      if (kindFilter !== 'all') query.set('kind', kindFilter);
+      const page = await api<{ items: TeamTimelineItem[]; hasMore: boolean }>(`timeline?${query.toString()}`);
+      const last = page.items?.[page.items.length - 1];
+      setItems(page.items || []);
+      setHasMore(page.hasMore === true);
+      setNextCursor(last ? `${last.at}|${last.id}` : null);
+    } catch (rawError) {
+      setError((rawError as Error).message);
+      setItems([]);
+      setHasMore(false);
+      setNextCursor(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [kindFilter, teamFilter]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadFirstPage(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadFirstPage]);
+  const loadMore = async () => {
+    if (!nextCursor || loading) return;
+    setLoading(true);
+    setError('');
+    try {
+      const query = new URLSearchParams({ limit: '60', before: nextCursor });
+      if (teamFilter !== 'all') query.set('teamId', teamFilter);
+      if (kindFilter !== 'all') query.set('kind', kindFilter);
+      const page = await api<{ items: TeamTimelineItem[]; hasMore: boolean }>(`timeline?${query.toString()}`);
+      const last = page.items?.[page.items.length - 1];
+      setItems((current) => {
+        const merged = new Map([...page.items, ...current].map((item) => [item.id, item]));
+        return [...merged.values()].sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id));
+      });
+      setHasMore(page.hasMore === true);
+      setNextCursor(last ? `${last.at}|${last.id}` : null);
+    } catch (rawError) {
+      setError((rawError as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  const renderItem = (item: TeamTimelineItem) => {
+    const title = item.type === 'message'
+      ? '团队消息'
+      : item.type === 'task'
+        ? item.title || '后台任务'
+        : item.type === 'task-event'
+          ? `执行事件 · ${item.eventType || 'event'}`
+          : item.type === 'acceptance'
+            ? item.acceptanceDecision === 'accepted' ? '所有者通过交付' : '所有者退回复核'
+            : item.type === 'verification'
+              ? `验收证据 · ${item.name || '未命名验证'}`
+              : `产物 · ${item.name || '未命名产物'}`;
+    const detail = item.type === 'message'
+      ? item.content || '团队消息'
+      : item.type === 'task'
+        ? item.error || item.result || statusLabels[item.deliveryStatus || item.status || ''] || item.status || '任务状态已更新'
+        : item.type === 'acceptance'
+          ? item.acceptanceNote || '所有者已记录交付决定'
+          : item.type === 'task-event'
+            ? item.data && typeof item.data === 'object' && 'reason' in item.data
+              ? String(item.data.reason)
+              : '执行事件已记录'
+            : item.status
+              ? `状态：${statusLabels[item.status] || item.status}`
+              : '已记录到团队交付证据';
+    const open = () => item.taskId ? onOpenTask(item.taskId) : item.teamId ? onOpenTeam(item.teamId) : undefined;
+    return (
+      <button
+        type="button"
+        className="cross-team-timeline-item"
+        key={item.id}
+        aria-label={`打开团队动态 ${item.teamName || '团队'} ${title}`}
+        onClick={open}
+        disabled={!item.teamId}
+      >
+        <span className="cross-team-timeline-team">{item.teamName || '团队'} · {kindLabels[kindFilter] || '团队动态'}</span>
+        <span className="cross-team-timeline-copy">
+          <strong>{title}</strong>
+          <small>{detail.replace(/\s+/g, ' ').slice(0, 220)} · {formatTime(item.at)}</small>
+        </span>
+      </button>
+    );
+  };
+  return (
+    <section className="cross-team-timeline" aria-label="跨团队统一时间线">
+      <div className="cross-team-timeline-head">
+        <div>
+          <span className="section-kicker">ALL TEAMS</span>
+          <h2>全部团队动态</h2>
+          <p>在一个时间线上查看各团队的消息、执行和交付证据。</p>
+        </div>
+        <div className="cross-team-timeline-summary">
+          <span className="count-pill">{teams.length} 个团队</span>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="刷新跨团队时间线"
+            onClick={() => void loadFirstPage()}
+            disabled={loading}
+          >
+            <RefreshCw size={15} className={loading ? 'spin' : ''} />
+          </button>
+        </div>
+      </div>
+      <div className="cross-team-timeline-toolbar">
+        <label>
+          <span>团队</span>
+          <select aria-label="统一时间线团队" value={teamFilter} onChange={(event) => setTeamFilter(event.target.value)}>
+            <option value="all">全部已创建团队</option>
+            {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>类型</span>
+          <select aria-label="统一时间线类型" value={kindFilter} onChange={(event) => setKindFilter(event.target.value)}>
+            {Object.entries(kindLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </label>
+      </div>
+      {error && <div className="cross-team-timeline-error">{error}</div>}
+      {items.length > 0 ? (
+        <div className="cross-team-timeline-list">
+          {items.map(renderItem)}
+          {hasMore && (
+            <button type="button" className="timeline-load-more cross-team-timeline-more" onClick={() => void loadMore()} disabled={loading}>
+              {loading ? '加载中…' : '加载更早动态'}
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="cross-team-timeline-empty">
+          <History size={18} />
+          <span>{loading ? '正在加载团队动态…' : '当前筛选没有团队动态。'}</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function Home() {
   return (
     <AuthenticationGate>
@@ -755,6 +927,9 @@ function Workbench() {
   );
   const [showArchived, setShowArchived] = useState(false);
   const [taskFilter, setTaskFilter] = useState('all');
+  const [selectedReviewTaskIds, setSelectedReviewTaskIds] = useState<string[]>([]);
+  const [batchReviewNote, setBatchReviewNote] = useState('');
+  const [batchReviewBusy, setBatchReviewBusy] = useState(false);
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>('all');
   const [timelineHistory, setTimelineHistory] = useState<Record<string, TeamTimelineItem[]>>({});
   const [timelineHasMore, setTimelineHasMore] = useState<Record<string, boolean>>({});
@@ -785,6 +960,7 @@ function Workbench() {
   const tasks = data?.tasks || [];
   const allSessions = (data?.sessions || []).filter((s) => s.role === role);
   const reviewTasks = tasks.filter(taskNeedsOwnerAction);
+  const allReviewTasksSelected = reviewTasks.length > 0 && reviewTasks.every((task) => selectedReviewTaskIds.includes(task.id));
   const spaces = data?.spaces || [];
   const confirmedSpaces = spaces.filter(
     (space) => space.status !== 'archived' && space.recruitment?.phase === 'confirmed',
@@ -1367,6 +1543,43 @@ function Workbench() {
       setBusy(false);
     }
   }
+  function toggleReviewTask(taskId: string) {
+    setSelectedReviewTaskIds((current) =>
+      current.includes(taskId)
+        ? current.filter((id) => id !== taskId)
+        : [...current, taskId],
+    );
+  }
+  function toggleAllReviewTasks() {
+    setSelectedReviewTaskIds((current) => {
+      const ids = reviewTasks.map((task) => task.id);
+      return ids.length > 0 && ids.every((id) => current.includes(id)) ? [] : ids;
+    });
+  }
+  async function batchReview(decision: 'accept' | 'reject') {
+    const selectedIds = selectedReviewTaskIds.filter((id) => reviewTasks.some((task) => task.id === id));
+    if (!selectedIds.length) {
+      setNotice('请先选择至少一项待处理交付。');
+      return;
+    }
+    const note = batchReviewNote.trim();
+    if (decision === 'reject' && !note) {
+      setNotice('批量退回复核时需要填写统一的修改说明。');
+      return;
+    }
+    setBatchReviewBusy(true);
+    await action(async () => {
+      const result = await api<{ succeeded: number; decision: string }>('tasks/batch-review', 'POST', {
+        taskIds: selectedIds,
+        decision,
+        ...(note ? { note } : {}),
+      });
+      setSelectedReviewTaskIds([]);
+      setBatchReviewNote('');
+      setNotice(`已${decision === 'accept' ? '通过' : '退回'} ${result.succeeded || selectedIds.length} 项交付。`);
+    });
+    setBatchReviewBusy(false);
+  }
   async function uploadAttachments(files: File[]) {
     const existing = draftAttachments[attachmentDraftKey] || [];
     const incoming = files
@@ -1864,6 +2077,39 @@ function Workbench() {
       <ArrowRight size={16} />
     </button>
   );
+  const reviewTaskCard = (task: Task) => {
+    const selected = selectedReviewTaskIds.includes(task.id);
+    return (
+      <div className={`task-card review-task-card ${selected ? 'selected' : ''}`} key={task.id}>
+        <input
+          type="checkbox"
+          className="review-task-checkbox"
+          aria-label={`选择交付验收任务 ${task.title}`}
+          checked={selected}
+          onChange={() => toggleReviewTask(task.id)}
+        />
+        <div className={`status-icon ${task.status}`}>
+          {task.status === 'completed' ? <Check /> : <Circle />}
+        </div>
+        <button type="button" className="task-card-open" onClick={() => showTask(task)}>
+          <strong>{task.title}</strong>
+          <span>
+            {roles.find((r) => r.id === task.role)?.name} ·{' '}
+            {formatTime(task.createdAt)}
+          </span>
+          {taskVerification(task) && (
+            <small className={`task-card-proof ${task.deliveryStatus || task.verificationStatus || ''}`}>
+              交付 · {taskVerification(task)}{task.artifactCount ? ` · ${task.artifactCount} 项证据` : ''}
+            </small>
+          )}
+        </button>
+        <span className={`status ${task.status}`}>
+          {statusLabels[task.status]}
+        </span>
+        <ArrowRight size={16} />
+      </div>
+    );
+  };
   return (
     <>
       <Sidebar className="work-sidebar">
@@ -2059,6 +2305,9 @@ function Workbench() {
                 <div className="team-health"><span className="live-dot" /> {rosterReady ? `${teamMembers.length} 位成员已配置` : recruitment?.phase === 'proposed' ? '方案待确认' : '正在招募'}</div>
               </div>
             </div>
+            {confirmedSpaces.length > 0 && (
+              <CrossTeamTimeline teams={confirmedSpaces} onOpenTeam={openRiskTeam} onOpenTask={openRiskTask} />
+            )}
             <div className="team-grid">
               <section className="team-chat-panel">
                 <div className="team-chat-head">
@@ -2960,6 +3209,49 @@ function Workbench() {
               </TabsList>
               {['all', 'active', 'review', 'done'].map((filter) => (
                 <TabsContent key={filter} value={filter}>
+                  {filter === 'review' && reviewTasks.length > 0 && (
+                    <div className="batch-review-toolbar" aria-label="批量交付复核">
+                      <div className="batch-review-toolbar-head">
+                        <button
+                          type="button"
+                          className="batch-review-select"
+                          onClick={toggleAllReviewTasks}
+                          disabled={batchReviewBusy}
+                        >
+                          {allReviewTasksSelected ? '取消全选' : '全选待处理'}
+                        </button>
+                        <span>已选 {selectedReviewTaskIds.length} / {reviewTasks.length} 项</span>
+                      </div>
+                      <div className="batch-review-actions">
+                        <textarea
+                          aria-label="批量复核说明"
+                          value={batchReviewNote}
+                          onChange={(event) => setBatchReviewNote(event.target.value)}
+                          placeholder="退回复核时填写统一的修改说明；通过交付可选填备注。"
+                          rows={2}
+                          disabled={batchReviewBusy}
+                        />
+                        <div className="batch-review-buttons">
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            disabled={batchReviewBusy || selectedReviewTaskIds.length === 0}
+                            onClick={() => void batchReview('reject')}
+                          >
+                            {batchReviewBusy ? '处理中…' : '批量退回复核'}
+                          </button>
+                          <button
+                            type="button"
+                            className="primary-button"
+                            disabled={batchReviewBusy || selectedReviewTaskIds.length === 0}
+                            onClick={() => void batchReview('accept')}
+                          >
+                            {batchReviewBusy ? '处理中…' : '批量通过交付'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <div className="task-list">
                     {tasks
                       .filter(
@@ -2971,7 +3263,7 @@ function Workbench() {
                               ? taskNeedsOwnerAction(t)
                               : t.status === 'completed'),
                       )
-                      .map(taskCard)}
+                      .map(filter === 'review' ? reviewTaskCard : taskCard)}
                   </div>
                   {!tasks.some(
                     (t) =>

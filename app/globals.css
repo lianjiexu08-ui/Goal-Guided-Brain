@@ -1050,6 +1050,55 @@ h1 {
   gap: 10px;
   margin-top: 14px;
 }
+.batch-review-toolbar {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid #d9e9e1;
+  border-radius: 12px;
+  background: #f6fbf8;
+}
+.batch-review-toolbar-head,
+.batch-review-actions,
+.batch-review-buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.batch-review-toolbar-head {
+  justify-content: space-between;
+  color: #7f938d;
+  font-size: 11px;
+}
+.batch-review-select {
+  padding: 5px 9px;
+  border: 1px solid #c5ded3;
+  border-radius: 7px;
+  color: #367866;
+  background: #fff;
+  font-size: 11px;
+  cursor: pointer;
+}
+.batch-review-select:hover:not(:disabled) { border-color: #8fc3ad; background: #eef8f2; }
+.batch-review-actions { align-items: flex-end; }
+.batch-review-actions textarea {
+  min-height: 48px;
+  flex: 1;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid #d8e7e1;
+  border-radius: 8px;
+  color: #46635d;
+  background: #fff;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.batch-review-actions textarea:focus { outline: 2px solid #b9ddcc; outline-offset: 1px; }
+.batch-review-buttons { flex: 0 0 auto; align-items: stretch; }
+.batch-review-buttons .primary-button,
+.batch-review-buttons .secondary-button { white-space: nowrap; }
 .task-card {
   display: flex;
   align-items: center;
@@ -1087,6 +1136,31 @@ h1 {
 .task-card > svg {
   color: #b0bfc7;
 }
+.review-task-card { gap: 12px; }
+.review-task-checkbox {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  accent-color: #2c8b73;
+  cursor: pointer;
+}
+.review-task-card.selected { border-color: #9dceb9; background: #fbfffc; box-shadow: 0 0 0 2px #e5f5ec; }
+.task-card-open {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+.task-card-open:hover strong { color: #2d806b; }
+.task-card-open strong,
+.task-card-open span,
+.task-card-open small { display: block; }
+.task-card-open strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-card-open span { margin-top: 7px; font-size: 11px; color: #8e9da5; }
 .status-icon {
   width: 32px;
   height: 32px;
@@ -1749,6 +1823,34 @@ h1 {
 .team-activity-title { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; color: #68847e; font-size: 11px; font-weight: 650; }
 .team-timeline { margin: 22px 0 4px; padding: 14px; border: 1px solid #e4ece9; border-radius: 15px; background: #fbfdfc; }
 .team-timeline-fallback { margin-top: 22px; }
+.cross-team-timeline {
+  max-width: 1220px;
+  margin: 0 auto 18px;
+  padding: 18px 20px;
+  border: 1px solid #dce8e4;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #fbfefc, #f4faf7);
+  box-shadow: 0 10px 24px #183e350b;
+}
+.cross-team-timeline-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.cross-team-timeline-head h2 { margin: 5px 0 4px; color: #24434a; font-size: 18px; }
+.cross-team-timeline-head p { margin: 0; color: #829591; font-size: 11px; }
+.cross-team-timeline-summary { display: flex; align-items: center; gap: 8px; }
+.cross-team-timeline-toolbar { display: flex; align-items: flex-end; gap: 10px; margin: 15px 0 8px; }
+.cross-team-timeline-toolbar label { display: grid; gap: 5px; color: #8a918a; font-size: 10px; }
+.cross-team-timeline-toolbar select { min-width: 150px; padding: 7px 28px 7px 9px; border: 1px solid #d9e7e1; border-radius: 9px; color: #58645d; background: #fff; font-size: 11px; }
+.cross-team-timeline-error { padding: 8px 0; color: #a45e4c; font-size: 11px; }
+.cross-team-timeline-list { display: grid; gap: 0; border-top: 1px solid #e7efeb; }
+.cross-team-timeline-item { display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 11px 4px; border-bottom: 1px solid #e7efeb; text-align: left; background: transparent; }
+.cross-team-timeline-item:hover:not(:disabled) { background: #eef8f2; }
+.cross-team-timeline-item:disabled { opacity: .75; cursor: default; }
+.cross-team-timeline-team { flex: 0 0 150px; overflow: hidden; color: #5f8a7b; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.cross-team-timeline-copy { min-width: 0; flex: 1; }
+.cross-team-timeline-copy strong, .cross-team-timeline-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cross-team-timeline-copy strong { color: #45625f; font-size: 11px; font-weight: 650; }
+.cross-team-timeline-copy small { margin-top: 3px; color: #8c9d99; font-size: 10px; }
+.cross-team-timeline-more { margin-top: 10px; }
+.cross-team-timeline-empty { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 68px; color: #94a6a1; font-size: 11px; }
 .team-timeline-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .team-timeline-toolbar .team-activity-title { margin-bottom: 0; }
 .timeline-filters { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
@@ -2269,6 +2371,25 @@ h1 {
   .risk-inbox-item em {
     display: none;
   }
+  .cross-team-timeline {
+    margin: 0 0 18px;
+    padding: 16px;
+  }
+  .cross-team-timeline-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .cross-team-timeline-toolbar select {
+    width: 100%;
+  }
+  .cross-team-timeline-item {
+    gap: 8px;
+    flex-direction: column;
+  }
+  .cross-team-timeline-team {
+    flex-basis: auto;
+    width: 100%;
+  }
   .page-heading h1 {
     font-size: 24px;
   }
@@ -2276,6 +2397,8 @@ h1 {
     padding: 15px;
     gap: 10px;
   }
+  .batch-review-actions { align-items: stretch; flex-direction: column; }
+  .batch-review-buttons { justify-content: flex-end; }
   .task-card strong {
     font-size: 13px;
   }

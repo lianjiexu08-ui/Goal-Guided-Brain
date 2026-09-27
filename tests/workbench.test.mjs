@@ -194,6 +194,97 @@ test('custom assistant journey persists edits, controls runtime, queues terminal
     fs.rmSync(s.dir, { recursive: true, force: true });
   }
 });
+
+test('batch delivery review accepts atomically and records rejection attention', async () => {
+  const s = sandbox();
+  const app = createWorkbench({ ...s, requireCredential: false });
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  const request = async (route, body, method = 'POST') => {
+    const response = await fetch(
+      `http://127.0.0.1:${app.server.address().port}/api/${route}`,
+      {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      },
+    );
+    return { status: response.status, body: await response.json() };
+  };
+  try {
+    const first = app.store.createTask({ role: 'developer', prompt: '批量交付一' });
+    const second = app.store.createTask({ role: 'developer', prompt: '批量交付二' });
+    app.store.updateTask(first.id, { status: 'completed', result: '完成一' });
+    app.store.updateTask(second.id, { status: 'completed', result: '完成二' });
+    app.store.records.save('artifacts', {
+      taskId: first.id,
+      kind: 'verification',
+      status: 'verified',
+      name: 'npm test 一',
+    });
+    app.store.records.save('artifacts', {
+      taskId: second.id,
+      kind: 'verification',
+      status: 'verified',
+      name: 'npm test 二',
+    });
+
+    const accepted = await request('tasks/batch-review', {
+      taskIds: [first.id, second.id],
+      decision: 'accept',
+      note: '已统一检查验证结果。',
+    });
+    assert.equal(accepted.status, 200);
+    assert.equal(accepted.body.succeeded, 2);
+    assert.deepEqual(
+      accepted.body.items.map((item) => item.decision),
+      ['accepted', 'accepted'],
+    );
+    assert.equal(app.store.taskDelivery(app.store.task(first.id)).deliveryStatus, 'accepted');
+    assert.equal(app.store.taskDelivery(app.store.task(second.id)).deliveryStatus, 'accepted');
+
+    const valid = app.store.createTask({ role: 'developer', prompt: '有效批量任务' });
+    const missingEvidence = app.store.createTask({ role: 'developer', prompt: '缺验证批量任务' });
+    app.store.updateTask(valid.id, { status: 'completed', result: '完成' });
+    app.store.updateTask(missingEvidence.id, { status: 'completed', result: '完成' });
+    app.store.records.save('artifacts', {
+      taskId: valid.id,
+      kind: 'verification',
+      status: 'verified',
+      name: 'npm test 有效',
+    });
+    const atomicFailure = await request('tasks/batch-review', {
+      taskIds: [valid.id, missingEvidence.id],
+      decision: 'accept',
+      note: '尝试统一通过。',
+    });
+    assert.equal(atomicFailure.status, 409);
+    assert.equal(app.store.taskDelivery(app.store.task(valid.id)).deliveryStatus, 'awaiting-owner');
+    assert.equal(app.store.taskDelivery(app.store.task(missingEvidence.id)).deliveryStatus, 'pending-review');
+
+    const missingNote = await request('tasks/batch-review', {
+      taskIds: [valid.id],
+      decision: 'reject',
+    });
+    assert.equal(missingNote.status, 409);
+    const rejected = await request('tasks/batch-review', {
+      taskIds: [valid.id],
+      decision: 'reject',
+      note: '请补充失败路径和边界验证。',
+    });
+    assert.equal(rejected.status, 200);
+    assert.equal(rejected.body.items[0].decision, 'rejected');
+    assert.equal(app.store.taskDelivery(app.store.task(valid.id)).deliveryStatus, 'rejected');
+    const attention = await request('attention', undefined, 'GET');
+    assert.ok(
+      attention.body.items.some(
+        (item) => item.taskId === valid.id && item.kind === 'acceptance',
+      ),
+    );
+  } finally {
+    await app.close();
+    fs.rmSync(s.dir, { recursive: true, force: true });
+  }
+});
 test('knowledge retrieval isolates role and project, preserves sources, and exports readable files', () => {
   const s = sandbox(),
     store = new Store(s.dataDir, s.workspace);

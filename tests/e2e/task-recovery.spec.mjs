@@ -220,6 +220,82 @@ function seedAcceptanceJob({ rejected = false } = {}) {
   }
 }
 
+function seedBatchAcceptanceJobs() {
+  const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
+  try {
+    const groupId = randomUUID();
+    const titles = ['批量交付复核任务 A', '批量交付复核任务 B'];
+    const tasks = titles.map((title) => store.createTask({
+      role: 'developer',
+      prompt: title,
+      workspace: process.cwd(),
+    }));
+    tasks.forEach((task, index) => {
+      const job = store.records.save(
+        'jobs',
+        {
+          title: titles[index],
+          goal: 'E2E 验证后台任务可以批量通过交付。',
+          acceptance: '当前需求版本的验证证据已通过。',
+          role: 'developer',
+          groupId: `${groupId}-${index}`,
+          batchId: groupId,
+          status: 'completed',
+          taskId: task.id,
+          nodeId: 'local',
+          workspace: process.cwd(),
+          workspaceKey: 'default',
+          requirementVersion: 1,
+          depth: 0,
+          budgetTokens: 200000,
+          maxDurationMinutes: 30,
+          permissions: [],
+          spaceId: null,
+          teamId: null,
+        },
+        `e2e-batch-acceptance-${groupId}-${index}`,
+      );
+      store.records.save(
+        'task-meta',
+        {
+          jobId: job.id,
+          groupId: job.groupId,
+          batchId: job.batchId,
+          nodeId: 'local',
+          workspaceKey: 'default',
+          workspaceMode: 'isolated',
+          requirementVersion: 1,
+          dependencies: [],
+          permissions: [],
+          contextExtra: '',
+          attachmentIds: [],
+          spaceId: null,
+          teamId: null,
+        },
+        task.id,
+      );
+      store.updateTask(task.id, {
+        status: 'completed',
+        result: '测试已通过，等待批量验收。',
+      });
+      store.records.save('artifacts', {
+        taskId: task.id,
+        groupId: job.groupId,
+        requirementVersion: 1,
+        kind: 'verification',
+        name: 'npm test',
+        status: 'verified',
+        verified: true,
+        output: '批量复核 fixture passed',
+        finishedAt: new Date().toISOString(),
+      }, `e2e-batch-verification-${groupId}-${index}`);
+    });
+    return { taskIds: tasks.map((task) => task.id), titles };
+  } finally {
+    store.close();
+  }
+}
+
 test('协作任务详情提供失败原因和执行实例重试入口', async ({ page }) => {
   const fixture = seedFailedJob();
   await page.goto('/');
@@ -274,6 +350,35 @@ test('协作任务详情支持所有者验收决定', async ({ page }) => {
   await detail.getByRole('button', { name: '通过交付', exact: true }).click();
   await expect(detail.getByText('已交付', { exact: true }).first()).toBeVisible();
   await expect(detail.getByText(/已检查测试输出，确认交付。/).first()).toBeVisible();
+});
+
+test('后台任务支持批量通过有验证证据的交付', async ({ page }) => {
+  const fixture = seedBatchAcceptanceJobs();
+  await page.goto('/');
+  const mobile = (page.viewportSize()?.width || 1024) < 768;
+  if (mobile) {
+    await page.getByRole('button', { name: 'Toggle Sidebar', exact: true }).click();
+    await expect(page.locator('[data-sidebar="sidebar"][data-mobile="true"]')).toBeVisible();
+  }
+  const sidebar = page.locator(
+    mobile ? '[data-sidebar="sidebar"][data-mobile="true"]' : '[data-sidebar="sidebar"]',
+  );
+  await sidebar.getByRole('button', { name: '后台任务', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '让工作持续推进。' })).toBeVisible();
+  await page.getByRole('tab', { name: /待处理/ }).click();
+  const reviewPanel = page.getByRole('tabpanel', { name: '待处理' });
+  for (const title of fixture.titles) {
+    await expect(reviewPanel.getByRole('checkbox', { name: `选择交付验收任务 ${title}` })).toBeVisible();
+    await reviewPanel.getByRole('checkbox', { name: `选择交付验收任务 ${title}` }).check();
+  }
+  await expect(reviewPanel.getByText(/已选 2 \/ \d+ 项/)).toBeVisible();
+  await reviewPanel.getByRole('button', { name: '批量通过交付', exact: true }).click();
+  await expect(page.getByText('已通过 2 项交付。', { exact: true })).toBeVisible();
+  for (const taskId of fixture.taskIds) {
+    await expect.poll(async () =>
+      (await page.request.get(`/api/tasks/${taskId}`)).json().then((body) => body.delivery?.deliveryStatus),
+    ).toBe('accepted');
+  }
 });
 
 test('需要你处理可以直接打开关联执行和交付状态', async ({ page }) => {

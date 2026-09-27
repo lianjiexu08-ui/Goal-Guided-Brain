@@ -351,6 +351,7 @@ API 默认监听 `127.0.0.1:3089`，网页默认监听 `127.0.0.1:3088`。除健
 | `GET/POST` | `/api/teams` | 列出或创建团队；`/api/spaces` 是兼容别名。 |
 | `GET/PUT` | `/api/teams/:id` | 查看或更新团队配置、消息和任务。 |
 | `GET` | `/api/teams/:id/timeline` | 按 `limit` 和 `before=时间\|记录ID` 游标加载更早的团队统一时间线。 |
+| `GET` | `/api/timeline` | 聚合已确认团队的统一时间线；支持 `teamId`、`kind=all/messages/execution/evidence/risk`、`limit` 和 `before`。 |
 | `GET` | `/api/risks` | 聚合已确认团队的执行、交付和待确认风险；支持 `teamId`、`kind`、`status`、`limit` 和 `before` 筛选。 |
 | `POST` | `/api/teams/:id/messages` | 向团队项目经理发送用户需求。 |
 | `POST` | `/api/teams/:id/recruitment/confirm` | 用户确认 Team Charter。 |
@@ -363,6 +364,7 @@ API 默认监听 `127.0.0.1:3089`，网页默认监听 `127.0.0.1:3088`。除健
 | `GET/POST/PUT` | `/api/knowledge` | 管理知识和历史版本。 |
 | `POST` | `/api/tasks` | 创建任务；任务控制接口还支持取消和重试。 |
 | `GET` | `/api/tasks/:id` | 查看任务、执行目录、运行快照、事件、用量、产物和最近验证。 |
+| `POST` | `/api/tasks/batch-review` | 所有者批量通过或退回复核已完成任务；最多 50 项，整批预校验，退回需要统一备注。 |
 | `GET` | `/api/workspaces/:taskId` | 查看任务执行目录的未提交差异。 |
 | `POST` | `/api/workspaces/:taskId/commit` | 保存工作树的内部提交，结果等待复核。 |
 | `POST` | `/api/workspaces/:taskId/verify` | 在空闲执行目录中运行验证命令并保存验证产物。 |
@@ -465,7 +467,7 @@ https://github.com/lianjiexu08-ui/Goal-Guided-Brain.git
 
 - 让项目经理在招募过程中生成更稳定、可审计的 Team Charter。
 - 为任务增加更清晰的风险、阻塞、验收和人工确认状态；当前版本已经有“待你验收 / 已交付 / 已退回复核”的所有者决策和跨团队风险收件箱，下一步补充批量复核。
-- 团队页已经把消息、任务、执行事件、产物、验收证据和所有者交付决定串成连续时间线，并支持筛选和按游标加载更早动态；统一时间线的跨团队浏览仍待补充。
+- 团队页已经把消息、任务、执行事件、产物、验收证据和所有者交付决定串成连续时间线，并支持筛选和按游标加载更早动态；“全部团队动态”会聚合已确认团队，支持按团队和类型筛选并回到原团队或任务。
 - 让普通模型、TypeSafe 决策和人工确认组合成可配置的路由策略。
 - 改善模型健康状态、失败原因、成本和候选切换的可见性。
 

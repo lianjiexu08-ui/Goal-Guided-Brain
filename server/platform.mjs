@@ -1038,6 +1038,56 @@ export function createPlatform({
       provider: records.get('providers', 'legacy-deepseek'),
     };
   }
+  function validateTaskAcceptance(task, decision, note) {
+    if (!task)
+      throw Object.assign(new Error('任务不存在。'), { status: 404 });
+    if (task.status !== 'completed')
+      throw Object.assign(new Error('只有已完成的任务可以进行交付验收。'), { status: 409 });
+    const delivery = store.taskDelivery(task);
+    if (decision === 'accepted' && !delivery.hasCurrentVerificationEvidence)
+      throw Object.assign(new Error('当前需求版本还没有通过的验收证据，请先运行验证。'), { status: 409 });
+    if (decision === 'rejected' && !note)
+      throw new Error('退回复核时需要说明需要补充或修改的内容。');
+    return delivery;
+  }
+  function recordTaskAcceptance(task, decision, note, delivery = store.taskDelivery(task)) {
+    const meta = records.get('task-meta', task.id) || {};
+    const job = meta.jobId ? records.get('jobs', meta.jobId) : null;
+    const acceptance = records.save('task-acceptance', {
+      taskId: task.id,
+      groupId: meta.groupId || job?.groupId || null,
+      jobId: meta.jobId || null,
+      spaceId: meta.spaceId || job?.spaceId || null,
+      decision,
+      status: 'active',
+      note,
+      requirementVersion: delivery.currentRequirementVersion,
+      verificationId: delivery.latestVerificationId,
+      decidedBy: 'owner',
+      decidedAt: nowIso(),
+    }, task.id);
+    const attentionId = `acceptance:${task.id}:${delivery.currentRequirementVersion}`;
+    const existingAttention = records.get('attention', attentionId);
+    if (decision === 'rejected') {
+      records.save('attention', {
+        taskId: task.id,
+        groupId: meta.groupId || job?.groupId || null,
+        jobId: meta.jobId || null,
+        spaceId: meta.spaceId || job?.spaceId || null,
+        status: 'open',
+        kind: 'acceptance',
+        title: '交付被退回复核',
+        detail: note,
+        requirementVersion: delivery.currentRequirementVersion,
+      }, attentionId);
+    } else if (existingAttention) {
+      records.save('attention', { ...existingAttention, status: 'resolved', resolution: note || '所有者已确认交付。' }, attentionId);
+    }
+    return {
+      ...acceptance,
+      delivery: store.taskDelivery(task),
+    };
+  }
   async function handle({ method, parts, body, req, query, principal }) {
     const [collection, id, action] = parts;
     const ok = (body, status = 200) => ({ status, body });
@@ -1578,6 +1628,65 @@ export function createPlatform({
       if (method === 'POST' && id === 'integrate')
         return ok(await workspaces.integrate(body.taskIds));
     }
+    if (collection === 'tasks' && method === 'POST' && id === 'batch-review') {
+      if (principal?.type && principal.type !== 'owner')
+        throw Object.assign(new Error('只有所有者可以做出交付验收决定。'), { status: 403 });
+      const rawDecision = typeof body.decision === 'string' ? body.decision.trim().toLowerCase() : '';
+      const decision = rawDecision === 'accept' || rawDecision === 'accepted'
+        ? 'accepted'
+        : rawDecision === 'reject' || rawDecision === 'rejected'
+          ? 'rejected'
+          : '';
+      if (!decision) throw new Error('批量复核决定必须是 accept 或 reject。');
+      if (!Array.isArray(body.taskIds)) throw new Error('请提供待复核的任务列表。');
+      const taskIds = [...new Set(body.taskIds
+        .filter((taskId) => typeof taskId === 'string')
+        .map((taskId) => taskId.trim())
+        .filter(Boolean))];
+      if (!taskIds.length) throw new Error('至少选择一项待复核任务。');
+      if (taskIds.length > 50) throw new Error('一次最多复核 50 项任务。');
+      const note = text(body.note, 10000);
+      const results = [];
+      const validated = [];
+      for (const taskId of taskIds) {
+        const task = store.task(taskId);
+        try {
+          const delivery = validateTaskAcceptance(task, decision, note);
+          validated.push({ task, delivery });
+          results.push({ taskId, ok: true });
+        } catch (error) {
+          results.push({ taskId, ok: false, error: error.message });
+        }
+      }
+      // Batch review is intentionally all-or-nothing. A stale evidence record
+      // or a task that changed status must never leave a mixed decision that
+      // the owner did not explicitly inspect.
+      if (results.some((result) => !result.ok)) {
+        return ok({
+          ok: false,
+          decision,
+          results,
+          succeeded: 0,
+          failed: results.filter((result) => !result.ok).length,
+          message: '批量复核未执行，请修正失败项后重新选择。',
+        }, 409);
+      }
+      const items = validated.map(({ task, delivery }) =>
+        recordTaskAcceptance(task, decision, note, delivery),
+      );
+      return ok({
+        ok: true,
+        decision,
+        items,
+        results: items.map((item) => ({
+          taskId: item.taskId,
+          ok: true,
+          delivery: item.delivery,
+        })),
+        succeeded: items.length,
+        failed: 0,
+      });
+    }
     if (
       collection === 'tasks' &&
       method === 'POST' &&
@@ -1587,52 +1696,10 @@ export function createPlatform({
       if (principal?.type && principal.type !== 'owner')
         throw Object.assign(new Error('只有所有者可以做出交付验收决定。'), { status: 403 });
       const task = store.task(id);
-      if (!task) throw Object.assign(new Error('任务不存在。'), { status: 404 });
-      if (task.status !== 'completed')
-        throw Object.assign(new Error('只有已完成的任务可以进行交付验收。'), { status: 409 });
-      const delivery = store.taskDelivery(task);
       const decision = action === 'accept' ? 'accepted' : 'rejected';
       const note = text(body.note, 10000);
-      if (decision === 'accepted' && !delivery.hasCurrentVerificationEvidence)
-        throw Object.assign(new Error('当前需求版本还没有通过的验收证据，请先运行验证。'), { status: 409 });
-      if (decision === 'rejected' && !note)
-        throw new Error('退回复核时需要说明需要补充或修改的内容。');
-      const meta = records.get('task-meta', id) || {};
-      const job = meta.jobId ? records.get('jobs', meta.jobId) : null;
-      const acceptance = records.save('task-acceptance', {
-        taskId: id,
-        groupId: meta.groupId || job?.groupId || null,
-        jobId: meta.jobId || null,
-        spaceId: meta.spaceId || job?.spaceId || null,
-        decision,
-        status: 'active',
-        note,
-        requirementVersion: delivery.currentRequirementVersion,
-        verificationId: delivery.latestVerificationId,
-        decidedBy: 'owner',
-        decidedAt: nowIso(),
-      }, id);
-      const attentionId = `acceptance:${id}:${delivery.currentRequirementVersion}`;
-      const existingAttention = records.get('attention', attentionId);
-      if (decision === 'rejected') {
-        records.save('attention', {
-          taskId: id,
-          groupId: meta.groupId || job?.groupId || null,
-          jobId: meta.jobId || null,
-          spaceId: meta.spaceId || job?.spaceId || null,
-          status: 'open',
-          kind: 'acceptance',
-          title: '交付被退回复核',
-          detail: note,
-          requirementVersion: delivery.currentRequirementVersion,
-        }, attentionId);
-      } else if (existingAttention) {
-        records.save('attention', { ...existingAttention, status: 'resolved', resolution: note || '所有者已确认交付。' }, attentionId);
-      }
-      return ok({
-        ...acceptance,
-        delivery: store.taskDelivery(task),
-      });
+      const delivery = validateTaskAcceptance(task, decision, note);
+      return ok(recordTaskAcceptance(task, decision, note, delivery));
     }
     if (collection === 'tasks' && method === 'GET') {
       if (id) {

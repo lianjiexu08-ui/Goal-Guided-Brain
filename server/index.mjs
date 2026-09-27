@@ -55,6 +55,53 @@ export function createWorkbench({
           attachments: platform.attachments.list(item.attachmentIds),
         }
       : item);
+  const publicCrossTeamTimeline = ({ teamId = '', kind = 'all', limit = 60, before = null } = {}) => {
+    const teams = store.teamSpaces()
+      .filter((space) => space.status !== 'archived' && space.recruitment?.phase === 'confirmed')
+      .filter((space) => !teamId || teamId === 'all' || space.id === teamId || space.chatId === teamId);
+    const matchesKind = (item) => {
+      if (kind === 'all') return true;
+      if (kind === 'messages') return item.type === 'message';
+      if (kind === 'execution') return item.type === 'task' || item.type === 'task-event';
+      if (kind === 'evidence') return ['artifact', 'verification', 'acceptance'].includes(item.type);
+      if (kind === 'risk') {
+        if (item.type === 'message') return item.status === 'blocked' || Boolean(item.error);
+        if (item.type === 'task') {
+          return [
+            'blocked',
+            'failed',
+            'interrupted',
+            'state_unknown',
+            'budget-exceeded',
+            'budget_exceeded',
+          ].includes(item.status || '') || item.deliveryStatus === 'rejected' || Boolean(item.error);
+        }
+        if (item.type === 'task-event') return /fail|error|block|interrupt|budget/i.test(item.eventType || '');
+        if (item.type === 'acceptance') return item.acceptanceDecision === 'rejected';
+      }
+      return false;
+    };
+    const pageSize = Math.max(1, Math.min(120, Number(limit) || 60));
+    const items = teams
+      .flatMap((space) => publicTeamTimeline(space.id, { limit: 200, before }).map((item) => ({
+        ...item,
+        teamId: space.id,
+        teamName: space.name,
+        teamType: space.teamType || 'custom',
+      })))
+      .filter(matchesKind)
+      .sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id));
+    // The cross-team endpoint uses newest-first pages. The cursor points at
+    // the oldest item currently rendered, so the next page can append older
+    // records without changing the meaning of `before`.
+    const window = items.slice(0, pageSize + 1);
+    const hasMore = window.length > pageSize;
+    return {
+      items: hasMore ? window.slice(0, pageSize) : window,
+      hasMore,
+      total: items.length,
+    };
+  };
   const publicTeamRisks = ({ teamId = '', kind = 'all', status = 'all', limit = 50, before = null } = {}) => {
     const teams = store.teamSpaces()
       .filter((space) => space.status !== 'archived' && space.recruitment?.phase === 'confirmed');
@@ -418,6 +465,13 @@ export function createWorkbench({
           kind: options.query.get('kind') || 'all',
           status: options.query.get('status') || 'all',
           limit: options.query.get('limit') || 50,
+          before: options.query.get('before') || null,
+        }));
+      if (req.method === 'GET' && parts[1] === 'timeline')
+        return send(200, publicCrossTeamTimeline({
+          teamId: options.query.get('teamId') || '',
+          kind: options.query.get('kind') || 'all',
+          limit: options.query.get('limit') || 60,
           before: options.query.get('before') || null,
         }));
       if (req.method === 'PUT' && parts[1] === 'settings') {

@@ -819,6 +819,25 @@ test.describe('团队招募核心流程', () => {
     await expect(page.getByRole('heading', { name: teams.target.name })).toBeVisible();
   });
 
+  test('团队动态支持跨团队统一时间线筛选并回到对应团队', async ({ page }) => {
+    const teams = seedConfirmedTeams();
+    await page.goto('/');
+    await openMobileSidebar(page);
+    await sidebarLocator(page).locator('button').filter({ hasText: teams.development.name }).first().click({ force: true });
+    await expect(page.getByRole('heading', { name: teams.development.name })).toBeVisible();
+    await clickNavigation(page, '团队动态');
+    const timeline = page.getByRole('region', { name: '跨团队统一时间线', exact: true });
+    await expect(timeline).toBeVisible();
+    const teamScope = timeline.getByRole('combobox', { name: '统一时间线团队', exact: true });
+    await teamScope.selectOption(teams.development.id);
+    await expect(timeline.locator('.cross-team-timeline-item').filter({ hasText: teams.development.name }).first()).toBeVisible();
+    await teamScope.selectOption(teams.operations.id);
+    await expect(timeline.locator('.cross-team-timeline-item').filter({ hasText: teams.operations.name }).first()).toBeVisible();
+    await expect(timeline.locator('.cross-team-timeline-item').filter({ hasText: teams.development.name })).toHaveCount(0);
+    await timeline.locator('.cross-team-timeline-item').filter({ hasText: teams.operations.name }).first().click();
+    await expect(page.getByRole('heading', { name: teams.operations.name })).toBeVisible();
+  });
+
   test('desktop/mobile 连续20次切换时团队模型、动态和草稿保持隔离', async ({ page }) => {
     const teams = seedModelTeams();
     const requests = [];

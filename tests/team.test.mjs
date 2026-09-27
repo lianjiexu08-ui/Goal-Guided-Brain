@@ -162,6 +162,80 @@ test('team timeline exposes an older page without duplicating the latest window'
   }
 });
 
+test('cross-team timeline aggregates confirmed teams with labels and cursor pagination', async () => {
+  const fixture = sandbox();
+  const app = createWorkbench({ ...fixture, requireCredential: false });
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  const request = async (route, body, method = 'GET') => {
+    const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  try {
+    const source = (await request('teams')).body[0];
+    const target = (await request('teams', {
+      name: '跨团队统一时间线研发团队',
+      goal: '验证统一时间线可以标记来源团队。',
+      memberRoleIds: ['project_manager'],
+    }, 'POST')).body;
+    const draft = (await request('teams', {
+      name: '跨团队统一时间线草稿团队',
+      goal: '不应出现在跨团队统一时间线。',
+      recruitment: { phase: 'discovery' },
+      memberRoleIds: ['project_manager'],
+    }, 'POST')).body;
+
+    const addMessage = (team, content, suffix) => app.store.saveTeamMessage({
+      spaceId: team.id,
+      teamId: team.id,
+      clientMessageId: `cross-team-timeline-${suffix}`,
+      kind: 'reply',
+      senderType: 'agent',
+      senderId: 'project_manager',
+      content,
+      status: 'sent',
+    }, `cross-team-timeline-${suffix}`);
+    addMessage(source, '统一时间线：项目经理已更新运维计划。', 'source-1');
+    addMessage(target, '统一时间线：研发团队已完成接口拆分。', 'target-1');
+    addMessage(source, '统一时间线：运维团队开始灰度验证。', 'source-2');
+    addMessage(draft, '草稿团队消息不应泄漏到统一时间线。', 'draft-1');
+
+    const first = await request('timeline?limit=2');
+    assert.equal(first.status, 200);
+    assert.equal(first.body.items.length, 2);
+    assert.equal(first.body.hasMore, true);
+    assert.ok(first.body.items.every((item) => item.teamId));
+    assert.ok(first.body.items.every((item) => [source.id, target.id].includes(item.teamId)));
+    assert.ok(first.body.items.every((item) => item.teamName));
+    assert.ok(first.body.items.some((item) => item.teamId === source.id));
+    assert.ok(first.body.items.some((item) => item.teamId === target.id));
+    assert.ok(first.body.items.every((item) => !/草稿团队消息/.test(item.content || '')));
+
+    const cursorItem = first.body.items[first.body.items.length - 1];
+    const cursor = encodeURIComponent(`${cursorItem.at}|${cursorItem.id}`);
+    const second = await request(`timeline?limit=2&before=${cursor}`);
+    assert.equal(second.status, 200);
+    assert.ok(Array.isArray(second.body.items));
+    const firstIds = new Set(first.body.items.map((item) => item.id));
+    assert.ok(second.body.items.every((item) => !firstIds.has(item.id)));
+    assert.ok(second.body.items.every((item) => [source.id, target.id].includes(item.teamId)));
+    assert.ok(second.body.items.every((item) => item.teamName));
+    assert.ok(second.body.items.some((item) => item.teamId === source.id));
+
+    const filtered = await request(`timeline?teamId=${encodeURIComponent(target.id)}&limit=10`);
+    assert.equal(filtered.status, 200);
+    assert.ok(filtered.body.items.length >= 1);
+    assert.ok(filtered.body.items.every((item) => item.teamId === target.id));
+    assert.ok(filtered.body.items.every((item) => item.teamName === target.name));
+  } finally {
+    await app.close();
+    fs.rmSync(fixture.dir, { recursive: true, force: true });
+  }
+});
+
 test('team risks aggregate confirmed teams and support team, kind, and cursor filters', async () => {
   const fixture = sandbox();
   const app = createWorkbench({ ...fixture, requireCredential: false });
