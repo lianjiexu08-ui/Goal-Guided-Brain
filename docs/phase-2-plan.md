@@ -46,7 +46,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Local Release Record
 
-Validated on 2026-09-10 using macOS, Node.js 26.8.1 and DSH 0.1.2-rc.1.
+Validated on 2026-09-27 using macOS, Node.js 26.8.1 and DSH 0.1.2-rc.1.
 The current production service runs at `http://127.0.0.1:3088/`, with the API at
 `http://127.0.0.1:3089`. The previous service had no active tasks at upgrade time.
 
