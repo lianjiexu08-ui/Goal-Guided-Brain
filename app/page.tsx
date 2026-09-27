@@ -98,6 +98,10 @@ type Task = {
   spaceId?: string | null;
   artifactCount?: number;
   verificationStatus?: string | null;
+  deliveryStatus?: string | null;
+  acceptanceDecision?: string | null;
+  acceptanceNote?: string | null;
+  currentRequirementVersion?: number | null;
   attachmentIds?: string[];
   attachments?: Attachment[];
 };
@@ -190,7 +194,7 @@ type TeamMessage = {
 };
 type TeamTimelineItem = {
   id: string;
-  type: 'message' | 'task' | 'task-event' | 'artifact' | 'verification';
+  type: 'message' | 'task' | 'task-event' | 'artifact' | 'verification' | 'acceptance' | 'attention';
   at: string;
   messageId?: string;
   clientMessageId?: string | null;
@@ -212,6 +216,10 @@ type TeamTimelineItem = {
   workspaceMode?: string | null;
   artifactCount?: number;
   verificationStatus?: string | null;
+  deliveryStatus?: string | null;
+  acceptanceDecision?: string | null;
+  acceptanceNote?: string | null;
+  currentRequirementVersion?: number | null;
   eventType?: string;
   data?: unknown;
   name?: string;
@@ -352,12 +360,20 @@ const statusLabels: Record<string, string> = {
   paused: '已暂停',
   budget_exceeded: '预算超限',
   'budget-exceeded': '预算超限',
+  accepted: '已交付',
+  'awaiting-owner': '待你验收',
+  rejected: '已退回复核',
+  'pending-review': '待复核',
 };
 const verificationLabels: Record<string, string> = {
   verified: '已验收',
   failed: '验证失败',
   'pending-review': '待验收',
   'needs-review': '需要复核',
+  'awaiting-owner': '待你验收',
+  accepted: '已交付',
+  rejected: '已退回复核',
+  stale: '验收已失效',
 };
 const capabilityKindLabels: Record<string, string> = {
   mcp: 'MCP',
@@ -365,12 +381,15 @@ const capabilityKindLabels: Record<string, string> = {
   plugin: 'Plugin',
 };
 const isActive = (t: Task) => ['queued', 'running'].includes(t.status);
-const taskVerification = (task: Task) =>
-  task.verificationStatus
+const taskVerification = (task: Task) => {
+  if (task.deliveryStatus)
+    return statusLabels[task.deliveryStatus] || verificationLabels[task.deliveryStatus] || task.deliveryStatus;
+  return task.verificationStatus
     ? verificationLabels[task.verificationStatus] || task.verificationStatus
     : task.status === 'completed'
       ? '待验收'
       : '';
+};
 const formatTime = (s: string) =>
   new Date(s).toLocaleString('zh-CN', {
     month: '2-digit',
@@ -654,6 +673,9 @@ function Workbench() {
       workspaceMode: task.workspaceMode || null,
       artifactCount: task.artifactCount || 0,
       verificationStatus: task.verificationStatus || null,
+      deliveryStatus: task.deliveryStatus || null,
+      acceptanceDecision: task.acceptanceDecision || null,
+      acceptanceNote: task.acceptanceNote || null,
     })),
   ];
   const teamOpenTasks = teamTasks.filter(isActive);
@@ -1519,9 +1541,20 @@ function Workbench() {
             <small>{item.title} · {formatTime(item.at)}</small>
             {item.workspaceMode && <small className="team-task-mode">工作目录 · {item.workspaceMode === 'shared' ? '共享' : item.workspaceMode === 'worktree' ? 'Git worktree' : item.workspaceMode === 'snapshot' ? '快照' : '隔离'}</small>}
             {(item.result || item.error) && <small className="team-task-result">{(item.result || item.error || '').replace(/\s+/g, ' ').slice(0, 180)}</small>}
-            {item.verificationStatus && <small className={`team-task-proof ${item.verificationStatus}`}>验收 · {task ? taskVerification(task) : item.verificationStatus}{item.artifactCount ? ` · ${item.artifactCount} 项证据` : ''}</small>}
+            {(item.deliveryStatus || item.verificationStatus) && <small className={`team-task-proof ${item.deliveryStatus || item.verificationStatus}`}>交付 · {task ? taskVerification(task) : (statusLabels[item.deliveryStatus || ''] || verificationLabels[item.deliveryStatus || ''] || item.deliveryStatus || item.verificationStatus)}{item.artifactCount ? ` · ${item.artifactCount} 项证据` : ''}</small>}
           </span>
           <em className={`status ${item.status || 'queued'}`}>{statusLabels[item.status || 'queued'] || item.status}</em>
+        </button>
+      );
+    }
+    if (item.type === 'acceptance') {
+      const accepted = item.acceptanceDecision === 'accepted';
+      const rejected = item.acceptanceDecision === 'rejected';
+      const decisionLabel = accepted ? '所有者通过交付' : rejected ? '所有者退回复核' : '验收决定已更新';
+      return (
+        <button className={`team-timeline-record acceptance ${rejected ? 'rejected' : accepted ? 'accepted' : ''}`} key={item.id} onClick={() => relatedTask && showTask(relatedTask)} disabled={!relatedTask}>
+          <span className="team-timeline-record-icon">{accepted ? <Check size={14} /> : <Undo2 size={14} />}</span>
+          <span><strong>{decisionLabel}</strong><small>{item.acceptanceNote || '已记录所有者交付决定'} · v{item.currentRequirementVersion || 1} · {formatTime(item.at)}</small></span>
         </button>
       );
     }

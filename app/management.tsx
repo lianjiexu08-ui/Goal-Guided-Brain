@@ -128,6 +128,10 @@ const statuses: Record<string, string> = {
   'pending-review': '待验证',
   'needs-review': '需要复核',
   verified: '验证通过',
+  accepted: '已交付',
+  'awaiting-owner': '待你验收',
+  rejected: '已退回复核',
+  stale: '验收已失效',
   skipped: '已跳过',
   selected: '已选用',
   considered: '候选',
@@ -189,7 +193,7 @@ function IconButton({
 }
 function Badge({ value }: { value: string }) {
   if (!value) return null;
-  const tone = ['failed', 'error', 'unhealthy', 'revoked', 'unavailable'].includes(value)
+  const tone = ['failed', 'error', 'unhealthy', 'revoked', 'unavailable', 'rejected'].includes(value)
     ? 'error'
     : [
           'blocked',
@@ -199,6 +203,8 @@ function Badge({ value }: { value: string }) {
           'needs_config',
           'pending-review',
           'needs-review',
+          'awaiting-owner',
+          'stale',
           'state_unknown',
           'budget_exceeded',
           'budget-exceeded',
@@ -1531,6 +1537,7 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
   const [mode, setMode] = useState<'diff' | 'commit' | 'verify' | null>(null);
   const [result, setResult] = useState<Entity | null>(null);
   const [message, setMessage] = useState('');
+  const [acceptanceNote, setAcceptanceNote] = useState('');
   const [command, setCommand] = useState('npm');
   const [args, setArgs] = useState('test');
   useEffect(() => {
@@ -1569,12 +1576,17 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
       : ({} as Entity);
   const latestVerification =
     execution?.latestVerification || execution?.verification;
+  const recordedVerifications = entityList(execution?.artifacts)
+    .filter((item) => item.kind === 'verification')
+    .sort((a, b) => {
+      const at = txt(a, 'finishedAt') || txt(a, 'updatedAt') || txt(a, 'createdAt');
+      const bt = txt(b, 'finishedAt') || txt(b, 'updatedAt') || txt(b, 'createdAt');
+      return bt.localeCompare(at) || String(b.id).localeCompare(String(a.id));
+    });
   const verification =
     latestVerification && typeof latestVerification === 'object'
       ? (latestVerification as Entity)
-      : entityList(execution?.artifacts).find(
-          (item) => item.kind === 'verification',
-        );
+      : recordedVerifications[0];
   const artifacts = entityList(execution?.artifacts);
   const delivery =
     execution?.delivery && typeof execution.delivery === 'object'
@@ -1586,22 +1598,28 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
     (workspace && txt(workspace, 'verificationStatus')) ||
     (workspace?.verified === true ? 'verified' : '');
   const deliveryState =
-    taskStatus === 'failed' || verificationState === 'failed'
+    (delivery ? txt(delivery, 'deliveryStatus') : '') ||
+    (taskStatus === 'failed' || verificationState === 'failed'
       ? 'failed'
       : ['queued', 'running', 'state_unknown'].includes(taskStatus)
         ? taskStatus
         : verificationState === 'verified'
-          ? 'verified'
+          ? 'awaiting-owner'
           : taskStatus === 'completed'
             ? 'pending-review'
-            : taskStatus || 'pending-review';
+            : taskStatus || 'pending-review');
   let deliveryDetail = '任务仍在执行，完成后会在这里显示交付证据。';
-  if (deliveryState === 'verified') {
+  if (deliveryState === 'accepted') {
+    const note = delivery ? txt(delivery, 'acceptanceNote') : '';
+    deliveryDetail = `所有者已确认交付。${note ? ` ${note}` : ''}`;
+  } else if (deliveryState === 'awaiting-owner') {
     deliveryDetail = verification
       ? `验证命令：${title(verification)} · ${time(
-          verification.finishedAt || verification.createdAt,
-        )}`
-      : '执行目录已标记为验证通过。';
+        verification.finishedAt || verification.createdAt,
+      )}。当前需求版本的验收证据已通过，请由所有者确认是否交付。`
+      : '当前需求版本的验收证据已通过，请由所有者确认是否交付。';
+  } else if (deliveryState === 'rejected') {
+    deliveryDetail = `已退回复核：${(delivery ? txt(delivery, 'acceptanceNote') : '') || '请根据验收意见补充修改后重新提交。'}`;
   } else if (deliveryState === 'failed') {
     deliveryDetail =
       txt(execution || {}, 'error') ||
@@ -1656,6 +1674,32 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
       setBusy(false);
     }
   };
+  const decideAcceptance = async (decision: 'accept' | 'reject') => {
+    const note = acceptanceNote.trim();
+    if (decision === 'reject' && !note) {
+      setError('退回复核时需要写明需要补充或修改的内容。');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await api<Entity>(`tasks/${taskId}/${decision}`, 'POST', { note });
+      setExecution(await api<Entity>(`tasks/${taskId}`));
+      setAcceptanceNote('');
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const acceptanceCriteria = delivery?.acceptanceCriteria;
+  const acceptanceCriteriaText =
+    typeof acceptanceCriteria === 'string'
+      ? acceptanceCriteria
+      : acceptanceCriteria && typeof acceptanceCriteria === 'object'
+        ? JSON.stringify(acceptanceCriteria, null, 2)
+        : '任务中未单独记录验收标准。';
+  const canDecideAcceptance = taskStatus === 'completed' && deliveryState !== 'accepted';
   const evidenceKind = (artifact: Entity) =>
     txt(artifact, 'kind') === 'verification'
       ? '验收证据'
@@ -1681,9 +1725,9 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
             data-tone={
               deliveryState === 'failed'
                 ? 'error'
-                : deliveryState === 'verified'
+                : deliveryState === 'accepted'
                   ? 'success'
-                  : ['queued', 'running', 'state_unknown'].includes(
+                : ['queued', 'running', 'state_unknown'].includes(
                         deliveryState,
                       )
                     ? 'active'
@@ -1696,6 +1740,60 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
             </div>
             <p>{deliveryDetail}</p>
           </div>
+          <section className="acceptance-decision" aria-label="所有者验收决定">
+            <div className="acceptance-decision-heading">
+              <div>
+                <h3>所有者验收</h3>
+                <p>
+                  验收标准 · {acceptanceCriteriaText}
+                </p>
+              </div>
+              {delivery && <Badge value={txt(delivery, 'acceptanceDecision') || deliveryState} />}
+            </div>
+            <div className="acceptance-decision-meta">
+              <span>需求版本 v{delivery ? txt(delivery, 'currentRequirementVersion', '1') : '1'}</span>
+              {delivery && txt(delivery, 'verificationRequirementVersion') && <span>验证证据 v{txt(delivery, 'verificationRequirementVersion')}</span>}
+              {delivery && txt(delivery, 'acceptanceAt') && <span>决定于 {time(txt(delivery, 'acceptanceAt'))}</span>}
+            </div>
+            {deliveryState === 'accepted' && delivery && txt(delivery, 'acceptanceNote') && (
+              <p className="acceptance-decision-note">验收备注：{txt(delivery, 'acceptanceNote')}</p>
+            )}
+            {canDecideAcceptance && (
+              <>
+                <label className="acceptance-note-field">
+                  验收备注
+                  <textarea
+                    aria-label="验收备注"
+                    rows={3}
+                    value={acceptanceNote}
+                    onChange={(event) => setAcceptanceNote(event.target.value)}
+                    placeholder={deliveryState === 'awaiting-owner' ? '可以补充本次交付的确认说明。' : '请写明需要补充或修改的内容。'}
+                  />
+                </label>
+                <div className="acceptance-decision-actions">
+                  <button
+                    className="primary-button"
+                    type="button"
+                    disabled={busy || deliveryState !== 'awaiting-owner'}
+                    onClick={() => void decideAcceptance('accept')}
+                  >
+                    <Check size={15} /> 通过交付
+                  </button>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void decideAcceptance('reject')}
+                  >
+                    <Undo2 size={15} /> 退回复核
+                  </button>
+                </div>
+                {deliveryState !== 'awaiting-owner' && (
+                  <p className="acceptance-decision-hint">先运行验证并获得当前需求版本的通过证据，才能确认交付。</p>
+                )}
+              </>
+            )}
+          </section>
           <section className="evidence-center" aria-label="模型路由">
             <div className="evidence-center-heading">
               <div>
@@ -2270,7 +2368,12 @@ function JobDetail({
               )}
               {Boolean(item.error) && <small>{txt(item, 'error')}</small>}
             </div>
-            <Badge value={status(item)} />
+            <div className="execution-status-stack">
+              <Badge value={status(item)} />
+              {txt(item, 'deliveryStatus') && txt(item, 'deliveryStatus') !== status(item) && (
+                <small>交付 · {statuses[txt(item, 'deliveryStatus')] || txt(item, 'deliveryStatus')}</small>
+              )}
+            </div>
             {['failed', 'interrupted', 'cancelled', 'state_unknown'].includes(
               status(item),
             ) && (

@@ -91,6 +91,7 @@ test('team space routes owner messages to the project manager and persists repli
     assert.equal(taskSummary.workspaceMode, 'isolated');
     assert.equal(taskSummary.artifactCount, 1);
     assert.equal(taskSummary.verificationStatus, 'verified');
+    assert.equal(taskSummary.deliveryStatus, 'awaiting-owner');
     assert.ok(Array.isArray(detail.body.timeline));
     assert.deepEqual(
       detail.body.timeline.map((item) => item.at),
@@ -99,6 +100,19 @@ test('team space routes owner messages to the project manager and persists repli
     assert.ok(detail.body.timeline.some((item) => item.type === 'message' && item.messageId));
     assert.ok(detail.body.timeline.some((item) => item.type === 'task' && item.taskId === completedTask.id));
     assert.ok(detail.body.timeline.some((item) => item.type === 'verification' && item.taskId === completedTask.id));
+    app.store.records.save('task-acceptance', {
+      taskId: completedTask.id,
+      spaceId: spaces.body[0].id,
+      decision: 'accepted',
+      status: 'active',
+      note: '项目经理已核对验证结果。',
+      requirementVersion: 1,
+      verificationId: `verification:${completedTask.id}`,
+      decidedAt: new Date().toISOString(),
+    }, completedTask.id);
+    const acceptedDetail = await request(`spaces/${spaces.body[0].id}`);
+    assert.equal(acceptedDetail.body.tasks.find((item) => item.id === completedTask.id).deliveryStatus, 'accepted');
+    assert.ok(acceptedDetail.body.timeline.some((item) => item.type === 'acceptance' && item.acceptanceDecision === 'accepted'));
   } finally {
     await app.close();
     fs.rmSync(fixture.dir, { recursive: true, force: true });
@@ -564,6 +578,9 @@ test('team MCP can discover and delegate to an allowed long-lived team', async (
     assert.equal(sourceReply.relatedMessageId, sourceHandoff.id);
     assert.match(sourceReply.content, /已整理来源清单/);
     assert.equal(app.store.records.get('space-messages', sourceHandoff.id).status, 'answered');
+    const read = JSON.parse((await client.callTool({ name: 'read_team_task', arguments: { taskId: delegated.taskId } })).content[0].text);
+    assert.equal(read.delivery.deliveryStatus, 'pending-review');
+    assert.equal(read.delivery.acceptanceDecision, null);
   } finally {
     await Promise.allSettled(clients.map((client) => client.close()));
     await app.close();

@@ -481,6 +481,73 @@ export class Store {
       .list('space-messages')
       .filter((message) => message.spaceId === spaceId);
   }
+  taskDelivery(task) {
+    const meta = this.records.get('task-meta', task.id) || {};
+    const job = meta.jobId ? this.records.get('jobs', meta.jobId) : null;
+    const normalizeVersion = (value) => {
+      const version = Number(value || 1);
+      return Number.isInteger(version) && version > 0 ? version : 1;
+    };
+    const currentRequirementVersion = normalizeVersion(job?.requirementVersion || meta.requirementVersion);
+    const artifacts = this.records.list('artifacts').filter((artifact) => artifact.taskId === task.id);
+    const verifications = artifacts
+      .filter((artifact) => artifact.kind === 'verification')
+      .sort((a, b) => {
+        const at = a.finishedAt || a.updatedAt || a.createdAt || '';
+        const bt = b.finishedAt || b.updatedAt || b.createdAt || '';
+        return bt.localeCompare(at) || String(b.id).localeCompare(String(a.id));
+      });
+    const latestVerification = verifications[0] || null;
+    const verificationRequirementVersion = normalizeVersion(latestVerification?.requirementVersion);
+    const verificationStatus = latestVerification
+      ? latestVerification.status || (latestVerification.verified === true ? 'verified' : 'pending-review')
+      : task.status === 'completed'
+        ? 'pending-review'
+        : null;
+    const hasCurrentVerificationEvidence = Boolean(
+      latestVerification &&
+      verificationRequirementVersion === currentRequirementVersion &&
+      verificationStatus === 'verified',
+    );
+    const savedAcceptance = this.records.get('task-acceptance', task.id);
+    const acceptance = savedAcceptance &&
+      savedAcceptance.status !== 'stale' &&
+      normalizeVersion(savedAcceptance.requirementVersion) === currentRequirementVersion
+      ? savedAcceptance
+      : null;
+    const acceptanceMatchesEvidence = Boolean(
+      acceptance &&
+      acceptance.verificationId === (latestVerification?.id || null),
+    );
+    const effectiveAcceptance = acceptanceMatchesEvidence ? acceptance : null;
+    let deliveryStatus = task.status;
+    if (task.status === 'completed') {
+      if (effectiveAcceptance?.decision === 'accepted' && hasCurrentVerificationEvidence)
+        deliveryStatus = 'accepted';
+      else if (effectiveAcceptance?.decision === 'rejected') deliveryStatus = 'rejected';
+      else if (hasCurrentVerificationEvidence) deliveryStatus = 'awaiting-owner';
+      else if (verificationStatus === 'failed') deliveryStatus = 'failed';
+      else deliveryStatus = 'pending-review';
+    }
+    return {
+      executionStatus: task.status,
+      deliveryStatus,
+      acceptanceStatus: verificationStatus,
+      acceptanceDecision: effectiveAcceptance?.decision || null,
+      acceptanceNote: effectiveAcceptance?.note || null,
+      acceptanceAt: effectiveAcceptance?.decidedAt || null,
+      acceptanceCriteria: job?.acceptance || null,
+      currentRequirementVersion,
+      verificationRequirementVersion: latestVerification ? verificationRequirementVersion : null,
+      hasCurrentVerificationEvidence,
+      evidenceCount: artifacts.length,
+      hasVerificationEvidence: Boolean(latestVerification),
+      latestVerificationId: latestVerification?.id || null,
+      latestVerificationAt: latestVerification?.finishedAt || latestVerification?.updatedAt || latestVerification?.createdAt || null,
+      latestVerification,
+      acceptance: effectiveAcceptance,
+    };
+  }
   teamTimeline(spaceId, limit = 120) {
     if (!this.teamSpace(spaceId)) return [];
     const tasks = this.tasks().filter((task) => {
@@ -514,7 +581,7 @@ export class Store {
     for (const task of tasks) {
       const meta = this.records.get('task-meta', task.id) || {};
       const artifacts = this.records.list('artifacts').filter((artifact) => artifact.taskId === task.id);
-      const verification = artifacts.find((artifact) => artifact.kind === 'verification');
+      const delivery = this.taskDelivery(task);
       items.push({
         id: `task:${task.id}`,
         type: 'task',
@@ -527,9 +594,9 @@ export class Store {
         error: String(task.error || '').slice(0, 360),
         workspaceMode: meta.workspaceMode || null,
         artifactCount: artifacts.length,
-        verificationStatus: verification
-          ? verification.status || (verification.verified === true ? 'verified' : 'pending-review')
-          : null,
+        verificationStatus: delivery.hasVerificationEvidence ? delivery.acceptanceStatus : null,
+        deliveryStatus: delivery.deliveryStatus,
+        acceptanceDecision: delivery.acceptanceDecision,
       });
     }
     for (const event of this.records.list('task-events')) {
@@ -554,6 +621,19 @@ export class Store {
         name: artifact.name || '未命名产物',
         status: artifact.status || null,
         verified: artifact.verified === true,
+      });
+    }
+    for (const acceptance of this.records.list('task-acceptance')) {
+      if (!taskIds.has(acceptance.taskId)) continue;
+      items.push({
+        id: `acceptance:${acceptance.id}`,
+        type: 'acceptance',
+        at: acceptance.decidedAt || acceptance.updatedAt || acceptance.createdAt || taskById.get(acceptance.taskId)?.updatedAt || taskById.get(acceptance.taskId)?.createdAt,
+        taskId: acceptance.taskId,
+        status: acceptance.status || 'active',
+        acceptanceDecision: acceptance.decision || null,
+        acceptanceNote: String(acceptance.note || '').slice(0, 360),
+        currentRequirementVersion: Number(acceptance.requirementVersion || 1),
       });
     }
     return items

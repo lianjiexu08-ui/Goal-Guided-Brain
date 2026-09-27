@@ -28,22 +28,6 @@ const text = (v, max = 32000) =>
     .trim()
     .slice(0, max);
 const statuses = new Set(['queued', 'running', 'waiting', 'state_unknown']);
-const summarizeTaskDelivery = (task, artifacts) => {
-  const verification = artifacts.find((item) => item.kind === 'verification') || null;
-  const acceptanceStatus = verification
-    ? verification.status || (verification.verified === true ? 'verified' : 'pending-review')
-    : task.status === 'completed'
-      ? 'pending-review'
-      : null;
-  return {
-    executionStatus: task.status,
-    acceptanceStatus,
-    evidenceCount: artifacts.length,
-    hasVerificationEvidence: !!verification,
-    latestVerificationId: verification?.id || null,
-    latestVerificationAt: verification?.finishedAt || verification?.updatedAt || null,
-  };
-};
 const publicNode = ({ tokenHash: _token, ...node }) => node;
 const shellQuote = (value) => `'${String(value).replace(/'/g, `'"'"'`)}'`;
 
@@ -1552,8 +1536,12 @@ export function createPlatform({
           output = error.message;
           status = 'failed';
         }
+        const meta = records.get('task-meta', id) || {};
+        const job = meta.jobId ? records.get('jobs', meta.jobId) : null;
         const evidence = records.save('artifacts', {
           taskId: id,
+          groupId: meta.groupId || job?.groupId || null,
+          requirementVersion: Number(job?.requirementVersion || meta.requirementVersion || 1),
           kind: 'verification',
           name: `${executable} ${args.join(' ')}`,
           status,
@@ -1571,6 +1559,62 @@ export function createPlatform({
       if (method === 'POST' && id === 'integrate')
         return ok(await workspaces.integrate(body.taskIds));
     }
+    if (
+      collection === 'tasks' &&
+      method === 'POST' &&
+      id &&
+      ['accept', 'reject'].includes(action)
+    ) {
+      if (principal?.type && principal.type !== 'owner')
+        throw Object.assign(new Error('只有所有者可以做出交付验收决定。'), { status: 403 });
+      const task = store.task(id);
+      if (!task) throw Object.assign(new Error('任务不存在。'), { status: 404 });
+      if (task.status !== 'completed')
+        throw Object.assign(new Error('只有已完成的任务可以进行交付验收。'), { status: 409 });
+      const delivery = store.taskDelivery(task);
+      const decision = action === 'accept' ? 'accepted' : 'rejected';
+      const note = text(body.note, 10000);
+      if (decision === 'accepted' && !delivery.hasCurrentVerificationEvidence)
+        throw Object.assign(new Error('当前需求版本还没有通过的验收证据，请先运行验证。'), { status: 409 });
+      if (decision === 'rejected' && !note)
+        throw new Error('退回复核时需要说明需要补充或修改的内容。');
+      const meta = records.get('task-meta', id) || {};
+      const job = meta.jobId ? records.get('jobs', meta.jobId) : null;
+      const acceptance = records.save('task-acceptance', {
+        taskId: id,
+        groupId: meta.groupId || job?.groupId || null,
+        jobId: meta.jobId || null,
+        spaceId: meta.spaceId || job?.spaceId || null,
+        decision,
+        status: 'active',
+        note,
+        requirementVersion: delivery.currentRequirementVersion,
+        verificationId: delivery.latestVerificationId,
+        decidedBy: 'owner',
+        decidedAt: nowIso(),
+      }, id);
+      const attentionId = `acceptance:${id}:${delivery.currentRequirementVersion}`;
+      const existingAttention = records.get('attention', attentionId);
+      if (decision === 'rejected') {
+        records.save('attention', {
+          taskId: id,
+          groupId: meta.groupId || job?.groupId || null,
+          jobId: meta.jobId || null,
+          spaceId: meta.spaceId || job?.spaceId || null,
+          status: 'open',
+          kind: 'acceptance',
+          title: '交付被退回复核',
+          detail: note,
+          requirementVersion: delivery.currentRequirementVersion,
+        }, attentionId);
+      } else if (existingAttention) {
+        records.save('attention', { ...existingAttention, status: 'resolved', resolution: note || '所有者已确认交付。' }, attentionId);
+      }
+      return ok({
+        ...acceptance,
+        delivery: store.taskDelivery(task),
+      });
+    }
     if (collection === 'tasks' && method === 'GET') {
       if (id) {
         const task = store.task(id);
@@ -1579,6 +1623,7 @@ export function createPlatform({
         const artifacts = records
           .list('artifacts')
           .filter((item) => item.taskId === id);
+        const delivery = store.taskDelivery(task);
         return ok({
           ...publicTask,
           attachmentIds: records.get('task-meta', id)?.attachmentIds || [],
@@ -1593,9 +1638,9 @@ export function createPlatform({
             .slice(0, 100),
           usage: records.list('usage').filter((e) => e.taskId === id),
           artifacts,
-          delivery: summarizeTaskDelivery(task, artifacts),
-          latestVerification:
-            artifacts.find((item) => item.kind === 'verification') || null,
+          delivery,
+          latestVerification: delivery.latestVerification,
+          acceptance: delivery.acceptance,
         });
       }
       const offset = Math.max(0, Number(query.get('offset')) || 0),
@@ -1715,6 +1760,18 @@ export function createPlatform({
           return {
             ...task,
             executionWorkspace: records.get('workspaces', taskId),
+            ...(() => {
+              const delivery = task.id ? store.taskDelivery(task) : null;
+              return delivery
+                ? {
+                    artifactCount: delivery.evidenceCount,
+                    verificationStatus: delivery.hasVerificationEvidence ? delivery.acceptanceStatus : null,
+                    deliveryStatus: delivery.deliveryStatus,
+                    acceptanceDecision: delivery.acceptanceDecision,
+                    acceptanceNote: delivery.acceptanceNote,
+                  }
+                : {};
+            })(),
           };
         }),
         board: scoped('board'),

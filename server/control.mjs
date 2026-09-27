@@ -756,6 +756,7 @@ export class ControlPlane {
     if (!target || target.status !== 'active' || target.id === source.id || !this.collaborationAllowed(source, target))
       throw fail('当前团队无权读取该任务。', 403);
     const job = meta.jobId ? this.records.get('jobs', meta.jobId) : null;
+    const delivery = this.store.taskDelivery(task);
     return {
       taskId: task.id,
       jobId: meta.jobId || null,
@@ -765,6 +766,17 @@ export class ControlPlane {
       result: String(task.result || '').slice(0, 50000),
       error: String(task.error || '').slice(0, 10000),
       jobStatus: job?.status || null,
+      delivery: {
+        deliveryStatus: delivery.deliveryStatus,
+        verificationStatus: delivery.acceptanceStatus,
+        acceptanceDecision: delivery.acceptanceDecision,
+        acceptanceNote: delivery.acceptanceNote,
+        currentRequirementVersion: delivery.currentRequirementVersion,
+        verificationRequirementVersion: delivery.verificationRequirementVersion,
+        hasCurrentVerificationEvidence: delivery.hasCurrentVerificationEvidence,
+        latestVerificationId: delivery.latestVerificationId,
+        latestVerificationAt: delivery.latestVerificationAt,
+      },
       messages: this.store.teamMessages(target.id).filter(message => message.taskId === task.id).slice(-20),
     };
   }
@@ -937,6 +949,27 @@ export class ControlPlane {
           if (changed) {
             for (const artifact of this.records.list('artifacts').filter(item => item.groupId === job.groupId)) {
               this.records.save('artifacts', { ...artifact, status: 'needs-review' }, artifact.id);
+            }
+            for (const member of groupJobs) {
+              const acceptance = this.records.get('task-acceptance', member.taskId);
+              if (acceptance && Number(acceptance.requirementVersion || 1) < version) {
+                this.records.save('task-acceptance', {
+                  ...acceptance,
+                  status: 'stale',
+                  invalidatedAt: this.now(),
+                  invalidatedReason: `需求已更新至版本 ${version}。`,
+                }, acceptance.id);
+                const attentionId = `acceptance:${member.taskId}:${acceptance.requirementVersion || 1}`;
+                const attention = this.records.get('attention', attentionId);
+                if (attention && attention.status === 'open') {
+                  this.records.save('attention', {
+                    ...attention,
+                    status: 'resolved',
+                    resolution: `需求已更新至版本 ${version}，旧验收意见已失效。`,
+                    resolvedAt: this.now(),
+                  }, attentionId);
+                }
+              }
             }
             for (const execution of this.records.list('executions').filter(item => item.groupId === job.groupId && item.status === 'running')) {
               this.sendMessage({ toTaskId: execution.taskId, content: `需求已更新至版本 ${updated.requirementVersion}：${goal}`,

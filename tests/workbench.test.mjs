@@ -388,6 +388,10 @@ test('HTTP journey: concurrent assistants, developer queue, cancellation, handof
       state.body.tasks.every((task) => task.verificationStatus === null),
     );
     const inspectedTask = state.body.tasks[0];
+    assert.equal(
+      (await request(`tasks/${inspectedTask.id}/accept`, { note: '没有当前验证证据时不能交付。' })).status,
+      409,
+    );
     app.store.records.save('artifacts', {
       taskId: inspectedTask.id,
       kind: 'verification',
@@ -403,8 +407,45 @@ test('HTTP journey: concurrent assistants, developer queue, cancellation, handof
     const inspectedDetail = await request(`tasks/${inspectedTask.id}`, undefined, 'GET');
     assert.equal(inspectedDetail.body.delivery.executionStatus, inspectedDetail.body.status);
     assert.equal(inspectedDetail.body.delivery.acceptanceStatus, 'verified');
+    assert.equal(inspectedDetail.body.delivery.deliveryStatus, 'awaiting-owner');
     assert.equal(inspectedDetail.body.delivery.evidenceCount, 1);
     assert.equal(inspectedDetail.body.delivery.hasVerificationEvidence, true);
+    const accepted = await request(`tasks/${inspectedTask.id}/accept`, {
+      note: '已检查验证输出，确认本次交付。',
+    });
+    assert.equal(accepted.status, 200);
+    assert.equal(accepted.body.decision, 'accepted');
+    assert.equal(accepted.body.delivery.deliveryStatus, 'accepted');
+    assert.equal(
+      (await request(`tasks/${inspectedTask.id}`, undefined, 'GET')).body.acceptance.decision,
+      'accepted',
+    );
+    assert.equal(
+      (await request(`tasks/${inspectedTask.id}/reject`, {})).status,
+      400,
+    );
+    const rejectedDelivery = await request(`tasks/${inspectedTask.id}/reject`, {
+      note: '请补充边界场景验证后重新提交。',
+    });
+    assert.equal(rejectedDelivery.status, 200);
+    assert.equal(rejectedDelivery.body.decision, 'rejected');
+    assert.equal(rejectedDelivery.body.delivery.deliveryStatus, 'rejected');
+    const attention = await request('attention', undefined, 'GET');
+    assert.ok(attention.body.items.some((item) => item.taskId === inspectedTask.id && item.kind === 'acceptance'));
+    app.store.records.save('artifacts', {
+      taskId: inspectedTask.id,
+      kind: 'verification',
+      status: 'verified',
+      name: 'npm test (补充验证)',
+      requirementVersion: 1,
+    });
+    const resubmitted = await request(`tasks/${inspectedTask.id}`, undefined, 'GET');
+    assert.equal(resubmitted.body.delivery.deliveryStatus, 'awaiting-owner');
+    const acceptedAgain = await request(`tasks/${inspectedTask.id}/accept`, {
+      note: '补充验证已通过，确认重新交付。',
+    });
+    assert.equal(acceptedAgain.status, 200);
+    assert.equal(acceptedAgain.body.delivery.deliveryStatus, 'accepted');
     assert.equal(
       fs.statSync(path.join(s.dataDir, 'vault.json')).mode & 0o777,
       0o600,

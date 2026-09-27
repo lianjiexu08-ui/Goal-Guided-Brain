@@ -266,10 +266,18 @@ test('requirement changes notify the whole group and older artifacts stay marked
   const parent = control.claimLocal(store.task(job.taskId));
   const child = control.createJob({ role: 'developer', prompt: 'Implementation' }, control.validateInstanceToken(parent.token));
   const claimed = control.claimLocal(store.task(child.taskId));
+  store.records.save('task-acceptance', {
+    taskId: child.taskId,
+    groupId: job.groupId,
+    decision: 'accepted',
+    status: 'active',
+    requirementVersion: 1,
+  }, child.taskId);
   await request(`jobs/${job.id}`, { goal: 'Version two' }, undefined, 'PUT');
   let principal = control.validateInstanceToken(claimed.token);
   assert.equal(principal.requirementVersion, 1);
   assert.equal(store.records.get('jobs', child.id).requirementVersion, 2);
+  assert.equal(store.records.get('task-acceptance', child.taskId).status, 'stale');
   const artifact = control.saveScoped('artifacts', { title: 'Old result', location: 'output.md', evidence: 'Tested v1' }, principal);
   assert.equal(artifact.status, 'needs-review');
   const inbox = control.readMessages(child.taskId, principal);

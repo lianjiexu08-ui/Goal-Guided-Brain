@@ -99,28 +99,10 @@ export function createWorkbench({
       })),
     })),
     tasks: (() => {
-      const evidence = new Map();
-      for (const artifact of store.records.list('artifacts')) {
-        if (!artifact.taskId) continue;
-        const summary = evidence.get(artifact.taskId) || {
-          artifactCount: 0,
-          verificationStatus: null,
-        };
-        summary.artifactCount += 1;
-        if (artifact.kind === 'verification' && !summary.verificationStatus) {
-          summary.verificationStatus =
-            artifact.status ||
-            (artifact.verified === true ? 'verified' : 'pending-review');
-        }
-        evidence.set(artifact.taskId, summary);
-      }
       return store.tasks().map(({ context: _context, log: _log, ...t }) => {
         const meta = store.records.get('task-meta', t.id) || {};
         const job = meta.jobId ? store.records.get('jobs', meta.jobId) : null;
-        const summary = evidence.get(t.id) || {
-          artifactCount: 0,
-          verificationStatus: null,
-        };
+        const delivery = store.taskDelivery(t);
         return {
           ...t,
           log: '',
@@ -130,8 +112,12 @@ export function createWorkbench({
           spaceId: meta.spaceId || job?.spaceId || null,
           teamId: meta.teamId || job?.teamId || meta.spaceId || job?.spaceId || null,
           parentJobId: job?.parentJobId || null,
-          artifactCount: summary.artifactCount,
-          verificationStatus: summary.verificationStatus,
+          artifactCount: delivery.evidenceCount,
+          verificationStatus: delivery.hasVerificationEvidence ? delivery.acceptanceStatus : null,
+          deliveryStatus: delivery.deliveryStatus,
+          acceptanceDecision: delivery.acceptanceDecision,
+          acceptanceNote: delivery.acceptanceNote,
+          currentRequirementVersion: delivery.currentRequirementVersion,
           attachmentIds: Array.isArray(meta.attachmentIds) ? meta.attachmentIds : [],
           attachments: platform.attachments.list(meta.attachmentIds),
         };
@@ -365,8 +351,7 @@ export function createWorkbench({
               .map((task) => {
                 const meta = store.records.get('task-meta', task.id) || {};
                 const job = meta.jobId ? store.records.get('jobs', meta.jobId) : null;
-                const artifacts = store.records.list('artifacts').filter((artifact) => artifact.taskId === task.id);
-                const verification = artifacts.find((artifact) => artifact.kind === 'verification');
+                const delivery = store.taskDelivery(task);
                 return {
                   ...task,
                   jobId: meta.jobId || null,
@@ -375,10 +360,12 @@ export function createWorkbench({
                   spaceId: meta.spaceId || job?.spaceId || null,
                   teamId: meta.teamId || job?.teamId || meta.spaceId || job?.spaceId || null,
                   workspaceMode: meta.workspaceMode || job?.workspaceMode || null,
-                  artifactCount: artifacts.length,
-                  verificationStatus: verification
-                    ? verification.status || (verification.verified === true ? 'verified' : 'pending-review')
-                    : null,
+                  artifactCount: delivery.evidenceCount,
+                  verificationStatus: delivery.hasVerificationEvidence ? delivery.acceptanceStatus : null,
+                  deliveryStatus: delivery.deliveryStatus,
+                  acceptanceDecision: delivery.acceptanceDecision,
+                  acceptanceNote: delivery.acceptanceNote,
+                  currentRequirementVersion: delivery.currentRequirementVersion,
                 };
               })
               .filter((task) => task.spaceId === space.id)

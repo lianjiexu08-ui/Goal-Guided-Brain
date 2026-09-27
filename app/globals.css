@@ -1725,6 +1725,8 @@ h1 {
 .team-timeline-record-icon { display: grid; flex: 0 0 auto; width: 25px; height: 25px; place-items: center; border-radius: 7px; color: #6a8b83; background: #eaf4ef; }
 .team-timeline-record.verification .team-timeline-record-icon { color: #9a763f; background: #fff4df; }
 .team-timeline-record.artifact .team-timeline-record-icon { color: #6f79a3; background: #eef0fb; }
+.team-timeline-record.acceptance .team-timeline-record-icon { color: #39856f; background: #e7f4ed; }
+.team-timeline-record.acceptance.rejected .team-timeline-record-icon { color: #b35c4c; background: #fff0ed; }
 .team-timeline-record > span:nth-child(2) { min-width: 0; flex: 1; }
 .team-timeline-record strong, .team-timeline-record small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .team-timeline-record strong { color: #45625f; font-size: 11px; font-weight: 650; }
