@@ -1508,6 +1508,18 @@ function description(collection: string, item: Entity, data: ManagementState) {
       ]
         .filter(Boolean)
         .join(' · ');
+    case 'attention':
+      return [
+        txt(item, 'kind'),
+        txt(item, 'taskTitle') ? `任务 · ${txt(item, 'taskTitle')}` : '',
+        txt(item, 'deliveryStatus')
+          ? `交付 · ${statuses[txt(item, 'deliveryStatus')] || txt(item, 'deliveryStatus')}`
+          : '',
+        txt(item, 'detail') || txt(item, 'message'),
+        time(item.createdAt),
+      ]
+        .filter(Boolean)
+        .join(' · ');
     case 'backups':
       return [
         item.size || item.bytes
@@ -3092,6 +3104,7 @@ export function Management({
     collection: string;
     item: Entity;
   } | null>(null);
+  const [attentionTaskId, setAttentionTaskId] = useState<string | null>(null);
   const [removing, setRemoving] = useState<{
     collection: string;
     item: Entity;
@@ -3241,6 +3254,24 @@ export function Management({
       } catch (err) {
         setError((err as Error).message);
       }
+    }
+  };
+  const openRelatedJob = async (item: Entity) => {
+    const jobId = txt(item, 'jobId');
+    if (!jobId) return;
+    setAttentionTaskId(null);
+    setDetail({
+      collection: 'jobs',
+      item: {
+        id: jobId,
+        title: txt(item, 'jobTitle') || txt(item, 'taskTitle') || jobId,
+      },
+    });
+    try {
+      const full = await api<Entity>(`jobs/${jobId}`);
+      setDetail({ collection: 'jobs', item: { ...full, id: jobId } });
+    } catch (err) {
+      setError((err as Error).message);
     }
   };
   const rowActions = (item: Entity) => (
@@ -3397,6 +3428,30 @@ export function Management({
           />
         </>
       )}
+      {collection === 'attention' &&
+        Boolean(item.jobId) &&
+        !['resolved', 'dismissed'].includes(status(item)) && (
+          <IconButton
+            icon={GitBranch}
+            label="打开关联任务组"
+            disabled={busy}
+            onClick={() => void openRelatedJob(item)}
+          />
+        )}
+      {collection === 'attention' &&
+        Boolean(item.taskId) &&
+        !item.jobId &&
+        !['resolved', 'dismissed'].includes(status(item)) && (
+          <IconButton
+            icon={FolderGit2}
+            label="查看关联执行"
+            disabled={busy}
+            onClick={() => {
+              setAttentionTaskId(txt(item, 'taskId'));
+              void openDetail(item);
+            }}
+          />
+        )}
       {collection === 'attention' &&
         item.kind !== 'tool-approval' &&
         !['resolved', 'dismissed', 'completed'].includes(status(item)) && (
@@ -4071,7 +4126,35 @@ export function Management({
                         );
                       }}
                     />
-                  )}
+                    )}
+                {detail.collection === 'attention' && Boolean(detail.item.taskId) && (
+                  <section className="attention-linked-task" aria-label="关联执行">
+                    <div className="attention-linked-task-heading">
+                      <div>
+                        <h3>关联执行</h3>
+                        <p>{txt(detail.item, 'taskTitle') || txt(detail.item, 'taskId')}</p>
+                      </div>
+                      <Badge value={txt(detail.item, 'deliveryStatus') || txt(detail.item, 'taskStatus')} />
+                    </div>
+                    <div className="attention-linked-task-meta">
+                      {txt(detail.item, 'jobTitle') && <span>任务组 · {txt(detail.item, 'jobTitle')}</span>}
+                      {txt(detail.item, 'taskStatus') && <span>执行 · {statuses[txt(detail.item, 'taskStatus')] || txt(detail.item, 'taskStatus')}</span>}
+                    </div>
+                    <div className="manage-toolbar">
+                      {Boolean(detail.item.jobId) && (
+                        <button className="secondary-button" type="button" disabled={busy} onClick={() => void openRelatedJob(detail.item)}>
+                          <GitBranch size={15} /> 打开任务组
+                        </button>
+                      )}
+                      <button className="secondary-button" type="button" disabled={busy} onClick={() => setAttentionTaskId(txt(detail.item, 'taskId'))}>
+                        <FolderGit2 size={15} /> 查看执行与交付
+                      </button>
+                    </div>
+                    {attentionTaskId === txt(detail.item, 'taskId') && (
+                      <ExecutionInspector taskId={txt(detail.item, 'taskId')} />
+                    )}
+                  </section>
+                )}
                 {detail.collection === 'attention' &&
                   detail.item.kind !== 'tool-approval' &&
                   !['resolved', 'dismissed'].includes(status(detail.item)) && (

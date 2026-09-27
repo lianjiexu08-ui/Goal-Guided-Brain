@@ -937,6 +937,25 @@ export function createPlatform({
     timer.unref();
   }
   function manage() {
+    const attention = records.list('attention').slice(0, 100).map((item) => {
+      const task = item.taskId ? store.task(item.taskId) : null;
+      const meta = task ? records.get('task-meta', task.id) || {} : {};
+      const job = item.jobId
+        ? records.get('jobs', item.jobId)
+        : meta.jobId
+          ? records.get('jobs', meta.jobId)
+          : null;
+      const delivery = task ? store.taskDelivery(task) : null;
+      return {
+        ...item,
+        taskTitle: task?.title || null,
+        taskStatus: task?.status || null,
+        jobTitle: job?.title || null,
+        jobStatus: job?.status || null,
+        deliveryStatus: delivery?.deliveryStatus || null,
+        acceptanceDecision: delivery?.acceptanceDecision || null,
+      };
+    });
     const output = Object.fromEntries(
       [
         'resources',
@@ -945,7 +964,6 @@ export function createPlatform({
         'schedules',
         'monitors',
         'notifications',
-        'attention',
         'workflows',
         'schedule-runs',
         'usage',
@@ -954,6 +972,7 @@ export function createPlatform({
     );
     return {
       ...output,
+      attention,
       providers: providers.list(),
       nodes: records.list('nodes').map(publicNode),
       capabilities: capabilities.list(),

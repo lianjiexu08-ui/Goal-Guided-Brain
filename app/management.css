@@ -469,6 +469,36 @@
   font-size: 11px;
   white-space: nowrap;
 }
+.attention-linked-task {
+  border: 1px solid #dce4e6;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 16px 0;
+  background: #fbfcfc;
+}
+.attention-linked-task-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.attention-linked-task-heading h3 {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+.attention-linked-task-heading p {
+  margin: 0;
+  color: #53666c;
+  font-size: 12px;
+}
+.attention-linked-task-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 9px;
+  color: #75858a;
+  font-size: 11px;
+}
 .evidence-center {
   border-top: 1px solid var(--border);
   padding-top: 4px;

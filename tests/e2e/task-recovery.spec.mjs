@@ -123,7 +123,7 @@ function seedFailedJob() {
   }
 }
 
-function seedAcceptanceJob() {
+function seedAcceptanceJob({ rejected = false } = {}) {
   const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
   try {
     const groupId = randomUUID();
@@ -179,7 +179,7 @@ function seedAcceptanceJob() {
       status: 'completed',
       result: '测试已通过，等待所有者验收。',
     });
-    store.records.save('artifacts', {
+    const verification = store.records.save('artifacts', {
       taskId: task.id,
       groupId,
       requirementVersion: 1,
@@ -190,6 +190,30 @@ function seedAcceptanceJob() {
       output: '140 tests passed',
       finishedAt: new Date().toISOString(),
     }, `e2e-acceptance-verification-${groupId}`);
+    if (rejected) {
+      store.records.save('task-acceptance', {
+        taskId: task.id,
+        groupId,
+        jobId: job.id,
+        decision: 'rejected',
+        status: 'active',
+        note: '请补充边界场景验证后重新提交。',
+        requirementVersion: 1,
+        verificationId: verification.id,
+        decidedBy: 'owner',
+        decidedAt: new Date().toISOString(),
+      }, task.id);
+      store.records.save('attention', {
+        taskId: task.id,
+        groupId,
+        jobId: job.id,
+        status: 'open',
+        kind: 'acceptance',
+        title: '交付被退回复核',
+        detail: '请补充边界场景验证后重新提交。',
+        requirementVersion: 1,
+      }, `acceptance:${task.id}:1`);
+    }
     return { taskId: task.id };
   } finally {
     store.close();
@@ -250,4 +274,26 @@ test('协作任务详情支持所有者验收决定', async ({ page }) => {
   await detail.getByRole('button', { name: '通过交付', exact: true }).click();
   await expect(detail.getByText('已交付', { exact: true }).first()).toBeVisible();
   await expect(detail.getByText(/已检查测试输出，确认交付。/).first()).toBeVisible();
+});
+
+test('需要你处理可以直接打开关联执行和交付状态', async ({ page }) => {
+  seedAcceptanceJob({ rejected: true });
+  await page.goto('/');
+  const mobile = (page.viewportSize()?.width || 1024) < 768;
+  if (mobile) {
+    await page.getByRole('button', { name: 'Toggle Sidebar', exact: true }).click();
+    await expect(page.locator('[data-sidebar="sidebar"][data-mobile="true"]')).toBeVisible();
+  }
+  const sidebar = page.locator(
+    mobile ? '[data-sidebar="sidebar"][data-mobile="true"]' : '[data-sidebar="sidebar"]',
+  );
+  await sidebar.getByRole('button', { name: '需要你处理', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '需要你处理' })).toBeVisible();
+  await page.getByRole('button', { name: '交付被退回复核', exact: true }).first().click();
+  const detail = page.getByRole('dialog', { name: '交付被退回复核' });
+  await expect(detail.getByText('关联执行', { exact: true })).toBeVisible();
+  await expect(detail.getByText('交付验收闭环任务', { exact: true })).toBeVisible();
+  await detail.getByRole('button', { name: '查看执行与交付', exact: true }).click();
+  await expect(detail.getByText('交付判断', { exact: true })).toBeVisible();
+  await expect(detail.getByText('已退回复核', { exact: true }).first()).toBeVisible();
 });

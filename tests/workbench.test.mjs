@@ -432,6 +432,12 @@ test('HTTP journey: concurrent assistants, developer queue, cancellation, handof
     assert.equal(rejectedDelivery.body.delivery.deliveryStatus, 'rejected');
     const attention = await request('attention', undefined, 'GET');
     assert.ok(attention.body.items.some((item) => item.taskId === inspectedTask.id && item.kind === 'acceptance'));
+    const managed = await request('manage', undefined, 'GET');
+    const managedAcceptance = managed.body.attention.find(
+      (item) => item.taskId === inspectedTask.id && item.kind === 'acceptance',
+    );
+    assert.equal(managedAcceptance.taskTitle, inspectedTask.title);
+    assert.equal(managedAcceptance.deliveryStatus, 'rejected');
     app.store.records.save('artifacts', {
       taskId: inspectedTask.id,
       kind: 'verification',
