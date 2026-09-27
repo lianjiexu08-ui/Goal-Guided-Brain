@@ -553,6 +553,11 @@ test.describe('团队招募核心流程', () => {
     await clickNavigation(page, '团队动态');
     await expect(page.getByText('统一时间线', { exact: true })).toBeVisible();
     await expect(page.getByText(development.message, { exact: true })).toBeVisible();
+    const developmentTimeline = page.locator('[aria-label="团队统一时间线"]');
+    await developmentTimeline.getByRole('tab', { name: '证据', exact: true }).click();
+    await expect(developmentTimeline.getByText('当前筛选没有记录', { exact: true })).toBeVisible();
+    await developmentTimeline.getByRole('tab', { name: '全部', exact: true }).click();
+    await expect(page.getByText(development.message, { exact: true })).toBeVisible();
 
     await openTeam(operations);
     const operationsComposer = page.locator('textarea[aria-label^="发送给"]');

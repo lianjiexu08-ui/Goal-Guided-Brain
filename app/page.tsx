@@ -225,6 +225,7 @@ type TeamTimelineItem = {
   name?: string;
   verified?: boolean;
 };
+type TimelineFilter = 'all' | 'messages' | 'execution' | 'evidence' | 'risk';
 type TeamRecruitmentMember = {
   memberId?: string;
   agentId?: string;
@@ -587,6 +588,7 @@ function Workbench() {
   );
   const [showArchived, setShowArchived] = useState(false);
   const [taskFilter, setTaskFilter] = useState('all');
+  const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>('all');
   const [expandedCharters, setExpandedCharters] = useState<Record<string, boolean>>({});
   const endRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -685,6 +687,38 @@ function Workbench() {
       acceptanceDecision: task.acceptanceDecision || null,
       acceptanceNote: task.acceptanceNote || null,
     })),
+  ];
+  const timelineItems = teamTimeline.length > 0 ? teamTimeline : legacyTeamTimeline;
+  const timelineNeedsAttention = (item: TeamTimelineItem) => {
+    if (item.type === 'message') return item.status === 'blocked' || Boolean(item.error);
+    if (item.type === 'task') {
+      return [
+        'blocked',
+        'failed',
+        'interrupted',
+        'state_unknown',
+        'budget-exceeded',
+        'budget_exceeded',
+      ].includes(item.status || '') || item.deliveryStatus === 'rejected' || Boolean(item.error);
+    }
+    if (item.type === 'task-event') return /fail|error|block|interrupt|budget/i.test(item.eventType || '');
+    if (item.type === 'acceptance') return item.acceptanceDecision === 'rejected';
+    if (item.type === 'attention') return item.status !== 'resolved';
+    return false;
+  };
+  const visibleTeamTimeline = timelineItems.filter((item) => {
+    if (timelineFilter === 'messages') return item.type === 'message';
+    if (timelineFilter === 'execution') return item.type === 'task' || item.type === 'task-event';
+    if (timelineFilter === 'evidence') return item.type === 'artifact' || item.type === 'verification' || item.type === 'acceptance';
+    if (timelineFilter === 'risk') return timelineNeedsAttention(item);
+    return true;
+  });
+  const timelineFilterOptions: Array<{ id: TimelineFilter; label: string }> = [
+    { id: 'all', label: '全部' },
+    { id: 'messages', label: '消息' },
+    { id: 'execution', label: '执行' },
+    { id: 'evidence', label: '证据' },
+    { id: 'risk', label: '风险' },
   ];
   const teamOpenTasks = teamTasks.filter(isActive);
   const teamReviewTasks = teamTasks.filter(taskNeedsOwnerAction);
@@ -1449,6 +1483,7 @@ function Workbench() {
     // Execution records belong to the selected team. Never leave an open
     // inspector from Team A visible while the user is browsing Team B.
     setTaskDetail(null);
+    setTimelineFilter('all');
     setSelectedSpaceId(next.id);
     setRole(next.pmRoleId);
   }
@@ -1826,18 +1861,31 @@ function Workbench() {
                     <p>把目标、问题或一段模糊需求直接丢进来。我会先和你澄清，再给出团队规模、职责和推进方式。</p>
                     <div className="pm-flow"><span>多轮澄清</span><ArrowRight size={13} /><span>Team Charter</span><ArrowRight size={13} /><span>确认创建</span></div>
                   </div>
-                  {teamTimeline.length > 0 ? (
-                    <div className="team-timeline" aria-label="团队统一时间线">
-                      <div className="team-activity-title"><History size={14} /> 统一时间线</div>
-                      {teamTimeline.map(renderTeamTimelineItem)}
-                    </div>
-                  ) : (
-                    <div className="team-timeline team-timeline-fallback" aria-label="团队动态">
-                      <div className="team-activity-title"><Workflow size={14} /> 团队动态</div>
-                      {legacyTeamTimeline.map(renderTeamTimelineItem)}
+                  {timelineItems.length > 0 && (
+                    <div className={`team-timeline ${teamTimeline.length === 0 ? 'team-timeline-fallback' : ''}`} aria-label={teamTimeline.length > 0 ? '团队统一时间线' : '团队动态'}>
+                      <div className="team-timeline-toolbar">
+                        <div className="team-activity-title"><History size={14} /> {teamTimeline.length > 0 ? '统一时间线' : '团队动态'}</div>
+                        <div className="timeline-filters" role="tablist" aria-label="时间线筛选">
+                          {timelineFilterOptions.map((option) => (
+                            <button
+                              key={option.id}
+                              type="button"
+                              role="tab"
+                              aria-selected={timelineFilter === option.id}
+                              className={`timeline-filter-button ${timelineFilter === option.id ? 'active' : ''}`}
+                              onClick={() => setTimelineFilter(option.id)}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {visibleTeamTimeline.length > 0 ? visibleTeamTimeline.map(renderTeamTimelineItem) : (
+                        <div className="timeline-filter-empty">当前筛选没有记录</div>
+                      )}
                     </div>
                   )}
-                  {!teamTimeline.length && !legacyTeamTimeline.length && <div className="team-empty"><MessageSquare size={18} /> 还没有团队动态。完成一次任务后，进展会显示在这里。</div>}
+                  {!timelineItems.length && <div className="team-empty"><MessageSquare size={18} /> 还没有团队动态。完成一次任务后，进展会显示在这里。</div>}
                 </div>
                 <div className="team-readonly-note">
                   <div className="team-readonly-icon"><MessageSquare size={16} /></div>
