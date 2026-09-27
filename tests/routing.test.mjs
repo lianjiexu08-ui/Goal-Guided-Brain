@@ -19,6 +19,7 @@ async function fixture({
   restrict = false,
   failures = 1,
   threeProviders = false,
+  withoutTools = false,
 }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-routing-'));
   const workspace = path.join(dir, 'workspace');
@@ -60,14 +61,14 @@ async function fixture({
     name: 'Primary fixture',
     protocol: 'openai-responses',
     baseUrl: 'http://127.0.0.1:9/v1',
-    models: [{ id: 'primary-model', tools: true }],
+    models: [{ id: 'primary-model', tools: !withoutTools }],
     priority: 1,
   });
   const alternate = app.platform.providers.save({
     name: 'Alternate fixture',
     protocol: 'openai-completions',
     baseUrl: 'http://127.0.0.1:9/v1',
-    models: [{ id: 'alternate-model', tools: true }],
+    models: [{ id: 'alternate-model', tools: !withoutTools }],
     priority: 2,
   });
   const tertiary = threeProviders
@@ -75,7 +76,7 @@ async function fixture({
         name: 'Third fixture',
         protocol: 'anthropic-messages',
         baseUrl: 'http://127.0.0.1:9/v1',
-        models: [{ id: 'third-model', tools: true }],
+        models: [{ id: 'third-model', tools: !withoutTools }],
         priority: 3,
       })
     : null;
@@ -87,6 +88,7 @@ async function fixture({
       : threeProviders
         ? { providerIds: [primary.id, alternate.id, tertiary.id] }
         : {}),
+    ...(withoutTools ? { allowModelWithoutTools: true } : {}),
   });
   return {
     app,
@@ -105,6 +107,7 @@ async function fixture({
 
 for (const error of [
   'HTTP 401 Unauthorized',
+  'HTTP 405 Method Not Allowed',
   'HTTP 503 transient network error',
 ])
   test(`failed route ${error} retries on an actual alternate provider before tool activity`, async () => {
@@ -176,6 +179,22 @@ test('a recorded tool side effect prevents automatic model rerun', async () => {
       f.app.store.records.get('task-meta', f.task.id).toolActivity,
       true,
     );
+  } finally {
+    await f.close();
+  }
+});
+
+test('provider fallback preserves an explicit text-only route permission', async () => {
+  const f = await fixture({ error: 'HTTP 405 Method Not Allowed', withoutTools: true });
+  try {
+    await waitFor(
+      () =>
+        f.runs.length === 2 &&
+        f.app.store.task(f.runs[1].task.id)?.status === 'completed',
+    );
+    assert.equal(f.runs[1].route.providerId, f.alternate.id);
+    assert.equal(f.runs[1].route.model, 'alternate-model');
+    assert.equal(f.app.store.records.get('task-meta', f.runs[1].task.id).allowModelWithoutTools, true);
   } finally {
     await f.close();
   }

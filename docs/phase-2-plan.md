@@ -61,7 +61,7 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 136 passing tests. The repeatable
+The current deterministic suite contains 138 passing tests. The repeatable
 Playwright baseline contains sixteen passing desktop/mobile runs covering team
 recruitment navigation, draft restoration across views, binary drag-and-drop
 attachments, Team Charter confirmation, team renaming, team settings editing,
@@ -78,9 +78,12 @@ checked for the two failures. GPT `gpt-5.6` and DeepSeek `deepseek-flash`
 returned valid text responses; Gemini returned upstream HTTP 405 and Kimi
 returned upstream HTTP 503 across their tested models. These results are
 connectivity evidence only, not a model-quality score; the saved health state
-now informs automatic routing while explicit model choices remain available.
-Multi-turn model quality, real provider fallback quality and cross-platform
-environment gates remain open.
+now informs automatic routing while explicit model choices remain available. A
+second real task explicitly selected the Gemini candidate, received the
+upstream 405, recorded a `routing/fallback` event, and completed through
+DeepSeek with the result `OK`; the original failed attempt remains preserved
+for audit. Broader multi-turn model quality and cross-platform environment
+gates remain open.
 
 ## Remaining Compatibility And Release Gates
 

@@ -496,7 +496,7 @@ export function createPlatform({
     if (
       !route ||
       current?.toolActivity ||
-      !/401|403|429|5\d\d|timeout|超时|network|fetch failed|QUOTA|RATE_LIMIT|CREDENTIAL/i.test(
+      !/401|403|405|408|409|425|429|5\d\d|timeout|超时|network|fetch failed|QUOTA|RATE_LIMIT|CREDENTIAL/i.test(
         error,
       )
     )
@@ -524,7 +524,10 @@ export function createPlatform({
           providerIds: current.allowedProviderIds ?? current.providerIds,
           requiredTools: true,
         },
-        { exclude: excluded },
+        {
+          exclude: excluded,
+          allowWithoutTools: current.allowModelWithoutTools === true,
+        },
       );
       if (next) {
         recordEvent(task, {
