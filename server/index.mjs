@@ -55,6 +55,107 @@ export function createWorkbench({
           attachments: platform.attachments.list(item.attachmentIds),
         }
       : item);
+  const publicTeamRisks = ({ teamId = '', kind = 'all', status = 'all', limit = 50, before = null } = {}) => {
+    const teams = store.teamSpaces()
+      .filter((space) => space.status !== 'archived' && space.recruitment?.phase === 'confirmed');
+    const teamsById = new Map(teams.map((space) => [space.id, space]));
+    const executionRiskStatuses = new Set([
+      'blocked',
+      'failed',
+      'interrupted',
+      'state_unknown',
+      'budget-exceeded',
+      'budget_exceeded',
+    ]);
+    const deliveryRiskStatuses = new Set(['pending-review', 'awaiting-owner', 'rejected', 'failed']);
+    const risks = [];
+    const resolveTaskScope = (task) => {
+      const meta = store.records.get('task-meta', task.id) || {};
+      const job = meta.jobId ? store.records.get('jobs', meta.jobId) : null;
+      const resolvedTeamId = meta.spaceId || meta.teamId || job?.spaceId || job?.teamId || null;
+      return {
+        teamId: resolvedTeamId,
+        team: resolvedTeamId ? teamsById.get(resolvedTeamId) : null,
+        meta,
+        job,
+      };
+    };
+    for (const task of store.tasks()) {
+      const scope = resolveTaskScope(task);
+      if (!scope.team) continue;
+      const delivery = store.taskDelivery(task);
+      const executionRisk = executionRiskStatuses.has(task.status) || (task.status !== 'completed' && Boolean(task.error));
+      const deliveryRisk = deliveryRiskStatuses.has(delivery.deliveryStatus);
+      if (!executionRisk && !deliveryRisk) continue;
+      const riskKind = executionRisk ? 'execution' : 'delivery';
+      const riskStatus = executionRisk ? task.status : delivery.deliveryStatus;
+      risks.push({
+        id: `task:${task.id}`,
+        sourceType: 'task',
+        kind: riskKind,
+        status: riskStatus,
+        title: riskKind === 'delivery' ? `交付待处理：${task.title}` : task.title,
+        detail: task.error || (riskStatus === 'awaiting-owner'
+          ? '等待所有者验收交付。'
+          : riskStatus === 'pending-review'
+            ? '执行已结束，等待验证证据复核。'
+            : riskStatus === 'rejected'
+              ? delivery.acceptanceNote || '交付已退回复核。'
+              : '执行需要检查或恢复。'),
+        updatedAt: task.updatedAt || task.createdAt,
+        teamId: scope.team.id,
+        teamName: scope.team.name,
+        taskId: task.id,
+        jobId: scope.meta.jobId || null,
+        groupId: scope.meta.groupId || scope.job?.groupId || null,
+        deliveryStatus: delivery.deliveryStatus,
+        acceptanceDecision: delivery.acceptanceDecision,
+      });
+    }
+    for (const attention of store.records.list('attention')) {
+      if (['resolved', 'dismissed'].includes(attention.status)) continue;
+      const task = attention.taskId ? store.task(attention.taskId) : null;
+      const scope = task ? resolveTaskScope(task) : {
+        teamId: attention.teamId || attention.spaceId || null,
+        team: teamsById.get(attention.teamId || attention.spaceId || ''),
+        meta: attention.taskId ? store.records.get('task-meta', attention.taskId) || {} : {},
+        job: attention.jobId ? store.records.get('jobs', attention.jobId) : null,
+      };
+      if (!scope.team) continue;
+      risks.push({
+        id: `attention:${attention.id}`,
+        sourceType: 'attention',
+        kind: 'attention',
+        status: attention.status || 'open',
+        title: attention.title || '需要你处理',
+        detail: attention.detail || '团队有一项需要确认的事项。',
+        updatedAt: attention.updatedAt || attention.createdAt,
+        teamId: scope.team.id,
+        teamName: scope.team.name,
+        taskId: attention.taskId || null,
+        jobId: attention.jobId || scope.meta.jobId || null,
+        groupId: attention.groupId || scope.meta.groupId || scope.job?.groupId || null,
+        attentionId: attention.id,
+      });
+    }
+    const cursor = typeof before === 'string' && before.trim() ? before.split('|') : [];
+    const beforeAt = cursor[0] || null;
+    const beforeId = cursor.slice(1).join('|') || null;
+    const filtered = risks
+      .filter((risk) => !teamId || risk.teamId === teamId)
+      .filter((risk) => kind === 'all' || risk.kind === kind)
+      .filter((risk) => status === 'all' || risk.status === status)
+      .filter((risk) => typeof risk.updatedAt === 'string' && risk.updatedAt)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id))
+      .filter((risk) => !beforeAt || risk.updatedAt < beforeAt || (risk.updatedAt === beforeAt && Boolean(beforeId && risk.id < beforeId)));
+    const pageSize = Math.max(1, Math.min(100, Number(limit) || 50));
+    const page = filtered.slice(0, pageSize + 1);
+    return {
+      items: page.slice(0, pageSize),
+      hasMore: page.length > pageSize,
+      total: filtered.length,
+    };
+  };
   const getState = () => ({
     roles: store.roles(),
     skillCatalog: SKILLS.map(({ id, name }) => ({ id, name })),
@@ -311,6 +412,14 @@ export function createWorkbench({
       if (managed) return send(managed.status, managed.body);
       if (req.method === 'GET' && parts[1] === 'state')
         return send(200, getState());
+      if (req.method === 'GET' && parts[1] === 'risks')
+        return send(200, publicTeamRisks({
+          teamId: options.query.get('teamId') || '',
+          kind: options.query.get('kind') || 'all',
+          status: options.query.get('status') || 'all',
+          limit: options.query.get('limit') || 50,
+          before: options.query.get('before') || null,
+        }));
       if (req.method === 'PUT' && parts[1] === 'settings') {
         let folder = required(body.workspace, '工作目录', 2000);
         if (folder.startsWith('~/'))

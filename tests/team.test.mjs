@@ -69,8 +69,7 @@ test('team space routes owner messages to the project manager and persists repli
     assert.equal(message.status, 201);
     assert.ok(message.body.taskId);
     assert.ok(message.body.sessionId);
-    await tick();
-    assert.equal(runs.length, 1);
+    await waitFor(() => runs.length === 1, '项目经理任务没有在测试窗口内启动。');
     assert.equal(runs[0].options.assistant.id, 'project_manager');
     assert.match(runs[0].prompt, /评估新产品方向/);
     runs[0].complete();
@@ -157,6 +156,92 @@ test('team timeline exposes an older page without duplicating the latest window'
       older.body.items.map((item) => item.content),
       ['分页历史消息 0', '分页历史消息 1', '分页历史消息 2', '分页历史消息 3', '分页历史消息 4'],
     );
+  } finally {
+    await app.close();
+    fs.rmSync(fixture.dir, { recursive: true, force: true });
+  }
+});
+
+test('team risks aggregate confirmed teams and support team, kind, and cursor filters', async () => {
+  const fixture = sandbox();
+  const app = createWorkbench({ ...fixture, requireCredential: false });
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  const request = async (route, body, method = 'GET') => {
+    const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  try {
+    const source = (await request('teams')).body[0];
+    const target = (await request('teams', {
+      name: '风险聚合目标团队',
+      goal: '验证跨团队风险过滤。',
+      memberRoleIds: ['project_manager'],
+    }, 'POST')).body;
+    const pending = (await request('teams', {
+      name: '未确认风险团队',
+      goal: '不应出现在跨团队风险收件箱。',
+      recruitment: { phase: 'discovery' },
+    }, 'POST')).body;
+    const createRiskTask = (team, status, error) => {
+      const task = app.store.createTask({
+        role: 'project_manager',
+        prompt: `${team.name} 风险任务`,
+        workspace: fixture.workspace,
+      });
+      app.store.records.save('task-meta', {
+        spaceId: team.id,
+        teamId: team.id,
+        workspaceMode: 'isolated',
+        attachmentIds: [],
+      }, task.id);
+      app.store.updateTask(task.id, { status, error });
+      return task;
+    };
+    const sourceTask = createRiskTask(source, 'failed', '源团队执行失败。');
+    const targetTask = createRiskTask(target, 'blocked', '目标团队等待处理。');
+    createRiskTask(pending, 'failed', '未确认团队失败。');
+    app.store.records.save('attention', {
+      taskId: targetTask.id,
+      teamId: target.id,
+      status: 'open',
+      kind: 'manual-review',
+      title: '目标团队需要确认',
+      detail: '请确认目标团队的阻塞原因。',
+    }, 'risk-attention-target');
+    app.store.records.save('attention', {
+      taskId: sourceTask.id,
+      teamId: source.id,
+      status: 'resolved',
+      kind: 'manual-review',
+      title: '已处理事项',
+    }, 'risk-attention-resolved');
+
+    const all = await request('risks?limit=20');
+    assert.equal(all.status, 200);
+    assert.equal(all.body.total, 3);
+    assert.deepEqual(new Set(all.body.items.map((item) => item.teamId)), new Set([source.id, target.id]));
+    assert.ok(all.body.items.some((item) => item.kind === 'execution' && item.taskId === sourceTask.id));
+    assert.ok(all.body.items.some((item) => item.kind === 'attention' && item.taskId === targetTask.id));
+    assert.ok(!all.body.items.some((item) => item.teamId === pending.id));
+
+    const targetOnly = await request(`risks?teamId=${encodeURIComponent(target.id)}&kind=execution`);
+    assert.equal(targetOnly.body.total, 1);
+    assert.equal(targetOnly.body.items[0].taskId, targetTask.id);
+    const attentionOnly = await request(`risks?teamId=${encodeURIComponent(target.id)}&kind=attention`);
+    assert.equal(attentionOnly.body.total, 1);
+    assert.equal(attentionOnly.body.items[0].title, '目标团队需要确认');
+
+    const firstPage = await request('risks?limit=1');
+    assert.equal(firstPage.body.items.length, 1);
+    assert.equal(firstPage.body.hasMore, true);
+    const first = firstPage.body.items[0];
+    const secondPage = await request(`risks?limit=1&before=${encodeURIComponent(`${first.updatedAt}|${first.id}`)}`);
+    assert.equal(secondPage.body.items.length, 1);
+    assert.notEqual(secondPage.body.items[0].id, first.id);
   } finally {
     await app.close();
     fs.rmSync(fixture.dir, { recursive: true, force: true });

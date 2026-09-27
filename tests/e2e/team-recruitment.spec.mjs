@@ -298,6 +298,57 @@ function seedLongTimelineTeam() {
   }
 }
 
+function seedRiskTeams() {
+  const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
+  try {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const teams = [
+      { name: `风险研发团队 ${suffix}`, status: 'failed', error: '研发执行需要重试。' },
+      { name: `风险运维团队 ${suffix}`, status: 'blocked', error: '运维任务等待人工处理。' },
+    ].map((input) => {
+      const team = store.saveTeamSpace({
+        name: input.name,
+        goal: '验证跨团队风险收件箱。',
+        purpose: '验证风险按团队和类型筛选。',
+        workspace: process.cwd(),
+        pmRoleId: 'project_manager',
+        memberRoleIds: ['project_manager'],
+        recruitment: {
+          phase: 'confirmed',
+          sessionId: null,
+          turns: 1,
+          brief: '验证跨团队风险收件箱。',
+          proposal: null,
+          confirmedAt: new Date().toISOString(),
+        },
+      });
+      const task = store.createTask({
+        role: 'project_manager',
+        prompt: `${input.name}风险任务`,
+        workspace: process.cwd(),
+      });
+      store.records.save('task-meta', {
+        spaceId: team.id,
+        teamId: team.id,
+        workspaceMode: 'isolated',
+        attachmentIds: [],
+      }, task.id);
+      store.updateTask(task.id, { status: input.status, error: input.error });
+      return { ...input, id: team.id, taskId: task.id };
+    });
+    store.records.save('attention', {
+      teamId: teams[1].id,
+      status: 'open',
+      kind: 'manual-review',
+      title: '运维团队需要确认',
+      detail: '请确认运维任务的恢复边界。',
+    }, `e2e-risk-attention-${suffix}`);
+    return { source: teams[0], target: teams[1] };
+  } finally {
+    store.close();
+  }
+}
+
 function seedDraftRecoveryTeams() {
   const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
   try {
@@ -750,6 +801,22 @@ test.describe('团队招募核心流程', () => {
     await timeline.getByRole('button', { name: '更早动态', exact: true }).click();
     await expect(timeline.getByText('分页回归消息 0', { exact: true })).toBeVisible();
     await expect(timeline.getByRole('button', { name: '更早动态', exact: true })).toHaveCount(0);
+  });
+
+  test('后台任务提供跨团队风险筛选并可回到对应团队', async ({ page }) => {
+    const teams = seedRiskTeams();
+    await page.goto('/');
+    await clickNavigation(page, '后台任务');
+    const inbox = page.getByRole('region', { name: '跨团队风险', exact: true });
+    await expect(inbox).toBeVisible();
+    await inbox.getByRole('combobox', { name: '风险团队', exact: true }).selectOption(teams.target.id);
+    await expect(inbox.getByText('2 项待处理', { exact: true })).toBeVisible();
+    await expect(inbox.locator('.risk-inbox-item').filter({ hasText: teams.target.name }).first()).toBeVisible();
+    await expect(inbox.locator('.risk-inbox-item').filter({ hasText: teams.source.name })).toHaveCount(0);
+    await inbox.getByRole('combobox', { name: '风险类型', exact: true }).selectOption('attention');
+    await expect(inbox.getByText('运维团队需要确认', { exact: true })).toBeVisible();
+    await inbox.getByRole('button', { name: '打开风险 运维团队需要确认', exact: true }).click();
+    await expect(page.getByRole('heading', { name: teams.target.name })).toBeVisible();
   });
 
   test('desktop/mobile 连续20次切换时团队模型、动态和草稿保持隔离', async ({ page }) => {

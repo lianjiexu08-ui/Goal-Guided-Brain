@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import { registerWorkbenchTools } from '@/lib/webmcp';
 import {
@@ -17,6 +17,7 @@ import {
   type Assistant,
 } from './assistant-editor';
 import {
+  AlertTriangle,
   ArrowDownToLine,
   ArrowRight,
   ArrowUp,
@@ -35,6 +36,7 @@ import {
   Pencil,
   Paperclip,
   Plus,
+  RefreshCw,
   Search,
   Settings2,
   Sparkles,
@@ -226,6 +228,28 @@ type TeamTimelineItem = {
   verified?: boolean;
 };
 type TimelineFilter = 'all' | 'messages' | 'execution' | 'evidence' | 'risk';
+type TeamRisk = {
+  id: string;
+  sourceType: 'task' | 'attention';
+  kind: 'execution' | 'delivery' | 'attention';
+  status: string;
+  title: string;
+  detail: string;
+  updatedAt: string;
+  teamId: string;
+  teamName: string;
+  taskId?: string | null;
+  jobId?: string | null;
+  groupId?: string | null;
+  deliveryStatus?: string | null;
+  acceptanceDecision?: string | null;
+  attentionId?: string;
+};
+type TeamRiskResponse = {
+  items: TeamRisk[];
+  hasMore: boolean;
+  total: number;
+};
 type TeamRecruitmentMember = {
   memberId?: string;
   agentId?: string;
@@ -502,6 +526,149 @@ function Choice({
     </Select>
   );
 }
+
+function RiskInbox({
+  teams,
+  onOpenTeam,
+  onOpenTask,
+}: {
+  teams: TeamSpace[];
+  onOpenTeam: (teamId: string) => void;
+  onOpenTask: (taskId: string) => void;
+}) {
+  const [teamFilter, setTeamFilter] = useState('all');
+  const [kindFilter, setKindFilter] = useState('all');
+  const [items, setItems] = useState<TeamRisk[]>([]);
+  const [total, setTotal] = useState(0);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const kindLabels: Record<string, string> = {
+    execution: '执行风险',
+    delivery: '交付风险',
+    attention: '待确认事项',
+  };
+  const loadFirstPage = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const query = new URLSearchParams({ limit: '50' });
+      if (teamFilter !== 'all') query.set('teamId', teamFilter);
+      if (kindFilter !== 'all') query.set('kind', kindFilter);
+      const page = await api<TeamRiskResponse>(`risks?${query.toString()}`);
+      const last = page.items?.[page.items.length - 1];
+      setItems(page.items || []);
+      setTotal(page.total || 0);
+      setHasMore(page.hasMore === true);
+      setNextCursor(last ? `${last.updatedAt}|${last.id}` : null);
+    } catch (rawError) {
+      setError((rawError as Error).message);
+      setItems([]);
+      setTotal(0);
+      setHasMore(false);
+      setNextCursor(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [kindFilter, teamFilter]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadFirstPage(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadFirstPage]);
+  const loadMore = async () => {
+    if (!nextCursor || loading) return;
+    setLoading(true);
+    setError('');
+    try {
+      const query = new URLSearchParams({ limit: '50', before: nextCursor });
+      if (teamFilter !== 'all') query.set('teamId', teamFilter);
+      if (kindFilter !== 'all') query.set('kind', kindFilter);
+      const page = await api<TeamRiskResponse>(`risks?${query.toString()}`);
+      const last = page.items?.[page.items.length - 1];
+      setItems((current) => [...current, ...(page.items || [])]);
+      setHasMore(page.hasMore === true);
+      setNextCursor(last ? `${last.updatedAt}|${last.id}` : null);
+    } catch (rawError) {
+      setError((rawError as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  return (
+    <section className="risk-inbox" aria-label="跨团队风险">
+      <div className="risk-inbox-head">
+        <div>
+          <span className="section-kicker">TEAM RISKS</span>
+          <h2>跨团队风险</h2>
+          <p>把失败执行、交付复核和需要确认的事项放在一个入口。</p>
+        </div>
+        <div className="risk-inbox-summary">
+          <span className="count-pill needs-review">{total} 项待处理</span>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="刷新跨团队风险"
+            onClick={() => void loadFirstPage()}
+            disabled={loading}
+          >
+            <RefreshCw size={15} className={loading ? 'spin' : ''} />
+          </button>
+        </div>
+      </div>
+      <div className="risk-inbox-toolbar">
+        <label>
+          <span>团队</span>
+          <select aria-label="风险团队" value={teamFilter} onChange={(event) => setTeamFilter(event.target.value)}>
+            <option value="all">全部已创建团队</option>
+            {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>类型</span>
+          <select aria-label="风险类型" value={kindFilter} onChange={(event) => setKindFilter(event.target.value)}>
+            <option value="all">全部风险</option>
+            <option value="execution">执行风险</option>
+            <option value="delivery">交付风险</option>
+            <option value="attention">待确认事项</option>
+          </select>
+        </label>
+      </div>
+      {error && <div className="risk-inbox-error">{error}</div>}
+      {items.length > 0 ? (
+        <div className="risk-inbox-list">
+          {items.map((item) => (
+            <button
+              type="button"
+              className="risk-inbox-item"
+              key={item.id}
+              aria-label={`打开风险 ${item.title}`}
+              onClick={() => item.taskId ? onOpenTask(item.taskId) : onOpenTeam(item.teamId)}
+            >
+              <span className={`risk-inbox-icon ${item.kind}`}><AlertTriangle size={15} /></span>
+              <span className="risk-inbox-copy">
+                <strong>{item.title}</strong>
+                <small>{item.teamName} · {kindLabels[item.kind] || item.kind} · {item.detail}</small>
+              </span>
+              <em>{statusLabels[item.status] || verificationLabels[item.status] || item.status}</em>
+            </button>
+          ))}
+          {hasMore && (
+            <button type="button" className="risk-inbox-more" onClick={() => void loadMore()} disabled={loading}>
+              {loading ? '加载中…' : '加载更早风险'}
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="risk-inbox-empty">
+          <Check size={20} />
+          <span>{loading ? '正在检查团队风险…' : '当前没有需要处理的跨团队风险。'}</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function Home() {
   return (
     <AuthenticationGate>
@@ -1530,6 +1697,15 @@ function Workbench() {
       [task.spaceId ? `${task.spaceId}:${task.role}` : task.role]: task.sessionId,
     }));
     setView('workspace');
+  }
+  function openRiskTeam(teamId: string) {
+    selectTeam(teamId);
+    setView('team');
+    if (isMobile) setOpenMobile(false);
+  }
+  function openRiskTask(taskId: string) {
+    const task = tasks.find((item) => item.id === taskId);
+    if (task) showTask(task);
   }
   function handoffRoles(task: Task | null) {
     const team = task?.spaceId
@@ -2765,6 +2941,7 @@ function Workbench() {
               </div>
               <div className="page-heading-pills"><span className="count-pill">{running.length} 个进行中</span>{reviewTasks.length > 0 && <span className="count-pill needs-review">{reviewTasks.length} 项待处理</span>}</div>
             </div>
+            <RiskInbox teams={confirmedSpaces} onOpenTeam={openRiskTeam} onOpenTask={openRiskTask} />
             <Tabs
               value={taskFilter}
               onValueChange={(v) => setTaskFilter(String(v))}
