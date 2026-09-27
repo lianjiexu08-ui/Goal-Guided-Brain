@@ -229,8 +229,29 @@ export class ProviderService {
       (assistant.capabilityIds?.length ?? 0) > 0
     );
     const requestedModel = modelOverride || '';
+    // An explicit model is a user choice. Keep the configured provider order in
+    // that case; automatic routing can use probe health without overriding it.
+    const orderedCandidates = requestedModel
+      ? candidates
+      : [...candidates].sort((a, b) => {
+          const healthRank = (provider) => {
+            if (!provider.health || typeof provider.health !== 'object') return 1;
+            return provider.health.ok === true ? 0 : 2;
+          };
+          const rankDelta = healthRank(a) - healthRank(b);
+          if (rankDelta) return rankDelta;
+          return a.priority - b.priority;
+        });
     const failures = [];
-    const routingCandidates = candidates.map((provider) => {
+    const routingCandidates = orderedCandidates.map((provider) => {
+      const health = provider.health && typeof provider.health === 'object'
+        ? {
+            ok: provider.health.ok === true,
+            checkedAt: typeof provider.health.checkedAt === 'string' ? provider.health.checkedAt : null,
+            latencyMs: Number.isFinite(provider.health.latencyMs) ? provider.health.latencyMs : null,
+            status: Number.isFinite(provider.health.status) ? provider.health.status : null,
+          }
+        : null;
       const model = [...provider.models].sort(
         (a, b) => Number(b.id === assistant.model) - Number(a.id === assistant.model),
       ).find((item) =>
@@ -243,6 +264,7 @@ export class ProviderService {
         providerId: provider.id,
         providerName: provider.name,
         priority: provider.priority,
+        ...(health ? { health } : {}),
         models: provider.models.map((item) => item.id),
         ...(model ? { model: model.id, status: 'considered' } : {
           status: 'ineligible',
@@ -252,7 +274,7 @@ export class ProviderService {
         }),
       };
     });
-    for (const provider of candidates) {
+    for (const provider of orderedCandidates) {
       const candidate = routingCandidates.find((item) => item.providerId === provider.id);
       const models = [...provider.models].sort(
         (a, b) =>
