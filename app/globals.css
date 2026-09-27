@@ -1005,6 +1005,8 @@ h1 {
   color: #608979;
   background: #f2f8f4;
 }
+.page-heading-pills { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.count-pill.needs-review { color: #9b6840; border-color: #f0dfc7; background: #fff8ed; }
 .collection-page [data-slot='tabs-list'] {
   gap: 24px;
   margin-bottom: 16px;
@@ -1054,6 +1056,11 @@ h1 {
   font-size: 11px;
   color: #8e9da5;
 }
+.task-card-proof { display: block; margin-top: 5px; color: #a17b44; font-size: 11px; }
+.task-card-proof.accepted { color: #39856f; }
+.task-card-proof.rejected,
+.task-card-proof.failed,
+.task-card-proof.needs-review { color: #b35c4c; }
 .task-card > svg {
   color: #b0bfc7;
 }
@@ -1764,6 +1771,7 @@ h1 {
 .team-metrics span { display: grid; gap: 3px; }
 .team-metrics strong { color: #27534f; font-size: 23px; font-weight: 650; }
 .team-metrics small { color: #91a29f; font-size: 10px; }
+.team-summary-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .team-chat-panel { display: flex; flex-direction: column; min-height: 0; }
 .team-chat-stream { flex: 1; }
 .team-readonly-note { display: flex; align-items: center; gap: 11px; margin: 14px 22px 22px; padding: 13px 15px; border: 1px solid #dcebe5; border-radius: 15px; background: #f7fbf9; }

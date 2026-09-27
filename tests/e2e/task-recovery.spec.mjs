@@ -280,14 +280,22 @@ test('需要你处理可以直接打开关联执行和交付状态', async ({ pa
   seedAcceptanceJob({ rejected: true });
   await page.goto('/');
   const mobile = (page.viewportSize()?.width || 1024) < 768;
-  if (mobile) {
-    await page.getByRole('button', { name: 'Toggle Sidebar', exact: true }).click();
-    await expect(page.locator('[data-sidebar="sidebar"][data-mobile="true"]')).toBeVisible();
-  }
-  const sidebar = page.locator(
-    mobile ? '[data-sidebar="sidebar"][data-mobile="true"]' : '[data-sidebar="sidebar"]',
-  );
-  await sidebar.getByRole('button', { name: '需要你处理', exact: true }).click();
+  const openNavigation = async (label) => {
+    if (mobile) {
+      await page.getByRole('button', { name: 'Toggle Sidebar', exact: true }).click();
+      await expect(page.locator('[data-sidebar="sidebar"][data-mobile="true"]')).toBeVisible();
+    }
+    const currentSidebar = page.locator(
+      mobile ? '[data-sidebar="sidebar"][data-mobile="true"]' : '[data-sidebar="sidebar"]',
+    );
+    await currentSidebar.getByRole('button', { name: label, exact: true }).click();
+  };
+  await openNavigation('后台任务');
+  await expect(page.getByRole('heading', { name: '让工作持续推进。' })).toBeVisible();
+  await page.getByRole('tab', { name: /待处理/ }).click();
+  const reviewPanel = page.getByRole('tabpanel', { name: '待处理' });
+  await expect(reviewPanel.getByRole('button', { name: /E2E 验收决定可以通过交付或退回复核/ }).first()).toBeVisible();
+  await openNavigation('需要你处理');
   await expect(page.getByRole('heading', { name: '需要你处理' })).toBeVisible();
   await page.getByRole('button', { name: '交付被退回复核', exact: true }).first().click();
   const detail = page.getByRole('dialog', { name: '交付被退回复核' });

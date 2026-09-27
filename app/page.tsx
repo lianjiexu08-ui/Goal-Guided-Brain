@@ -390,6 +390,10 @@ const taskVerification = (task: Task) => {
       ? '待验收'
       : '';
 };
+const taskNeedsOwnerAction = (task: Task) =>
+  ['pending-review', 'awaiting-owner', 'rejected'].includes(
+    task.deliveryStatus || task.verificationStatus || '',
+  );
 const formatTime = (s: string) =>
   new Date(s).toLocaleString('zh-CN', {
     month: '2-digit',
@@ -605,6 +609,7 @@ function Workbench() {
     assistantIcons[assistant.icon as keyof typeof assistantIcons] || Sparkles;
   const tasks = data?.tasks || [];
   const allSessions = (data?.sessions || []).filter((s) => s.role === role);
+  const reviewTasks = tasks.filter(taskNeedsOwnerAction);
   const spaces = data?.spaces || [];
   const confirmedSpaces = spaces.filter(
     (space) => space.status !== 'archived' && space.recruitment?.phase === 'confirmed',
@@ -679,6 +684,7 @@ function Workbench() {
     })),
   ];
   const teamOpenTasks = teamTasks.filter(isActive);
+  const teamReviewTasks = teamTasks.filter(taskNeedsOwnerAction);
   const projectManager = roles.find((item) => item.id === teamSpace?.pmRoleId);
   const recruitment = teamSpace?.recruitment;
   const recruitmentProposal = recruitment?.proposal;
@@ -1592,6 +1598,11 @@ function Workbench() {
           {roles.find((r) => r.id === task.role)?.name} ·{' '}
           {formatTime(task.createdAt)}
         </span>
+        {taskVerification(task) && (
+          <small className={`task-card-proof ${task.deliveryStatus || task.verificationStatus || ''}`}>
+            交付 · {taskVerification(task)}{task.artifactCount ? ` · ${task.artifactCount} 项证据` : ''}
+          </small>
+        )}
       </div>
       <span className={`status ${task.status}`}>
         {statusLabels[task.status]}
@@ -1854,7 +1865,7 @@ function Workbench() {
                   })}
                 </div>
                 {!rosterReady && <div className="team-roster-pending">Team Charter 确认后，候选成员才会创建并出现在这里。</div>}
-                <div className="team-summary"><div className="team-summary-title"><ListChecks size={16} />任务总览</div><div className="team-metrics"><span><strong>{teamOpenTasks.length}</strong><small>进行中</small></span><span><strong>{teamTasks.filter((task) => task.status === 'completed').length}</strong><small>已完成</small></span></div><button className="text-button" onClick={() => setView('tasks')}>查看全部任务 <ArrowRight size={13} /></button></div>
+                <div className="team-summary"><div className="team-summary-title"><ListChecks size={16} />任务总览</div><div className="team-metrics"><span><strong>{teamOpenTasks.length}</strong><small>进行中</small></span><span><strong>{teamReviewTasks.length}</strong><small>待处理</small></span><span><strong>{teamTasks.filter((task) => task.status === 'completed').length}</strong><small>已完成</small></span></div><div className="team-summary-actions"><button className="text-button" onClick={() => { setTaskFilter('all'); setView('tasks'); }}>查看全部任务 <ArrowRight size={13} /></button>{teamReviewTasks.length > 0 && <button className="text-button" onClick={() => { setTaskFilter('review'); setView('tasks'); }}>打开待处理 <ArrowRight size={13} /></button>}</div></div>
               </aside>
             </div>
           </main>
@@ -2651,7 +2662,7 @@ function Workbench() {
                 <h1>让工作持续推进。</h1>
                 <p>{tasks.length} 个任务</p>
               </div>
-              <span className="count-pill">{running.length} 个进行中</span>
+              <div className="page-heading-pills"><span className="count-pill">{running.length} 个进行中</span>{reviewTasks.length > 0 && <span className="count-pill needs-review">{reviewTasks.length} 项待处理</span>}</div>
             </div>
             <Tabs
               value={taskFilter}
@@ -2664,9 +2675,12 @@ function Workbench() {
                 <TabsTrigger value="active">
                   进行中 <span>{running.length}</span>
                 </TabsTrigger>
+                <TabsTrigger value="review">
+                  待处理 <span>{reviewTasks.length}</span>
+                </TabsTrigger>
                 <TabsTrigger value="done">已完成</TabsTrigger>
               </TabsList>
-              {['all', 'active', 'done'].map((filter) => (
+              {['all', 'active', 'review', 'done'].map((filter) => (
                 <TabsContent key={filter} value={filter}>
                   <div className="task-list">
                     {tasks
@@ -2675,7 +2689,9 @@ function Workbench() {
                           filter === 'all' ||
                           (filter === 'active'
                             ? isActive(t)
-                            : t.status === 'completed'),
+                            : filter === 'review'
+                              ? taskNeedsOwnerAction(t)
+                              : t.status === 'completed'),
                       )
                       .map(taskCard)}
                   </div>
@@ -2684,7 +2700,9 @@ function Workbench() {
                       filter === 'all' ||
                       (filter === 'active'
                         ? isActive(t)
-                        : t.status === 'completed'),
+                        : filter === 'review'
+                          ? taskNeedsOwnerAction(t)
+                          : t.status === 'completed'),
                   ) && (
                     <div className="collection-empty">
                       <Workflow size={34} />
