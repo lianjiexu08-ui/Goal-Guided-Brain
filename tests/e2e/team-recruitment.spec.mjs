@@ -528,4 +528,105 @@ test.describe('团队招募核心流程', () => {
     });
   });
 
+  test('desktop/mobile 连续20次切换时团队模型、动态和草稿保持隔离', async ({ page }) => {
+    const teams = seedModelTeams();
+    const requests = [];
+    const messages = new Map();
+    await page.route('**/api/spaces/**', async (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      const parts = url.pathname.split('/').filter(Boolean);
+      const spaceId = parts[2];
+      if (request.method() === 'POST' && parts[3] === 'messages') {
+        const body = request.postDataJSON();
+        const entry = {
+          id: `stress-message-${requests.length + 1}`,
+          spaceId,
+          clientMessageId: body.clientMessageId,
+          kind: 'request',
+          senderType: 'owner',
+          senderId: 'owner',
+          content: body.content,
+          status: 'sent',
+          sessionId: `stress-session-${requests.length + 1}`,
+        };
+        requests.push({ url: request.url(), body });
+        messages.set(spaceId, [...(messages.get(spaceId) || []), entry]);
+        await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify(entry) });
+        return;
+      }
+      if (request.method() === 'GET' && parts.length === 3) {
+        const response = await route.fetch();
+        const payload = await response.json();
+        payload.messages = [...(payload.messages || []), ...(messages.get(spaceId) || [])];
+        await route.fulfill({ response, json: payload });
+        return;
+      }
+      await route.continue();
+    });
+    await page.goto('/');
+    const openTeam = async (team) => {
+      await openMobileSidebar(page);
+      const navigation = sidebarLocator(page).locator('button').filter({ hasText: team.name }).first();
+      await expect(navigation).toBeVisible();
+      await navigation.click({ force: true });
+      await expect(page.getByRole('heading', { name: team.name })).toBeVisible();
+    };
+    const options = {
+      alpha: { key: 'e2e-provider-alpha::e2e-alpha-model', providerId: 'e2e-provider-alpha', model: 'e2e-alpha-model' },
+      beta: { key: 'e2e-provider-beta::e2e-beta-model', providerId: 'e2e-provider-beta', model: 'e2e-beta-model' },
+    };
+    const teamByIndex = [teams.alpha, teams.beta];
+    await openTeam(teams.alpha);
+    await page.locator('textarea[aria-label^="发送给"]').fill('alpha 保留草稿');
+    await openTeam(teams.beta);
+    await page.locator('textarea[aria-label^="发送给"]').fill('beta 保留草稿');
+    await openTeam(teams.alpha);
+    await expect(page.locator('textarea[aria-label^="发送给"]')).toHaveValue('alpha 保留草稿');
+    await openTeam(teams.beta);
+    await expect(page.locator('textarea[aria-label^="发送给"]')).toHaveValue('beta 保留草稿');
+    for (let index = 0; index < 20; index += 1) {
+      const team = teamByIndex[index % 2];
+      const key = team === teams.alpha ? 'alpha' : 'beta';
+      const selected = options[key];
+      await openTeam(team);
+      const selector = page.getByRole('combobox', { name: '选择模型', exact: true });
+      await selector.selectOption(selected.key);
+      await expect(selector).toHaveValue(selected.key);
+      const composer = page.locator('textarea[aria-label^="发送给"]');
+      const draft = `${key} 专属草稿 ${index}`;
+      await composer.fill(draft);
+      await page.getByRole('button', { name: '发送任务', exact: true }).click();
+      await expect.poll(() => requests.length).toBe(index + 1);
+      const sent = requests[index];
+      expect(sent.url).toContain(`/api/spaces/${team.id}/messages`);
+      expect(sent.body).toMatchObject({
+        providerId: selected.providerId,
+        model: selected.model,
+        content: draft,
+      });
+      // Keep a second draft after sending so switching back validates the
+      // localStorage key for this team independently.
+      await composer.fill(`${key} 保留草稿`);
+      await openTeam(teamByIndex[(index + 1) % 2]);
+    }
+    expect(requests).toHaveLength(20);
+    for (const team of teamByIndex) {
+      await openTeam(team);
+      const key = team === teams.alpha ? 'alpha' : 'beta';
+      const detail = await page.evaluate(async (id) => fetch(`/api/spaces/${id}`).then((response) => response.json()), team.id);
+      expect(detail.messages.filter((message) => message.content.startsWith(`${key} 专属草稿`))).toHaveLength(10);
+      expect(detail.messages.filter((message) => message.content.startsWith(`${key === 'alpha' ? 'beta' : 'alpha'} 专属草稿`))).toHaveLength(0);
+    }
+    await openTeam(teams.alpha);
+    await page.locator('textarea[aria-label^="发送给"]').fill('alpha 保留草稿');
+    await openTeam(teams.beta);
+    await page.locator('textarea[aria-label^="发送给"]').fill('beta 保留草稿');
+    await page.reload();
+    await openTeam(teams.alpha);
+    await expect(page.locator('textarea[aria-label^="发送给"]')).toHaveValue('alpha 保留草稿');
+    await openTeam(teams.beta);
+    await expect(page.locator('textarea[aria-label^="发送给"]')).toHaveValue('beta 保留草稿');
+  });
+
 });

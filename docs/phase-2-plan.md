@@ -62,17 +62,18 @@ and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
 The current deterministic suite contains 135 passing tests. The repeatable
-Playwright baseline contains twelve passing desktop/mobile runs covering team
+Playwright baseline contains fourteen passing desktop/mobile runs covering team
 recruitment navigation, draft restoration across views, binary drag-and-drop
-attachments, Team Charter confirmation, team renaming, two-team context
-switching, cross-team model selection and failed-task recovery against the
-real API. Team tasks now default to isolated execution directories, and task
+attachments, Team Charter confirmation, team renaming, team settings editing,
+two-team context switching, cross-team model selection, sustained 20-switch
+isolation and failed-task recovery against the real API. Team tasks now default
+to isolated execution directories, and task
 details expose the selected model, routing candidates and fallback events when
 they exist. A local API fixture also alternates between two teams for 20
 messages and checks task, message, model and route ownership. The confirmation
-fixture exercises the deterministic approval boundary; browser-level sustained
-20-switch isolation, multi-turn model quality, real provider fallback quality
-and cross-platform environment gates remain open.
+fixture exercises the deterministic approval boundary; multi-turn model
+quality, real provider fallback quality and cross-platform environment gates
+remain open.
 
 ## Remaining Compatibility And Release Gates
 
