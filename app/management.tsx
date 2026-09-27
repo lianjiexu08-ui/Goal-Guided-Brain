@@ -1724,21 +1724,29 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
                 {!!routingCandidates.length && (
                   <div className="evidence-list">
                     {routingCandidates.map((candidate, index) => (
-                      <article className="evidence-item" key={candidate.id || index}>
-                        <div className="evidence-item-heading">
-                          <div>
-                            <strong>{txt(candidate, 'providerName') || txt(candidate, 'providerId')}</strong>
-                            <span>{txt(candidate, 'model') || '未选定模型'}</span>
-                          </div>
-                          <Badge value={txt(candidate, 'status')} />
-                        </div>
-                        {(txt(candidate, 'reason') || candidate.priority !== undefined) && (
-                          <div className="evidence-item-meta">
-                            {candidate.priority !== undefined && <span>优先级 {txt(candidate, 'priority')}</span>}
-                            {txt(candidate, 'reason') && <span>{txt(candidate, 'reason')}</span>}
-                          </div>
-                        )}
-                      </article>
+                      (() => {
+                        const health = candidate.health && typeof candidate.health === 'object'
+                          ? (candidate.health as Entity)
+                          : null;
+                        return (
+                          <article className="evidence-item" key={candidate.id || index}>
+                            <div className="evidence-item-heading">
+                              <div>
+                                <strong>{txt(candidate, 'providerName') || txt(candidate, 'providerId')}</strong>
+                                <span>{txt(candidate, 'model') || '未选定模型'}</span>
+                              </div>
+                              <Badge value={txt(candidate, 'status')} />
+                            </div>
+                            {(txt(candidate, 'reason') || candidate.priority !== undefined || health) && (
+                              <div className="evidence-item-meta">
+                                {candidate.priority !== undefined && <span>优先级 {txt(candidate, 'priority')}</span>}
+                                {health && <span>最近探测 · {health.ok === true ? '通过' : '失败'}{txt(health, 'status') ? ` · HTTP ${txt(health, 'status')}` : ''}{txt(health, 'latencyMs') ? ` · ${txt(health, 'latencyMs')} ms` : ''}</span>}
+                                {txt(candidate, 'reason') && <span>{txt(candidate, 'reason')}</span>}
+                              </div>
+                            )}
+                          </article>
+                        );
+                      })()
                     ))}
                   </div>
                 )}

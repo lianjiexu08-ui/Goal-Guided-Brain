@@ -708,6 +708,15 @@ h1 {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.model-switcher .model-health-warning {
+  color: #b36f28;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.model-switcher .model-health-ok {
+  color: #287964;
+}
 .send-button {
   display: grid;
   place-items: center;

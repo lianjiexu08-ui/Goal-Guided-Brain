@@ -92,7 +92,14 @@ function seedModelTeams() {
         credentialId: '',
         enabled: true,
         priority: 1,
-        health: null,
+        health: {
+          ok: true,
+          model: 'e2e-alpha-model',
+          status: 200,
+          checkedAt: new Date().toISOString(),
+          latencyMs: 318,
+          toolTest: false,
+        },
         models: [{
           id: 'e2e-alpha-model',
           name: 'Alpha Model',
@@ -111,7 +118,15 @@ function seedModelTeams() {
         credentialId: '',
         enabled: true,
         priority: 2,
-        health: null,
+        health: {
+          ok: false,
+          model: 'e2e-beta-model',
+          status: 503,
+          checkedAt: new Date().toISOString(),
+          latencyMs: 742,
+          toolTest: false,
+          error: '接口返回 HTTP 503',
+        },
         models: [{
           id: 'e2e-beta-model',
           name: 'Beta Model',
@@ -526,6 +541,20 @@ test.describe('团队招募核心流程', () => {
         },
       },
     });
+  });
+
+  test('模型切换器显示最近探测状态并保留明确选择', async ({ page }) => {
+    const teams = seedModelTeams();
+    await page.goto('/');
+    await openMobileSidebar(page);
+    await sidebarLocator(page).locator('button').filter({ hasText: teams.alpha.name }).first().click({ force: true });
+    await expect(page.getByRole('heading', { name: teams.alpha.name })).toBeVisible();
+    const selector = page.getByRole('combobox', { name: '选择模型', exact: true });
+    await expect(selector.locator(`option[value="e2e-provider-alpha::e2e-alpha-model"]`)).toContainText('最近检查通过');
+    await selector.selectOption('e2e-provider-beta::e2e-beta-model');
+    await expect(selector).toHaveValue('e2e-provider-beta::e2e-beta-model');
+    await expect(selector.locator(`option[value="e2e-provider-beta::e2e-beta-model"]`)).toContainText('最近检查失败');
+    await expect(page.getByText(/最近一次连通性检查失败：接口返回 HTTP 503/)).toBeVisible();
   });
 
   test('desktop/mobile 连续20次切换时团队模型、动态和草稿保持隔离', async ({ page }) => {

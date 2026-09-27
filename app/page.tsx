@@ -280,6 +280,7 @@ type Provider = {
     model?: string | null;
     toolTest?: boolean;
     latencyMs?: number | null;
+    checkedAt?: string | null;
     error?: string | null;
   } | null;
   models: ProviderModel[];
@@ -562,6 +563,9 @@ function Workbench() {
         key: `${provider.id}::${model.id}`,
         providerId: provider.id,
         providerName: provider.name,
+        providerHealth: provider.health && provider.health.model === model.id
+          ? provider.health
+          : null,
         model,
       })),
     );
@@ -1867,12 +1871,24 @@ function Workbench() {
                               <option key={option.key} value={option.key}>
                                 {option.providerName} · {modelDisplayName(option.model)}
                                 {!option.model.tools ? ' · 纯文本' : ''}
+                                {option.providerHealth?.ok === false ? ' · 最近检查失败' : ''}
+                                {option.providerHealth?.ok === true ? ' · 最近检查通过' : ''}
                               </option>
                             ))}
                           </select>
                           <small className="model-id" title={`实际请求模型 ID：${selectedModelOption.model.id}`}>
                             ID: {selectedModelOption.model.id}
                           </small>
+                          {selectedModelOption.providerHealth?.ok === false && (
+                            <small className="model-health-warning">
+                              最近一次连通性检查失败{selectedModelOption.providerHealth.error ? `：${selectedModelOption.providerHealth.error}` : ''}，发送时仍会按当前选择尝试并在可恢复错误时自动切换。
+                            </small>
+                          )}
+                          {selectedModelOption.providerHealth?.ok === true && (
+                            <small className="model-health-ok">
+                              最近一次连通性检查通过 · {selectedModelOption.providerHealth.latencyMs || 0} ms
+                            </small>
+                          )}
                           {!selectedModelOption.model.tools && (
                             <small>纯文本模式</small>
                           )}

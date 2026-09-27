@@ -61,19 +61,26 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 135 passing tests. The repeatable
-Playwright baseline contains fourteen passing desktop/mobile runs covering team
+The current deterministic suite contains 136 passing tests. The repeatable
+Playwright baseline contains sixteen passing desktop/mobile runs covering team
 recruitment navigation, draft restoration across views, binary drag-and-drop
 attachments, Team Charter confirmation, team renaming, team settings editing,
-two-team context switching, cross-team model selection, sustained 20-switch
-isolation and failed-task recovery against the real API. Team tasks now default
-to isolated execution directories, and task
+two-team context switching, cross-team model selection, provider probe status
+feedback, sustained 20-switch isolation and failed-task recovery against the
+real API. Team tasks now default to isolated execution directories, and task
 details expose the selected model, routing candidates and fallback events when
 they exist. A local API fixture also alternates between two teams for 20
 messages and checks task, message, model and route ownership. The confirmation
-fixture exercises the deterministic approval boundary; multi-turn model
-quality, real provider fallback quality and cross-platform environment gates
-remain open.
+fixture exercises the deterministic approval boundary. A live loopback probe on
+2026-09-27 used the unlocked encrypted vault and sent minimal `Reply with OK.`
+requests to each configured provider, with one additional configured model
+checked for the two failures. GPT `gpt-5.6` and DeepSeek `deepseek-flash`
+returned valid text responses; Gemini returned upstream HTTP 405 and Kimi
+returned upstream HTTP 503 across their tested models. These results are
+connectivity evidence only, not a model-quality score; the saved health state
+now informs automatic routing while explicit model choices remain available.
+Multi-turn model quality, real provider fallback quality and cross-platform
+environment gates remain open.
 
 ## Remaining Compatibility And Release Gates
 
