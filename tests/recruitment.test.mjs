@@ -13,7 +13,14 @@ const sandbox = () => {
   fs.mkdirSync(workspace);
   return { dir, workspace, dataDir: path.join(dir, 'data') };
 };
-const tick = () => new Promise(resolve => setTimeout(resolve, 30));
+const waitFor = async (predicate, label) => {
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline) {
+    if (await predicate()) return;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  throw new Error(`Timed out waiting for ${label}`);
+};
 async function createRecruitmentTeam(request, name = '待招募团队') {
   const response = await request('teams', {
     name,
@@ -53,8 +60,7 @@ test('team recruitment keeps one PM session across completed discovery turns', a
     const team = await createRecruitmentTeam(request);
     const first = await request(`teams/${team.id}/messages`, { clientMessageId: 'recruit-1', content: '我想做一个面向小团队的项目协作工具。' }, 'POST');
     assert.equal(first.status, 201);
-    await tick();
-    assert.equal(runs.length, 1);
+    await waitFor(() => runs.length === 1, 'the first recruitment runtime');
     const recruitmentPatch = runs[0].options.capabilityPatch.find(item => item.id === 'workbench-orchestration');
     const recruitmentToken = recruitmentPatch.config.headers.Authorization.replace(/^Bearer\s+/i, '');
     const recruitmentPrincipal = app.platform.control.validateInstanceToken(recruitmentToken);
@@ -81,13 +87,17 @@ test('team recruitment keeps one PM session across completed discovery turns', a
     assert.match(concurrentRecord.error, /正在处理上一条消息/);
     assert.equal(runs.length, 1);
     runs[0].complete();
-    await tick();
+    await waitFor(async () => {
+      const detail = await request(`teams/${team.id}`);
+      return detail.body.tasks.some(
+        task => task.sessionId === sessionId && task.status === 'completed',
+      );
+    }, 'the first recruitment message to complete');
     const retried = await request(`teams/${team.id}/messages`, { clientMessageId: 'recruit-concurrent', content: concurrentRecord.content }, 'POST');
     assert.equal(retried.status, 201);
     assert.equal(retried.body.status, 'sent');
     assert.equal(retried.body.sessionId, sessionId);
-    await tick();
-    assert.equal(runs.length, 2);
+    await waitFor(() => runs.length === 2, 'the retried recruitment runtime');
     assert.match(runs[1].prompt, /网页端、权限控制/);
     assert.match(runs[1].prompt, /小团队的项目协作工具/);
     const detail = await request(`teams/${team.id}`);
@@ -139,7 +149,7 @@ test('project manager proposes a Team Charter and owner confirmation materialize
       tools: ['read_docs'],
     }, 'recruitment-capability');
     await request(`teams/${team.id}/messages`, { clientMessageId: 'recruit-proposal', content: '请根据这个想法给出团队方案。' }, 'POST');
-    await tick();
+    await waitFor(() => runs.length >= 1, 'the charter recruitment runtime');
     const patch = runs[0].options.capabilityPatch.find(item => item.id === 'workbench-orchestration');
     assert.ok(patch);
     const client = new Client({ name: 'recruitment-test', version: '1' });
@@ -244,7 +254,7 @@ test('team confirmation rejects disabled capabilities and unavailable model hint
   try {
     const team = await createRecruitmentTeam(request, '验证招募团队');
     await request(`teams/${team.id}/messages`, { clientMessageId: 'recruit-validation', content: '先准备一个开发团队。' }, 'POST');
-    await tick();
+    await waitFor(() => runs.length >= 1, 'the validation recruitment runtime');
     const patch = runs[0].options.capabilityPatch.find(item => item.id === 'workbench-orchestration');
     const token = patch.config.headers.Authorization.replace(/^Bearer\s+/i, '');
     const principal = app.platform.control.validateInstanceToken(token);
