@@ -260,6 +260,44 @@ function seedConfirmedTeams() {
   }
 }
 
+function seedLongTimelineTeam() {
+  const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
+  try {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const saved = store.saveTeamSpace({
+      name: `长期交付团队 ${suffix}`,
+      goal: '验证团队可以持续追溯更早的动态。',
+      purpose: '验证时间线分页和游标去重。',
+      workspace: process.cwd(),
+      pmRoleId: 'project_manager',
+      memberRoleIds: ['project_manager'],
+      recruitment: {
+        phase: 'confirmed',
+        sessionId: null,
+        turns: 1,
+        brief: '验证时间线分页。',
+        proposal: null,
+        confirmedAt: new Date().toISOString(),
+      },
+    });
+    for (let index = 0; index < 125; index += 1) {
+      store.saveTeamMessage({
+        spaceId: saved.id,
+        teamId: saved.id,
+        clientMessageId: `timeline-page-${suffix}-${index}`,
+        kind: 'reply',
+        senderType: 'agent',
+        senderId: 'project_manager',
+        content: `分页回归消息 ${index}`,
+        status: 'sent',
+      }, `timeline-page-${suffix}-${index}`);
+    }
+    return { id: saved.id, name: saved.name };
+  } finally {
+    store.close();
+  }
+}
+
 function seedDraftRecoveryTeams() {
   const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
   try {
@@ -698,6 +736,20 @@ test.describe('团队招募核心流程', () => {
     await expect(selector).toHaveValue('e2e-provider-beta::e2e-beta-model');
     await expect(selector.locator(`option[value="e2e-provider-beta::e2e-beta-model"]`)).toContainText('最近检查失败');
     await expect(page.getByText(/最近一次连通性检查失败：接口返回 HTTP 503/)).toBeVisible();
+  });
+
+  test('团队时间线可以加载更早动态并保持筛选入口', async ({ page }) => {
+    const team = seedLongTimelineTeam();
+    await page.goto('/');
+    await openMobileSidebar(page);
+    await sidebarLocator(page).locator('button').filter({ hasText: team.name }).first().click({ force: true });
+    await expect(page.getByRole('heading', { name: team.name })).toBeVisible();
+    await clickNavigation(page, '团队动态');
+    const timeline = page.locator('[aria-label="团队统一时间线"]');
+    await expect(timeline.getByRole('button', { name: '更早动态', exact: true })).toBeVisible();
+    await timeline.getByRole('button', { name: '更早动态', exact: true }).click();
+    await expect(timeline.getByText('分页回归消息 0', { exact: true })).toBeVisible();
+    await expect(timeline.getByRole('button', { name: '更早动态', exact: true })).toHaveCount(0);
   });
 
   test('desktop/mobile 连续20次切换时团队模型、动态和草稿保持隔离', async ({ page }) => {

@@ -1732,6 +1732,9 @@ h1 {
 .timeline-filter-button { padding: 4px 8px; border: 1px solid transparent; border-radius: 999px; color: #78918b; background: transparent; font-size: 10px; line-height: 1.2; cursor: pointer; }
 .timeline-filter-button:hover { color: #3a7264; background: #eef8f2; }
 .timeline-filter-button.active { border-color: #b9dccd; color: #2d715f; background: #e8f6ee; font-weight: 650; }
+.timeline-load-more { padding: 4px 8px; border: 1px solid #cfe3d9; border-radius: 999px; color: #4f7c70; background: #f5fbf7; font-size: 10px; line-height: 1.2; cursor: pointer; }
+.timeline-load-more:hover:not(:disabled) { border-color: #9cc9b4; color: #2d715f; background: #e8f6ee; }
+.timeline-load-more:disabled { opacity: .65; cursor: wait; }
 .timeline-filter-empty { padding: 22px 8px 10px; color: #94a6a1; font-size: 11px; text-align: center; }
 .team-timeline-record { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 4px; border-top: 1px solid #edf2f0; text-align: left; background: transparent; }
 .team-timeline-record:hover:not(:disabled) { background: #f1f8f4; }

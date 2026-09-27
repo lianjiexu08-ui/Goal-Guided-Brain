@@ -47,8 +47,8 @@ export function createWorkbench({
     control: platform.control,
     capabilities: platform.capabilities,
   });
-  const publicTeamTimeline = (spaceId) => store
-    .teamTimeline(spaceId)
+  const publicTeamTimeline = (spaceId, options = {}) => store
+    .teamTimeline(spaceId, options.limit, options.before)
     .map((item) => item.type === 'message'
       ? {
           ...item,
@@ -388,6 +388,18 @@ export function createWorkbench({
               timeline: publicTeamTimeline(space.id),
               tasks,
               jobs: store.records.list('jobs').filter((job) => job.spaceId === space.id),
+            });
+          }
+          if (req.method === 'GET' && parts[3] === 'timeline') {
+            const requestedLimit = Math.max(1, Math.min(120, Number(options.query.get('limit')) || 60));
+            const page = publicTeamTimeline(space.id, {
+              limit: requestedLimit + 1,
+              before: options.query.get('before') || null,
+            });
+            const hasMore = page.length > requestedLimit;
+            return send(200, {
+              items: hasMore ? page.slice(1) : page,
+              hasMore,
             });
           }
           if (req.method === 'PUT' && !parts[3]) {

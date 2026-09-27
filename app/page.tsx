@@ -589,6 +589,9 @@ function Workbench() {
   const [showArchived, setShowArchived] = useState(false);
   const [taskFilter, setTaskFilter] = useState('all');
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>('all');
+  const [timelineHistory, setTimelineHistory] = useState<Record<string, TeamTimelineItem[]>>({});
+  const [timelineHasMore, setTimelineHasMore] = useState<Record<string, boolean>>({});
+  const [timelineLoading, setTimelineLoading] = useState(false);
   const [expandedCharters, setExpandedCharters] = useState<Record<string, boolean>>({});
   const endRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -648,7 +651,14 @@ function Workbench() {
   const teamMessages = [...(teamSpace?.messages || [])].sort((a, b) =>
     a.createdAt.localeCompare(b.createdAt),
   );
-  const teamTimeline = teamSpace?.timeline || [];
+  const currentServerTimeline = teamSpace?.timeline || [];
+  const currentTimelineHistory = teamSpace ? timelineHistory[teamSpace.id] || [] : [];
+  const teamTimeline = [...currentTimelineHistory, ...currentServerTimeline].sort((a, b) =>
+    a.at.localeCompare(b.at) || a.id.localeCompare(b.id),
+  );
+  const teamTimelineHasMore = teamSpace
+    ? timelineHasMore[teamSpace.id] ?? currentServerTimeline.length >= 120
+    : false;
   const teamTasks = tasks.filter((task) => task.spaceId === teamSpace?.id);
   const legacyTeamTimeline: TeamTimelineItem[] = [
     ...teamMessages.map((message) => ({
@@ -1476,6 +1486,31 @@ function Workbench() {
     setView('team');
     if (isMobile) setOpenMobile(false);
   }
+  async function loadOlderTeamTimeline() {
+    const space = teamSpace;
+    const earliest = teamTimeline[0];
+    if (!space || !earliest || timelineLoading) return;
+    setTimelineLoading(true);
+    try {
+      const cursor = encodeURIComponent(`${earliest.at}|${earliest.id}`);
+      const page = await api<{ items: TeamTimelineItem[]; hasMore: boolean }>(
+        `spaces/${space.id}/timeline?limit=60&before=${cursor}`,
+      );
+      setTimelineHistory((current) => {
+        const existing = current[space.id] || [];
+        const merged = new Map([...existing, ...(page.items || [])].map((item) => [item.id, item]));
+        return {
+          ...current,
+          [space.id]: [...merged.values()].sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id)),
+        };
+      });
+      setTimelineHasMore((current) => ({ ...current, [space.id]: page.hasMore === true }));
+    } catch (error) {
+      setNotice(`加载更早团队动态失败：${(error as Error).message}`);
+    } finally {
+      setTimelineLoading(false);
+    }
+  }
   function selectTeam(id: string) {
     const next = data?.spaces?.find((space) => space.id === id);
     if (!next) return;
@@ -1878,6 +1913,16 @@ function Workbench() {
                               {option.label}
                             </button>
                           ))}
+                          {teamTimelineHasMore && (
+                            <button
+                              type="button"
+                              className="timeline-load-more"
+                              onClick={() => void loadOlderTeamTimeline()}
+                              disabled={timelineLoading}
+                            >
+                              {timelineLoading ? '加载中…' : '更早动态'}
+                            </button>
+                          )}
                         </div>
                       </div>
                       {visibleTeamTimeline.length > 0 ? visibleTeamTimeline.map(renderTeamTimelineItem) : (

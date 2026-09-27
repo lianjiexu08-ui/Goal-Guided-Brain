@@ -119,6 +119,50 @@ test('team space routes owner messages to the project manager and persists repli
   }
 });
 
+test('team timeline exposes an older page without duplicating the latest window', async () => {
+  const fixture = sandbox();
+  const app = createWorkbench({ ...fixture, requireCredential: false });
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  const request = async (route, body, method = 'GET') => {
+    const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  try {
+    const team = (await request('teams')).body[0];
+    for (let index = 0; index < 125; index += 1) {
+      app.store.saveTeamMessage({
+        spaceId: team.id,
+        teamId: team.id,
+        senderType: 'owner',
+        senderId: 'owner',
+        kind: 'request',
+        content: `分页历史消息 ${index}`,
+      }, `timeline-page-${index}`);
+    }
+    const detail = await request(`teams/${team.id}`);
+    assert.equal(detail.status, 200);
+    assert.equal(detail.body.timeline.length, 120);
+    const latestIds = new Set(detail.body.timeline.map((item) => item.id));
+    const cursor = encodeURIComponent(`${detail.body.timeline[0].at}|${detail.body.timeline[0].id}`);
+    const older = await request(`teams/${team.id}/timeline?limit=60&before=${cursor}`);
+    assert.equal(older.status, 200);
+    assert.equal(older.body.items.length, 5);
+    assert.equal(older.body.hasMore, false);
+    assert.ok(older.body.items.every((item) => !latestIds.has(item.id)));
+    assert.deepEqual(
+      older.body.items.map((item) => item.content),
+      ['分页历史消息 0', '分页历史消息 1', '分页历史消息 2', '分页历史消息 3', '分页历史消息 4'],
+    );
+  } finally {
+    await app.close();
+    fs.rmSync(fixture.dir, { recursive: true, force: true });
+  }
+});
+
 test('team sessions cannot be reused across teams', async () => {
   const fixture = sandbox();
   const runs = [];

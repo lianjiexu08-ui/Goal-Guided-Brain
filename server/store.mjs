@@ -548,7 +548,7 @@ export class Store {
       acceptance: effectiveAcceptance,
     };
   }
-  teamTimeline(spaceId, limit = 120) {
+  teamTimeline(spaceId, limit = 120, before = null) {
     if (!this.teamSpace(spaceId)) return [];
     const tasks = this.tasks().filter((task) => {
       const meta = this.records.get('task-meta', task.id) || {};
@@ -636,9 +636,15 @@ export class Store {
         currentRequirementVersion: Number(acceptance.requirementVersion || 1),
       });
     }
+    const cursor = typeof before === 'string' && before.trim()
+      ? before.split('|')
+      : [];
+    const beforeAt = cursor[0] || null;
+    const beforeId = cursor.slice(1).join('|') || null;
     return items
       .filter((item) => typeof item.at === 'string' && item.at)
       .sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id))
+      .filter((item) => !beforeAt || item.at < beforeAt || (item.at === beforeAt && Boolean(beforeId && item.id < beforeId)))
       .slice(-Math.max(1, Math.min(200, Number(limit) || 120)));
   }
   draftKey(spaceId, roleId) {
