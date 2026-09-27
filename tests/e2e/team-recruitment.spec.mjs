@@ -547,12 +547,14 @@ test.describe('团队招募核心流程', () => {
     const developmentComposer = page.locator('textarea[aria-label^="发送给"]');
     await developmentComposer.fill('研发团队专属草稿');
     await clickNavigation(page, '团队动态');
+    await expect(page.getByText('统一时间线', { exact: true })).toBeVisible();
     await expect(page.getByText(development.message, { exact: true })).toBeVisible();
 
     await openTeam(operations);
     const operationsComposer = page.locator('textarea[aria-label^="发送给"]');
     await expect(operationsComposer).toHaveValue('');
     await clickNavigation(page, '团队动态');
+    await expect(page.getByText('统一时间线', { exact: true })).toBeVisible();
     await expect(page.getByText(operations.message, { exact: true })).toBeVisible();
     await expect(page.getByText(development.message, { exact: true })).toHaveCount(0);
 

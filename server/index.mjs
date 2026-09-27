@@ -47,6 +47,14 @@ export function createWorkbench({
     control: platform.control,
     capabilities: platform.capabilities,
   });
+  const publicTeamTimeline = (spaceId) => store
+    .teamTimeline(spaceId)
+    .map((item) => item.type === 'message'
+      ? {
+          ...item,
+          attachments: platform.attachments.list(item.attachmentIds),
+        }
+      : item);
   const getState = () => ({
     roles: store.roles(),
     skillCatalog: SKILLS.map(({ id, name }) => ({ id, name })),
@@ -138,6 +146,7 @@ export function createWorkbench({
         attachmentIds: Array.isArray(message.attachmentIds) ? message.attachmentIds : [],
         attachments: platform.attachments.list(message.attachmentIds),
       })),
+      timeline: publicTeamTimeline(space.id),
     })),
     config: {
       ...store.config,
@@ -389,6 +398,7 @@ export function createWorkbench({
                 attachmentIds: Array.isArray(message.attachmentIds) ? message.attachmentIds : [],
                 attachments: platform.attachments.list(message.attachmentIds),
               })),
+              timeline: publicTeamTimeline(space.id),
               tasks,
               jobs: store.records.list('jobs').filter((job) => job.spaceId === space.id),
             });

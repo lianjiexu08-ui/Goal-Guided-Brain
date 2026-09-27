@@ -481,6 +481,86 @@ export class Store {
       .list('space-messages')
       .filter((message) => message.spaceId === spaceId);
   }
+  teamTimeline(spaceId, limit = 120) {
+    if (!this.teamSpace(spaceId)) return [];
+    const tasks = this.tasks().filter((task) => {
+      const meta = this.records.get('task-meta', task.id) || {};
+      const job = meta.jobId ? this.records.get('jobs', meta.jobId) : null;
+      return (meta.spaceId || job?.spaceId || null) === spaceId;
+    });
+    const taskIds = new Set(tasks.map((task) => task.id));
+    const taskById = new Map(tasks.map((task) => [task.id, task]));
+    const items = [];
+    for (const message of this.teamMessages(spaceId)) {
+      items.push({
+        id: `message:${message.id}`,
+        type: 'message',
+        at: message.createdAt,
+        messageId: message.id,
+        clientMessageId: message.clientMessageId || null,
+        senderType: message.senderType,
+        senderId: message.senderId,
+        fromTeamId: message.fromTeamId || null,
+        toTeamId: message.toTeamId || null,
+        relatedMessageId: message.relatedMessageId || null,
+        kind: message.kind,
+        taskId: message.taskId || null,
+        content: message.content,
+        status: message.status,
+        error: message.error || null,
+        attachmentIds: Array.isArray(message.attachmentIds) ? message.attachmentIds : [],
+      });
+    }
+    for (const task of tasks) {
+      const meta = this.records.get('task-meta', task.id) || {};
+      const artifacts = this.records.list('artifacts').filter((artifact) => artifact.taskId === task.id);
+      const verification = artifacts.find((artifact) => artifact.kind === 'verification');
+      items.push({
+        id: `task:${task.id}`,
+        type: 'task',
+        at: task.updatedAt || task.createdAt,
+        taskId: task.id,
+        role: task.role,
+        title: task.title,
+        status: task.status,
+        result: String(task.result || '').slice(0, 360),
+        error: String(task.error || '').slice(0, 360),
+        workspaceMode: meta.workspaceMode || null,
+        artifactCount: artifacts.length,
+        verificationStatus: verification
+          ? verification.status || (verification.verified === true ? 'verified' : 'pending-review')
+          : null,
+      });
+    }
+    for (const event of this.records.list('task-events')) {
+      if (!taskIds.has(event.taskId)) continue;
+      items.push({
+        id: `event:${event.id}`,
+        type: 'task-event',
+        at: event.at || event.updatedAt || event.createdAt || taskById.get(event.taskId)?.updatedAt || taskById.get(event.taskId)?.createdAt,
+        taskId: event.taskId,
+        eventType: event.type || 'event',
+        data: event.data || null,
+      });
+    }
+    for (const artifact of this.records.list('artifacts')) {
+      if (!taskIds.has(artifact.taskId)) continue;
+      items.push({
+        id: `artifact:${artifact.id}`,
+        type: artifact.kind === 'verification' ? 'verification' : 'artifact',
+        at: artifact.finishedAt || artifact.updatedAt || artifact.createdAt || taskById.get(artifact.taskId)?.updatedAt || taskById.get(artifact.taskId)?.createdAt,
+        taskId: artifact.taskId,
+        kind: artifact.kind || 'artifact',
+        name: artifact.name || '未命名产物',
+        status: artifact.status || null,
+        verified: artifact.verified === true,
+      });
+    }
+    return items
+      .filter((item) => typeof item.at === 'string' && item.at)
+      .sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id))
+      .slice(-Math.max(1, Math.min(200, Number(limit) || 120)));
+  }
   draftKey(spaceId, roleId) {
     const scope = spaceId ? String(spaceId).trim() : 'standalone';
     const role = String(roleId || '').trim();

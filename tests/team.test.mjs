@@ -91,6 +91,14 @@ test('team space routes owner messages to the project manager and persists repli
     assert.equal(taskSummary.workspaceMode, 'isolated');
     assert.equal(taskSummary.artifactCount, 1);
     assert.equal(taskSummary.verificationStatus, 'verified');
+    assert.ok(Array.isArray(detail.body.timeline));
+    assert.deepEqual(
+      detail.body.timeline.map((item) => item.at),
+      [...detail.body.timeline].map((item) => item.at).sort((a, b) => a.localeCompare(b)),
+    );
+    assert.ok(detail.body.timeline.some((item) => item.type === 'message' && item.messageId));
+    assert.ok(detail.body.timeline.some((item) => item.type === 'task' && item.taskId === completedTask.id));
+    assert.ok(detail.body.timeline.some((item) => item.type === 'verification' && item.taskId === completedTask.id));
   } finally {
     await app.close();
     fs.rmSync(fixture.dir, { recursive: true, force: true });

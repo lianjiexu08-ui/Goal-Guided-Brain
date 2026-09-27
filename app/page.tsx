@@ -188,6 +188,35 @@ type TeamMessage = {
   attachmentIds?: string[];
   attachments?: Attachment[];
 };
+type TeamTimelineItem = {
+  id: string;
+  type: 'message' | 'task' | 'task-event' | 'artifact' | 'verification';
+  at: string;
+  messageId?: string;
+  clientMessageId?: string | null;
+  senderType?: TeamMessage['senderType'];
+  senderId?: string;
+  fromTeamId?: string | null;
+  toTeamId?: string | null;
+  relatedMessageId?: string | null;
+  kind?: string;
+  taskId?: string | null;
+  content?: string;
+  status?: string | null;
+  error?: string | null;
+  attachmentIds?: string[];
+  attachments?: Attachment[];
+  role?: string;
+  title?: string;
+  result?: string;
+  workspaceMode?: string | null;
+  artifactCount?: number;
+  verificationStatus?: string | null;
+  eventType?: string;
+  data?: unknown;
+  name?: string;
+  verified?: boolean;
+};
 type TeamRecruitmentMember = {
   memberId?: string;
   agentId?: string;
@@ -247,6 +276,7 @@ type TeamSpace = {
   }>;
   recruitment?: TeamRecruitment;
   messages: TeamMessage[];
+  timeline?: TeamTimelineItem[];
 };
 type TeamForm = {
   name: string;
@@ -589,7 +619,43 @@ function Workbench() {
   const teamMessages = [...(teamSpace?.messages || [])].sort((a, b) =>
     a.createdAt.localeCompare(b.createdAt),
   );
+  const teamTimeline = teamSpace?.timeline || [];
   const teamTasks = tasks.filter((task) => task.spaceId === teamSpace?.id);
+  const legacyTeamTimeline: TeamTimelineItem[] = [
+    ...teamMessages.map((message) => ({
+      id: `message:${message.id}`,
+      type: 'message' as const,
+      at: message.createdAt,
+      messageId: message.id,
+      clientMessageId: message.clientMessageId || null,
+      senderType: message.senderType,
+      senderId: message.senderId,
+      fromTeamId: message.fromTeamId || null,
+      toTeamId: message.toTeamId || null,
+      relatedMessageId: message.relatedMessageId || null,
+      kind: message.kind,
+      taskId: message.taskId || null,
+      content: message.content,
+      status: message.status,
+      error: message.error || null,
+      attachmentIds: message.attachmentIds || [],
+      attachments: message.attachments || [],
+    })),
+    ...teamTasks.slice(0, 8).map((task) => ({
+      id: `task:${task.id}`,
+      type: 'task' as const,
+      at: task.createdAt,
+      taskId: task.id,
+      role: task.role,
+      title: task.title,
+      status: task.status,
+      result: task.result || '',
+      error: task.error || '',
+      workspaceMode: task.workspaceMode || null,
+      artifactCount: task.artifactCount || 0,
+      verificationStatus: task.verificationStatus || null,
+    })),
+  ];
   const teamOpenTasks = teamTasks.filter(isActive);
   const projectManager = roles.find((item) => item.id === teamSpace?.pmRoleId);
   const recruitment = teamSpace?.recruitment;
@@ -1370,6 +1436,112 @@ function Workbench() {
   function editRole() {
     setEditingAssistant(assistant);
   }
+  const renderTeamTimelineItem = (item: TeamTimelineItem) => {
+    const relatedTask = item.taskId
+      ? tasks.find((task) => task.id === item.taskId)
+      : null;
+    if (item.type === 'message') {
+      const outgoingCollaboration =
+        item.kind === 'handoff' && item.fromTeamId === teamSpace?.id;
+      const targetTeamName = data?.spaces?.find(
+        (space) => space.id === item.toTeamId,
+      )?.name;
+      const author = item.senderType === 'owner'
+        ? '你'
+        : item.senderType === 'team'
+          ? outgoingCollaboration
+            ? `本团队 → ${targetTeamName || '协作团队'}`
+            : data?.spaces?.find((space) => space.id === item.fromTeamId)?.name || '协作团队'
+          : roles.find((roleItem) => roleItem.id === item.senderId)?.name || '项目经理';
+      return (
+        <div className={`team-message ${item.senderType === 'owner' ? 'from-user' : 'from-pm'} ${item.status === 'blocked' ? 'blocked' : ''}`} key={item.id}>
+          <span className="message-label">
+            {author} <small>{formatTime(item.at)}</small>
+            {item.status === 'blocked' && <em className="team-message-state">未发送</em>}
+          </span>
+          <p>{item.content}</p>
+          {!!item.attachments?.length && (
+            <div className="attachment-list" aria-label="消息附件">
+              {item.attachments.map((attachment) => (
+                <span className="attachment-chip" key={attachment.id}>
+                  <Paperclip size={13} />
+                  {attachment.name}
+                  <small>{formatBytes(attachment.size)}</small>
+                </span>
+              ))}
+            </div>
+          )}
+          {item.kind === 'handoff' && relatedTask && (
+            <small className="team-message-collab-status">
+              跨团队任务 · {statusLabels[relatedTask.status] || relatedTask.status}
+            </small>
+          )}
+          {item.status === 'blocked' && (
+            <div className="team-message-blocked">
+              <span>{item.error || '项目经理正在处理上一条消息。'}</span>
+              {item.senderType === 'owner' && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void retryTeamMessage({
+                    id: item.messageId || item.id,
+                    spaceId: teamSpace?.id || '',
+                    clientMessageId: item.clientMessageId || null,
+                    kind: item.kind || 'request',
+                    senderType: 'owner',
+                    senderId: item.senderId || 'owner',
+                    content: item.content || '',
+                    status: item.status || 'blocked',
+                    error: item.error || null,
+                    createdAt: item.at,
+                    taskId: item.taskId || null,
+                    attachmentIds: item.attachmentIds || [],
+                    attachments: item.attachments || [],
+                  })}
+                >
+                  重新发送
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+    if (item.type === 'task') {
+      const task = relatedTask;
+      return (
+        <button className="team-task-row" key={item.id} onClick={() => task && showTask(task)} disabled={!task}>
+          <span className={`status-icon ${item.status || 'queued'}`}>
+            {item.status === 'running' ? <LoaderCircle size={13} className="spin" /> : item.status === 'completed' ? <Check size={13} /> : <Circle size={13} />}
+          </span>
+          <span>
+            <strong>{roles.find((roleItem) => roleItem.id === item.role)?.name || item.role}</strong>
+            <small>{item.title} · {formatTime(item.at)}</small>
+            {item.workspaceMode && <small className="team-task-mode">工作目录 · {item.workspaceMode === 'shared' ? '共享' : item.workspaceMode === 'worktree' ? 'Git worktree' : item.workspaceMode === 'snapshot' ? '快照' : '隔离'}</small>}
+            {(item.result || item.error) && <small className="team-task-result">{(item.result || item.error || '').replace(/\s+/g, ' ').slice(0, 180)}</small>}
+            {item.verificationStatus && <small className={`team-task-proof ${item.verificationStatus}`}>验收 · {task ? taskVerification(task) : item.verificationStatus}{item.artifactCount ? ` · ${item.artifactCount} 项证据` : ''}</small>}
+          </span>
+          <em className={`status ${item.status || 'queued'}`}>{statusLabels[item.status || 'queued'] || item.status}</em>
+        </button>
+      );
+    }
+    const title = item.type === 'task-event'
+      ? `执行事件 · ${item.eventType || 'event'}`
+      : item.type === 'verification'
+        ? `验收证据 · ${item.name || '未命名验证'}`
+        : `产物 · ${item.name || '未命名产物'}`;
+    const detail = item.type === 'task-event'
+      ? relatedTask?.title || '后台任务状态已更新'
+      : item.status
+        ? `状态：${statusLabels[item.status] || item.status}`
+        : '已记录到交付证据';
+    return (
+      <button className={`team-timeline-record ${item.type}`} key={item.id} onClick={() => relatedTask && showTask(relatedTask)} disabled={!relatedTask}>
+        <span className="team-timeline-record-icon">{item.type === 'task-event' ? <Workflow size={14} /> : item.type === 'verification' ? <Check size={14} /> : <FileText size={14} />}</span>
+        <span><strong>{title}</strong><small>{detail} · {formatTime(item.at)}</small></span>
+      </button>
+    );
+  };
   const taskCard = (task: Task) => (
     <button className="task-card" key={task.id} onClick={() => showTask(task)}>
       <div className={`status-icon ${task.status}`}>
@@ -1602,84 +1774,18 @@ function Workbench() {
                     <p>把目标、问题或一段模糊需求直接丢进来。我会先和你澄清，再给出团队规模、职责和推进方式。</p>
                     <div className="pm-flow"><span>多轮澄清</span><ArrowRight size={13} /><span>Team Charter</span><ArrowRight size={13} /><span>确认创建</span></div>
                   </div>
-                  {teamMessages.map((message) => {
-                    const relatedTask = message.taskId
-                      ? tasks.find((task) => task.id === message.taskId)
-                      : null;
-                    const outgoingCollaboration =
-                      message.kind === 'handoff' &&
-                      message.fromTeamId === teamSpace?.id;
-                    const targetTeamName = data?.spaces?.find(
-                      (item) => item.id === message.toTeamId,
-                    )?.name;
-                    const author = message.senderType === 'owner'
-                      ? '你'
-                      : message.senderType === 'team'
-                        ? outgoingCollaboration
-                          ? `本团队 → ${targetTeamName || '协作团队'}`
-                          : data?.spaces?.find((item) => item.id === message.fromTeamId)?.name || '协作团队'
-                        : roles.find((item) => item.id === message.senderId)?.name || '项目经理';
-                    return (
-                    <div className={`team-message ${message.senderType === 'owner' ? 'from-user' : 'from-pm'} ${message.status === 'blocked' ? 'blocked' : ''}`} key={message.id}>
-                      <span className="message-label">
-                        {author} <small>{formatTime(message.createdAt)}</small>
-                        {message.status === 'blocked' && <em className="team-message-state">未发送</em>}
-                      </span>
-                      <p>{message.content}</p>
-                      {!!message.attachments?.length && (
-                        <div className="attachment-list" aria-label="消息附件">
-                          {message.attachments.map((attachment) => (
-                            <span className="attachment-chip" key={attachment.id}>
-                              <Paperclip size={13} />
-                              {attachment.name}
-                              <small>{formatBytes(attachment.size)}</small>
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      {message.kind === 'handoff' && relatedTask && (
-                        <small className="team-message-collab-status">
-                          跨团队任务 · {statusLabels[relatedTask.status] || relatedTask.status}
-                        </small>
-                      )}
-                      {message.status === 'blocked' && (
-                        <div className="team-message-blocked">
-                          <span>{message.error || '项目经理正在处理上一条消息。'}</span>
-                          {message.senderType === 'owner' && (
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => void retryTeamMessage(message)}
-                            >
-                              重新发送
-                            </button>
-                          )}
-                        </div>
-                      )}
+                  {teamTimeline.length > 0 ? (
+                    <div className="team-timeline" aria-label="团队统一时间线">
+                      <div className="team-activity-title"><History size={14} /> 统一时间线</div>
+                      {teamTimeline.map(renderTeamTimelineItem)}
                     </div>
-                    );
-                  })}
-                  {teamTasks.length > 0 && (
-                    <div className="team-activity">
-                      <div className="team-activity-title"><Workflow size={14} /> 团队执行动态</div>
-                      {teamTasks.slice(0, 8).map((task) => (
-                        <button className="team-task-row" key={task.id} onClick={() => showTask(task)}>
-                          <span className={`status-icon ${task.status}`}>
-                            {task.status === 'running' ? <LoaderCircle size={13} className="spin" /> : task.status === 'completed' ? <Check size={13} /> : <Circle size={13} />}
-                          </span>
-                          <span>
-                            <strong>{roles.find((item) => item.id === task.role)?.name || task.role}</strong>
-                            <small>{task.title}</small>
-                            <small className="team-task-mode">工作目录 · {task.workspaceMode === 'shared' ? '共享' : task.workspaceMode === 'worktree' ? 'Git worktree' : task.workspaceMode === 'snapshot' ? '快照' : '隔离'}</small>
-                            {(task.result || task.error) && <small className="team-task-result">{(task.result || task.error).replace(/\s+/g, ' ').slice(0, 180)}</small>}
-                            {taskVerification(task) && <small className={`team-task-proof ${task.verificationStatus || 'pending-review'}`}>验收 · {taskVerification(task)}{task.artifactCount ? ` · ${task.artifactCount} 项证据` : ''}</small>}
-                          </span>
-                          <em className={`status ${task.status}`}>{statusLabels[task.status]}</em>
-                        </button>
-                      ))}
+                  ) : (
+                    <div className="team-timeline team-timeline-fallback" aria-label="团队动态">
+                      <div className="team-activity-title"><Workflow size={14} /> 团队动态</div>
+                      {legacyTeamTimeline.map(renderTeamTimelineItem)}
                     </div>
                   )}
-                  {!teamMessages.length && <div className="team-empty"><MessageSquare size={18} /> 还没有团队动态。完成一次任务后，进展会显示在这里。</div>}
+                  {!teamTimeline.length && !legacyTeamTimeline.length && <div className="team-empty"><MessageSquare size={18} /> 还没有团队动态。完成一次任务后，进展会显示在这里。</div>}
                 </div>
                 <div className="team-readonly-note">
                   <div className="team-readonly-icon"><MessageSquare size={16} /></div>

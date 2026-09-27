@@ -1717,6 +1717,18 @@ h1 {
 .team-empty { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 150px; color: #9aaba7; font-size: 12px; }
 .team-activity { margin: 22px 0 4px; padding: 14px; border: 1px solid #e4ece9; border-radius: 15px; background: #fbfdfc; }
 .team-activity-title { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; color: #68847e; font-size: 11px; font-weight: 650; }
+.team-timeline { margin: 22px 0 4px; padding: 14px; border: 1px solid #e4ece9; border-radius: 15px; background: #fbfdfc; }
+.team-timeline-fallback { margin-top: 22px; }
+.team-timeline-record { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 4px; border-top: 1px solid #edf2f0; text-align: left; background: transparent; }
+.team-timeline-record:hover:not(:disabled) { background: #f1f8f4; }
+.team-timeline-record:disabled { opacity: .75; cursor: default; }
+.team-timeline-record-icon { display: grid; flex: 0 0 auto; width: 25px; height: 25px; place-items: center; border-radius: 7px; color: #6a8b83; background: #eaf4ef; }
+.team-timeline-record.verification .team-timeline-record-icon { color: #9a763f; background: #fff4df; }
+.team-timeline-record.artifact .team-timeline-record-icon { color: #6f79a3; background: #eef0fb; }
+.team-timeline-record > span:nth-child(2) { min-width: 0; flex: 1; }
+.team-timeline-record strong, .team-timeline-record small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.team-timeline-record strong { color: #45625f; font-size: 11px; font-weight: 650; }
+.team-timeline-record small { margin-top: 2px; color: #8c9d99; font-size: 10px; }
 .team-task-row { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 4px; border-top: 1px solid #edf2f0; text-align: left; background: transparent; }
 .team-task-row:hover { background: #f1f8f4; }
 .team-task-row .status-icon { width: 25px; height: 25px; border-radius: 7px; }
