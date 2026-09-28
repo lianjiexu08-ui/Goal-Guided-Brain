@@ -1970,6 +1970,9 @@ h1 {
 .team-readonly-note .text-button { flex: 0 0 auto; white-space: nowrap; }
 .team-member-picker { margin: 0; padding: 14px; border: 1px solid #dfe7eb; border-radius: 9px; }
 .team-member-picker legend { padding: 0 5px; color: #607681; font-size: 13px; }
+.team-collaborator-picker:disabled { opacity: .62; }
+.team-picker-help { margin: -2px 0 10px; color: #8a9ba2; font-size: 10px; line-height: 1.5; }
+.team-picker-empty { display: block; padding: 7px 2px; color: #8a9ba2; font-size: 10px; line-height: 1.5; }
 .team-member-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
 .team-member-option { flex-direction: row !important; align-items: flex-start; gap: 9px !important; padding: 8px; border-radius: 7px; background: #f8fbfc; }
 .team-member-option:hover { background: #f0f8f5; }

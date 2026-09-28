@@ -328,6 +328,7 @@ type TeamForm = {
   goal: string;
   pmRoleId: string;
   memberRoleIds: string[];
+  allowedTeamIds: string[];
   workspace: string;
   workspaceMode: 'isolated' | 'worktree' | 'snapshot' | 'shared';
   teamType: 'custom' | 'development' | 'operations' | 'product' | 'project';
@@ -1105,6 +1106,7 @@ function Workbench() {
     goal: '',
     pmRoleId: 'project_manager',
     memberRoleIds: ['project_manager'],
+    allowedTeamIds: [],
     workspace: '',
     workspaceMode: 'isolated',
     teamType: 'custom',
@@ -2040,6 +2042,9 @@ function Workbench() {
         : pm
           ? [pm.id]
           : [],
+      allowedTeamIds: Array.isArray(teamSpace.collaboration?.allowedTeamIds)
+        ? [...teamSpace.collaboration.allowedTeamIds]
+        : [],
       workspace: teamSpace.workspace || data?.config.workspace || '',
       workspaceMode: teamSpace.workspaceMode || 'isolated',
       teamType: (teamSpace.teamType as TeamForm['teamType']) || 'custom',
@@ -4224,6 +4229,7 @@ function Workbench() {
                         ? teamSpace.collaboration
                         : { autoHandoff: true, sharedBoard: true, allowedTeamIds: [] }),
                       enabled: teamForm.allowCollaboration,
+                      allowedTeamIds: teamForm.allowedTeamIds,
                     },
                   };
                   const saved = await api<TeamSpace>(
@@ -4323,6 +4329,33 @@ function Workbench() {
                 />
                 <span><strong>允许与其他团队协作</strong><small>项目经理可以向其他团队请求支持，并共享任务状态。</small></span>
               </label>
+              <fieldset className="team-member-picker team-collaborator-picker" disabled={!teamForm.allowCollaboration}>
+                <legend>可协作团队</legend>
+                <p className="team-picker-help">不勾选表示允许当前所有已确认团队；勾选后只允许向选中的团队发起协作。</p>
+                <div className="team-member-options">
+                  {(data?.spaces || [])
+                    .filter((candidate) => candidate.id !== editingTeamId && candidate.status === 'active' && candidate.recruitment?.phase === 'confirmed')
+                    .map((candidate) => (
+                      <label key={candidate.id} className="team-member-option">
+                        <input
+                          type="checkbox"
+                          aria-label={`允许协作：${candidate.name}`}
+                          checked={teamForm.allowedTeamIds.includes(candidate.id)}
+                          onChange={(event) => setTeamForm((form) => ({
+                            ...form,
+                            allowedTeamIds: event.target.checked
+                              ? [...new Set([...form.allowedTeamIds, candidate.id])]
+                              : form.allowedTeamIds.filter((id) => id !== candidate.id),
+                          }))}
+                        />
+                        <span><strong>{candidate.name}</strong><small>{candidate.purpose || candidate.goal}</small></span>
+                      </label>
+                    ))}
+                  {!(data?.spaces || []).some((candidate) => candidate.id !== editingTeamId && candidate.status === 'active' && candidate.recruitment?.phase === 'confirmed') && (
+                    <small className="team-picker-empty">还没有其他已确认团队。创建并确认团队后，可以在这里限制协作范围。</small>
+                  )}
+                </div>
+              </fieldset>
               <fieldset className="team-member-picker">
                 <legend>协作成员</legend>
                 <div className="team-member-options">

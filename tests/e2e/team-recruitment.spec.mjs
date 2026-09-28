@@ -750,6 +750,41 @@ test.describe('团队招募核心流程', () => {
     await expect(composer).toHaveValue('');
   });
 
+  test('团队设置可以把跨团队协作限制到明确的目标团队', async ({ page }) => {
+    const teams = seedConfirmedTeams();
+    const source = teams.development;
+    const target = teams.operations;
+    await page.goto('/');
+    await openMobileSidebar(page);
+    const navigation = sidebarLocator(page).locator('button').filter({ hasText: source.name }).first();
+    await expect(navigation).toBeVisible();
+    await navigation.click({ force: true });
+    await expect(page.getByRole('heading', { name: source.name })).toBeVisible();
+
+    await page.getByRole('button', { name: '团队设置', exact: true }).click();
+    const settings = page.getByRole('dialog');
+    await expect(settings).toBeVisible();
+    const targetOption = settings.getByRole('checkbox', { name: `允许协作：${target.name}`, exact: true });
+    await expect(targetOption).toBeVisible();
+    await targetOption.check();
+    await settings.getByRole('button', { name: '保存团队设置', exact: true }).click();
+    await expect(page.getByText(`团队“${source.name}”设置已保存`)).toBeVisible();
+
+    const saved = await page.evaluate(async ({ id }) => {
+      const state = await fetch('/api/state').then((response) => response.json());
+      return state.spaces.find((space) => space.id === id);
+    }, { id: source.id });
+    expect(saved.collaboration).toMatchObject({
+      enabled: true,
+      allowedTeamIds: [target.id],
+    });
+    const collaborators = await page.evaluate(async ({ id }) => {
+      const response = await fetch(`/api/teams/${id}/collaborators`);
+      return response.json();
+    }, { id: source.id });
+    expect(collaborators.map((item) => item.id)).toEqual([target.id]);
+  });
+
   test('两个已创建团队切换时保留各自动态和草稿上下文', async ({ page }) => {
     const { development, operations } = seedConfirmedTeams();
     await page.goto('/');
