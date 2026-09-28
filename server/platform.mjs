@@ -938,6 +938,38 @@ export function createPlatform({
     timer.unref();
   }
   function manage() {
+    const roles = store.roles();
+    const roleNames = new Map(roles.map((role) => [role.id, role.name]));
+    const capabilityBindings = new Map();
+    const ensureBinding = (id) => {
+      if (!capabilityBindings.has(id)) capabilityBindings.set(id, { assistants: [], teams: [] });
+      return capabilityBindings.get(id);
+    };
+    for (const role of roles) {
+      for (const capabilityId of Array.isArray(role.capabilityIds) ? role.capabilityIds : []) {
+        const binding = ensureBinding(capabilityId);
+        if (!binding.assistants.some((item) => item.id === role.id))
+          binding.assistants.push({ id: role.id, name: role.name });
+      }
+    }
+    for (const team of store.teamSpaces()) {
+      for (const [roleId, settings] of Object.entries(team.memberSettings || {})) {
+        for (const capabilityId of Array.isArray(settings?.capabilityIds) ? settings.capabilityIds : []) {
+          const binding = ensureBinding(capabilityId);
+          const entry = { id: `${team.id}:${roleId}`, teamId: team.id, teamName: team.name, roleId, roleName: roleNames.get(roleId) || roleId };
+          if (!binding.teams.some((item) => item.id === entry.id)) binding.teams.push(entry);
+        }
+      }
+    }
+    const capabilitiesWithBindings = capabilities.list().map((capability) => {
+      const binding = capabilityBindings.get(capability.id) || { assistants: [], teams: [] };
+      return {
+        ...capability,
+        bindings: binding,
+        boundAssistantCount: binding.assistants.length,
+        boundTeamCount: binding.teams.length,
+      };
+    });
     const attention = records.list('attention').slice(0, 100).map((item) => {
       const task = item.taskId ? store.task(item.taskId) : null;
       const meta = task ? records.get('task-meta', task.id) || {} : {};
@@ -976,10 +1008,10 @@ export function createPlatform({
       attention,
       providers: providers.list(),
       nodes: records.list('nodes').map(publicNode),
-      capabilities: capabilities.list(),
+      capabilities: capabilitiesWithBindings,
       vault: vault.status(),
       credentials: vault.list(),
-      roles: store.roles(),
+      roles,
       backups: backups(),
       localNode: {
         id: 'local',

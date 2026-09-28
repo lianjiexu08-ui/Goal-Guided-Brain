@@ -297,6 +297,30 @@ function seedModelMetrics() {
   }
 }
 
+function seedCapabilityBinding() {
+  const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
+  try {
+    const capabilityId = 'e2e-bound-capability';
+    store.records.save('capabilities', {
+      id: capabilityId,
+      name: 'E2E 证据整理能力',
+      kind: 'skill',
+      version: '1.0.0',
+      source: 'e2e',
+      enabled: true,
+      compatibility: 'partial',
+      diagnostics: ['需要先检查执行节点。'],
+      description: '验证能力绑定范围展示。',
+      tools: [],
+    }, capabilityId);
+    const role = store.role('product');
+    store.saveRole({ ...role, capabilityIds: [capabilityId] }, role.id);
+    return { capabilityId, roleId: role.id };
+  } finally {
+    store.close();
+  }
+}
+
 function seedConfirmedTeams() {
   const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
   try {
@@ -971,6 +995,23 @@ test.describe('团队招募核心流程', () => {
     await expect(panel.getByTestId('model-metrics-row').filter({ hasText: 'e2e-alpha-model' })).toHaveCount(1);
     await expect(panel.getByTestId('model-metrics-row').filter({ hasText: 'e2e-alpha-model' })).toBeVisible();
     await expect(panel.getByTestId('model-metrics-row').filter({ hasText: 'e2e-beta-model' })).toHaveCount(0);
+  });
+
+  test('助手编辑器显示能力兼容状态和现有绑定范围', async ({ page }) => {
+    const fixture = seedCapabilityBinding();
+    await page.goto('/');
+    await clickNavigation(page, '助手与模型');
+    await expect(page.getByRole('heading', { name: '我的助手' })).toBeVisible();
+    await page.getByRole('button', { name: '编辑产品助手', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('tab', { name: '工具与 Skills', exact: true }).click();
+    const capability = dialog.getByRole('checkbox', { name: '绑定能力：E2E 证据整理能力', exact: true });
+    await expect(capability).toBeChecked();
+    await expect(dialog.getByText(/部分兼容/)).toBeVisible();
+    await expect(dialog.getByText(/1 个助手/)).toBeVisible();
+    await expect(dialog.getByText('需要先检查执行节点。')).toBeVisible();
+    expect(fixture.capabilityId).toBeTruthy();
   });
 
   test('团队时间线可以加载更早动态并保持筛选入口', async ({ page }) => {

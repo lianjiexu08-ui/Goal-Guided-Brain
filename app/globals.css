@@ -1663,6 +1663,37 @@ h1 {
   gap: 10px;
   cursor: pointer;
 }
+.assistant-editor .tool-options .assistant-capability-option {
+  align-items: flex-start;
+}
+.assistant-capability-option input {
+  margin-top: 2px;
+}
+.assistant-capability-label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.assistant-capability-label strong,
+.assistant-capability-label small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.assistant-capability-label strong {
+  color: #47616a;
+  font-size: 12px;
+}
+.assistant-capability-label small {
+  color: #8a9ba2;
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.assistant-capability-label .assistant-capability-warning {
+  color: #a7744f;
+  white-space: normal;
+}
 .assistant-editor .tool-options input {
   width: 17px;
   height: 17px;

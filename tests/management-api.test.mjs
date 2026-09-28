@@ -164,6 +164,47 @@ test('custom skill details preserve frontmatter and keep previous pinned version
   assert.equal(current.enabled, false);
 });
 
+test('management capability records expose assistant and team bindings', async (t) => {
+  const { app, request, workspace } = await fixture(t);
+  const created = await request('capabilities', {
+    kind: 'skill',
+    name: 'Bound workflow',
+    content: '---\nname: bound-workflow\ndescription: Bound workflow\n---\n\nRun the bound workflow.',
+    enabled: true,
+  });
+  assert.equal(created.status, 200);
+  const capabilityId = created.body.id;
+  const updatedRole = await request('roles/product', {
+    capabilityIds: [capabilityId],
+  }, 'PUT');
+  assert.equal(updatedRole.status, 200);
+  const team = await request('spaces', {
+    name: '绑定检查团队',
+    goal: '验证能力绑定来源可见。',
+    purpose: '验证能力绑定来源可见。',
+    workspace,
+    pmRoleId: 'project_manager',
+    memberRoleIds: ['project_manager'],
+    memberSettings: {
+      project_manager: { capabilityIds: [capabilityId] },
+    },
+    recruitment: { phase: 'confirmed', proposal: null },
+  });
+  assert.equal(team.status, 201);
+  const managed = await request('manage');
+  const capability = managed.body.capabilities.find((item) => item.id === capabilityId);
+  assert.deepEqual(capability.bindings.assistants, [{ id: 'product', name: app.store.role('product').name }]);
+  assert.deepEqual(capability.bindings.teams, [{
+    id: `${team.body.id}:project_manager`,
+    teamId: team.body.id,
+    teamName: '绑定检查团队',
+    roleId: 'project_manager',
+    roleName: app.store.role('project_manager').name,
+  }]);
+  assert.equal(capability.boundAssistantCount, 1);
+  assert.equal(capability.boundTeamCount, 1);
+});
+
 test('knowledge changes and deletion retain versioned source snapshots', async (t) => {
   const { request, dataDir } = await fixture(t);
   const original = {

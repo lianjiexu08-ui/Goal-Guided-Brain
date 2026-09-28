@@ -1638,6 +1638,8 @@ function description(collection: string, item: Entity, data: ManagementState) {
         txt(item, 'source'),
         txt(item, 'version'),
         txt(item, 'transport'),
+        typeof item.boundAssistantCount === 'number' ? `${item.boundAssistantCount} 个助手` : '',
+        typeof item.boundTeamCount === 'number' ? `${item.boundTeamCount} 个团队成员` : '',
       ]
         .filter(Boolean)
         .join(' · ');
@@ -4190,6 +4192,35 @@ export function Management({
                   detail.item.diagnostics.map((value, index) => (
                     <p key={index}>{String(value)}</p>
                   ))}
+                {detail.collection === 'capabilities' &&
+                  Boolean(detail.item.bindings) &&
+                  typeof detail.item.bindings === 'object' && (
+                    <section className="capability-bindings" aria-label="能力绑定范围">
+                      <h3>绑定范围</h3>
+                      {entityList((detail.item.bindings as Entity).assistants).map((binding) => (
+                        <div className="manage-row" key={`assistant:${binding.id}`}>
+                          <div className="manage-main">
+                            <strong>助手 · {title(binding)}</strong>
+                            <small>{txt(binding, 'id')}</small>
+                          </div>
+                          <Badge value="enabled" />
+                        </div>
+                      ))}
+                      {entityList((detail.item.bindings as Entity).teams).map((binding) => (
+                        <div className="manage-row" key={`team:${binding.id}`}>
+                          <div className="manage-main">
+                            <strong>团队 · {txt(binding, 'teamName')}</strong>
+                            <small>{txt(binding, 'roleName')} · {txt(binding, 'roleId')}</small>
+                          </div>
+                          <Badge value="enabled" />
+                        </div>
+                      ))}
+                      {!entityList((detail.item.bindings as Entity).assistants).length &&
+                        !entityList((detail.item.bindings as Entity).teams).length && (
+                          <p>还没有助手或团队成员绑定此能力。</p>
+                        )}
+                    </section>
+                  )}
                 {['schedules', 'monitors'].includes(detail.collection) && (
                   <>
                     <h3>运行历史</h3>

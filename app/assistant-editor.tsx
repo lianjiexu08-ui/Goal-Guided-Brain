@@ -576,30 +576,45 @@ export function AssistantEditor({
                 </label>
                 <fieldset className="tool-options">
                   <legend>已安装能力与 MCP</legend>
-                  {(bindings?.capabilities || []).map((capability) => (
-                    <label key={capability.id}>
-                      <input
-                        type="checkbox"
-                        checked={(form.capabilityIds || []).includes(
-                          capability.id,
-                        )}
-                        onChange={(event) =>
-                          field(
-                            'capabilityIds',
-                            event.target.checked
-                              ? [...(form.capabilityIds || []), capability.id]
-                              : (form.capabilityIds || []).filter(
-                                  (id) => id !== capability.id,
-                                ),
-                          )
-                        }
-                      />
-                      <span>
-                        {capability.name || capability.id}
-                        {capability.enabled === false ? '（已停用）' : ''}
-                      </span>
-                    </label>
-                  ))}
+                  {(bindings?.capabilities || []).map((capability) => {
+                    const checked = (form.capabilityIds || []).includes(capability.id);
+                    const compatibility = typeof capability.compatibility === 'string' ? capability.compatibility : '';
+                    const diagnostics = Array.isArray(capability.diagnostics)
+                      ? capability.diagnostics.filter((item): item is string => typeof item === 'string')
+                      : [];
+                    const unavailable = capability.enabled === false || compatibility === 'unsupported';
+                    const usage = [
+                      typeof capability.boundAssistantCount === 'number' ? `${capability.boundAssistantCount} 个助手` : '',
+                      typeof capability.boundTeamCount === 'number' ? `${capability.boundTeamCount} 个团队成员` : '',
+                    ].filter(Boolean).join(' · ');
+                    return (
+                      <label key={capability.id} className="assistant-capability-option">
+                        <input
+                          type="checkbox"
+                          aria-label={`绑定能力：${capability.name || capability.id}`}
+                          checked={checked}
+                          disabled={unavailable && !checked}
+                          onChange={(event) =>
+                            field(
+                              'capabilityIds',
+                              event.target.checked
+                                ? [...(form.capabilityIds || []), capability.id]
+                                : (form.capabilityIds || []).filter(
+                                    (id) => id !== capability.id,
+                                  ),
+                            )
+                          }
+                        />
+                        <span className="assistant-capability-label">
+                          <strong>{capability.name || capability.id}</strong>
+                          <small>
+                            {[capability.kind, compatibility === 'partial' ? '部分兼容' : compatibility === 'compatible' ? '可直接使用' : compatibility === 'unsupported' ? '不支持' : '', capability.enabled === false ? '已停用' : '', usage].filter(Boolean).join(' · ')}
+                          </small>
+                          {diagnostics[0] && <small className="assistant-capability-warning">{diagnostics[0]}</small>}
+                        </span>
+                      </label>
+                    );
+                  })}
                   {bindings && !bindings.capabilities.length && (
                     <span className="manage-muted">暂无已安装能力</span>
                   )}
