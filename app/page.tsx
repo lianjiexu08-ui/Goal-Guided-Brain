@@ -118,6 +118,27 @@ type DraftCache = {
   attachments?: Record<string, Attachment[]>;
   updatedAt?: Record<string, string>;
   revisions?: Record<string, number>;
+  bases?: Record<string, DraftBase>;
+};
+type DraftBase = {
+  content: string;
+  attachmentIds: string[];
+};
+type DraftTextChange = {
+  start: number;
+  end: number;
+  replacement: string;
+};
+type DraftConflict = {
+  key: string;
+  spaceId: string | null;
+  roleId: string;
+  localContent: string;
+  remoteContent: string;
+  localAttachments: Attachment[];
+  remoteAttachments: Attachment[];
+  remoteRevision?: number;
+  remoteUpdatedAt?: string;
 };
 type ServerDraft = {
   spaceId: string | null;
@@ -493,10 +514,65 @@ function readDraftCache(): DraftCache {
     const revisions = value?.revisions && typeof value.revisions === 'object' && !Array.isArray(value.revisions)
       ? Object.fromEntries(Object.entries(value.revisions).filter(([, revision]) => Number.isSafeInteger(revision)))
       : {};
-    return { drafts, attachments, updatedAt, revisions };
+    const bases = value?.bases && typeof value.bases === 'object' && !Array.isArray(value.bases)
+      ? Object.fromEntries(Object.entries(value.bases).filter(([, base]) =>
+          !!base && typeof base === 'object' && !Array.isArray(base) &&
+          typeof (base as DraftBase).content === 'string' &&
+          Array.isArray((base as DraftBase).attachmentIds) &&
+          (base as DraftBase).attachmentIds.every((id) => typeof id === 'string'),
+        ).map(([key, base]) => [key, {
+          content: (base as DraftBase).content,
+          attachmentIds: (base as DraftBase).attachmentIds.slice(0, MAX_ATTACHMENTS),
+        }]))
+      : {};
+    return { drafts, attachments, updatedAt, revisions, bases };
   } catch {
     return {};
   }
+}
+
+function draftChangeFromBase(base: string, next: string): DraftTextChange | null {
+  if (base === next) return null;
+  let start = 0;
+  while (start < base.length && start < next.length && base[start] === next[start]) start += 1;
+  let baseEnd = base.length;
+  let nextEnd = next.length;
+  while (baseEnd > start && nextEnd > start && base[baseEnd - 1] === next[nextEnd - 1]) {
+    baseEnd -= 1;
+    nextEnd -= 1;
+  }
+  return { start, end: baseEnd, replacement: next.slice(start, nextEnd) };
+}
+
+function draftRangesOverlap(a: DraftTextChange, b: DraftTextChange) {
+  if (a.start === a.end && b.start === b.end) return a.start === b.start;
+  if (a.start === a.end) return a.start >= b.start && a.start <= b.end;
+  if (b.start === b.end) return b.start >= a.start && b.start <= a.end;
+  return a.start < b.end && b.start < a.end;
+}
+
+function mergeDraftText(base: string, local: string, remote: string) {
+  if (local === remote) return { content: local, conflict: false };
+  if (local === base) return { content: remote, conflict: false };
+  if (remote === base) return { content: local, conflict: false };
+  const localChange = draftChangeFromBase(base, local);
+  const remoteChange = draftChangeFromBase(base, remote);
+  if (!localChange || !remoteChange) return { content: localChange ? local : remote, conflict: false };
+  if (localChange.start === remoteChange.start && localChange.end === remoteChange.end &&
+      localChange.replacement === remoteChange.replacement) {
+    return { content: local, conflict: false };
+  }
+  if (draftRangesOverlap(localChange, remoteChange)) return { content: local, conflict: true };
+  const changes = [localChange, remoteChange].sort((a, b) => b.start - a.start);
+  let content = base;
+  for (const change of changes) content = content.slice(0, change.start) + change.replacement + content.slice(change.end);
+  return { content, conflict: false };
+}
+
+function mergeDraftAttachments(local: Attachment[], remote: Attachment[]) {
+  const merged = new Map<string, Attachment>();
+  for (const attachment of [...local, ...remote]) merged.set(attachment.id, attachment);
+  return [...merged.values()].slice(0, MAX_ATTACHMENTS);
 }
 function readRouteCache(): RouteCache {
   if (typeof window === 'undefined') return {};
@@ -1175,12 +1251,14 @@ function Workbench() {
   const draftDirtyRef = useRef<Set<string>>(new Set());
   const draftRevisionRef = useRef<Record<string, number>>({});
   const draftUpdatedAtRef = useRef<Record<string, string>>({});
+  const draftBaseRef = useRef<Record<string, DraftBase>>({});
   const draftVersionRef = useRef<Record<string, number>>({});
   const draftTimersRef = useRef<Record<string, number>>({});
   const activeDraftKeyRef = useRef('');
   const draftsRef = useRef<Record<string, string>>({});
   const draftAttachmentsRef = useRef<Record<string, Attachment[]>>({});
   const [draftSyncState, setDraftSyncState] = useState<'idle' | 'saving' | 'saved' | 'offline' | 'conflict'>('idle');
+  const [draftConflict, setDraftConflict] = useState<DraftConflict | null>(null);
   const [recruitmentSyncState, setRecruitmentSyncState] = useState<'idle' | 'syncing' | 'synced' | 'offline'>('idle');
   const recruitmentCursorRef = useRef<Record<string, string>>({});
   const roles = data?.roles || [];
@@ -1467,27 +1545,116 @@ function Workbench() {
       });
       if (saved.revision !== undefined) draftRevisionRef.current[key] = saved.revision;
       else delete draftRevisionRef.current[key];
+      draftBaseRef.current[key] = {
+        content: saved.content,
+        attachmentIds: saved.attachmentIds || attachmentIds,
+      };
       if (draftVersionRef.current[key] !== version || !draftDirtyRef.current.has(key)) return;
       draftDirtyRef.current.delete(key);
       draftUpdatedAtRef.current[key] = saved.updatedAt || draftUpdatedAtRef.current[key] || new Date().toISOString();
+      setDraftConflict((current) => current?.key === key ? null : current);
       setDraftSyncStateFor(key, 'saved');
     } catch (rawError) {
       const error = rawError as Error & { status?: number };
       if (error.status === 409) {
         try {
           const latest = await loadServerDraft(spaceId, roleId);
+          const remoteAttachments = Array.isArray(latest.attachments)
+            ? latest.attachments.filter((item): item is Attachment =>
+                !!item && typeof item.id === 'string' && typeof item.name === 'string' &&
+                typeof item.mime === 'string' && Number.isFinite(item.size),
+              ).slice(0, MAX_ATTACHMENTS)
+            : [];
           if (latest.revision !== undefined) draftRevisionRef.current[key] = latest.revision;
-          // Keep the local text visible and dirty, but do not silently use the
-          // newer revision to overwrite another window's draft. The next
-          // deliberate edit retries against the revision we just observed.
-          setDraftSyncStateFor(key, 'conflict');
+          const localContent = draftsRef.current[key] || content;
+          const localAttachments = draftAttachmentsRef.current[key] || [];
+          const remoteContent = typeof latest.content === 'string' ? latest.content : '';
+          const remoteBase: DraftBase = {
+            content: remoteContent,
+            attachmentIds: latest.attachmentIds || remoteAttachments.map((item) => item.id),
+          };
+          const base = draftBaseRef.current[key];
+          const mergedText = base
+            ? mergeDraftText(base.content, localContent, remoteContent)
+            : { content: localContent, conflict: true };
+          if (!mergedText.conflict) {
+            const mergedAttachments = mergeDraftAttachments(localAttachments, remoteAttachments);
+            draftBaseRef.current[key] = remoteBase;
+            draftsRef.current[key] = mergedText.content;
+            draftAttachmentsRef.current[key] = mergedAttachments;
+            setDrafts((current) => ({ ...current, [key]: mergedText.content }));
+            setDraftAttachments((current) => ({ ...current, [key]: mergedAttachments }));
+            markDraftDirty(key);
+            queueDraftSync(
+              key,
+              spaceId,
+              roleId,
+              mergedText.content,
+              mergedAttachments.map((item) => item.id),
+              80,
+            );
+          } else {
+            setDraftConflict({
+              key,
+              spaceId,
+              roleId,
+              localContent,
+              remoteContent,
+              localAttachments,
+              remoteAttachments,
+              remoteRevision: latest.revision,
+              remoteUpdatedAt: latest.updatedAt,
+            });
+            setDraftSyncStateFor(key, 'conflict');
+          }
           return;
         } catch {
-          // The local draft remains dirty and will be retried after a later edit.
+          // Keep the local draft dirty when the remote version cannot be read.
         }
       }
       setDraftSyncStateFor(key, 'offline');
     }
+  }
+
+  function resolveDraftConflict(choice: 'local' | 'remote') {
+    const conflict = draftConflict;
+    if (!conflict) return;
+    const { key } = conflict;
+    clearDraftTimer(key);
+    if (choice === 'remote') {
+      draftsRef.current[key] = conflict.remoteContent;
+      draftAttachmentsRef.current[key] = conflict.remoteAttachments;
+      setDrafts((current) => ({ ...current, [key]: conflict.remoteContent }));
+      setDraftAttachments((current) => ({ ...current, [key]: conflict.remoteAttachments }));
+      draftBaseRef.current[key] = {
+        content: conflict.remoteContent,
+        attachmentIds: conflict.remoteAttachments.map((item) => item.id),
+      };
+      draftUpdatedAtRef.current[key] = conflict.remoteUpdatedAt || new Date().toISOString();
+      draftDirtyRef.current.delete(key);
+      setDraftConflict(null);
+      setDraftSyncStateFor(key, 'saved');
+      return;
+    }
+    const localContent = draftsRef.current[key] ?? conflict.localContent;
+    const localAttachments = draftAttachmentsRef.current[key] ?? conflict.localAttachments;
+    draftBaseRef.current[key] = {
+      content: conflict.remoteContent,
+      attachmentIds: conflict.remoteAttachments.map((item) => item.id),
+    };
+    if (conflict.remoteRevision !== undefined) draftRevisionRef.current[key] = conflict.remoteRevision;
+    draftsRef.current[key] = localContent;
+    draftAttachmentsRef.current[key] = localAttachments;
+    setDraftConflict(null);
+    markDraftDirty(key);
+    queueDraftSync(
+      key,
+      conflict.spaceId,
+      conflict.roleId,
+      localContent,
+      localAttachments.map((item) => item.id),
+      80,
+    );
   }
   async function clearServerDraft(
     key: string,
@@ -1509,6 +1676,7 @@ function Workbench() {
         if (!latest.revision) {
           delete draftRevisionRef.current[key];
           delete draftUpdatedAtRef.current[key];
+          delete draftBaseRef.current[key];
           draftDirtyRef.current.delete(key);
           setDraftSyncStateFor(key, 'saved');
           return;
@@ -1518,6 +1686,7 @@ function Workbench() {
         if (!sameContent) {
           delete draftRevisionRef.current[key];
           delete draftUpdatedAtRef.current[key];
+          delete draftBaseRef.current[key];
           draftDirtyRef.current.delete(key);
           setDraftSyncStateFor(key, 'saved');
           return;
@@ -1533,7 +1702,9 @@ function Workbench() {
       });
       delete draftRevisionRef.current[key];
       delete draftUpdatedAtRef.current[key];
+      delete draftBaseRef.current[key];
       draftDirtyRef.current.delete(key);
+      setDraftConflict((current) => current?.key === key ? null : current);
       setDraftSyncStateFor(key, 'saved');
     } catch (rawError) {
       const error = rawError as Error & { status?: number };
@@ -1543,6 +1714,7 @@ function Workbench() {
       draftDirtyRef.current.delete(key);
       delete draftRevisionRef.current[key];
       delete draftUpdatedAtRef.current[key];
+      delete draftBaseRef.current[key];
       setDraftSyncStateFor(key, error.status === 409 ? 'saved' : 'offline');
     }
   }
@@ -1648,6 +1820,7 @@ function Workbench() {
       setDraftAttachments((current) => ({ ...cached.attachments, ...current }));
       draftUpdatedAtRef.current = cached.updatedAt || {};
       draftRevisionRef.current = cached.revisions || {};
+      draftBaseRef.current = cached.bases || {};
       draftCacheHydrated.current = true;
       setDraftCacheReady(true);
     }, 0);
@@ -1663,6 +1836,7 @@ function Workbench() {
           attachments: draftAttachments,
           updatedAt: draftUpdatedAtRef.current,
           revisions: draftRevisionRef.current,
+          bases: draftBaseRef.current,
         } satisfies DraftCache),
       );
     } catch {
@@ -1671,6 +1845,12 @@ function Workbench() {
   }, [drafts, draftAttachments, draftSyncState]);
   useEffect(() => {
     activeDraftKeyRef.current = draftKey;
+  }, [draftKey]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDraftConflict((current) => current && current.key !== draftKey ? null : current);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [draftKey]);
   useEffect(() => {
     draftsRef.current = drafts;
@@ -1690,13 +1870,19 @@ function Workbench() {
               !!item && typeof item.id === 'string' && typeof item.name === 'string' &&
               typeof item.mime === 'string' && Number.isFinite(item.size),
             ).slice(0, MAX_ATTACHMENTS)
-          : [];
+            : [];
+        const remoteContent = typeof remote.content === 'string' ? remote.content : '';
+        const remoteBase: DraftBase = {
+          content: remoteContent,
+          attachmentIds: remote.attachmentIds || remoteAttachments.map((item) => item.id),
+        };
+        const hadBase = !!draftBaseRef.current[key];
+        if (!hadBase) draftBaseRef.current[key] = remoteBase;
         if (remote.revision !== undefined) draftRevisionRef.current[key] = remote.revision;
         else delete draftRevisionRef.current[key];
         if (draftDirtyRef.current.has(key)) return;
         const localContent = draftsRef.current[key] || '';
         const localAttachments = draftAttachmentsRef.current[key] || [];
-        const remoteContent = typeof remote.content === 'string' ? remote.content : '';
         const remoteHasContent = !!remoteContent.trim() || remoteAttachments.length > 0;
         const localHasContent = !!localContent.trim() || localAttachments.length > 0;
         const localUpdatedAt = draftUpdatedAtRef.current[key];
@@ -1709,9 +1895,27 @@ function Workbench() {
           !remoteHasContent ||
           (!!localUpdatedAt && !!remoteUpdatedAt && localUpdatedAt > remoteUpdatedAt)
         );
-        if (remoteIsNewer) {
+        const attachmentsDiffer = JSON.stringify(localAttachments.map((item) => item.id)) !==
+          JSON.stringify(remoteBase.attachmentIds);
+        const unknownBaseConflict = !hadBase && localHasContent && remoteHasContent &&
+          (localContent !== remoteContent || attachmentsDiffer);
+        if (unknownBaseConflict) {
+          setDraftConflict({
+            key,
+            spaceId,
+            roleId: role,
+            localContent,
+            remoteContent,
+            localAttachments,
+            remoteAttachments,
+            remoteRevision: remote.revision,
+            remoteUpdatedAt,
+          });
+          setDraftSyncStateFor(key, 'conflict');
+        } else if (remoteIsNewer) {
           setDrafts((current) => ({ ...current, [key]: remoteContent }));
           setDraftAttachments((current) => ({ ...current, [key]: remoteAttachments }));
+          draftBaseRef.current[key] = remoteBase;
           draftUpdatedAtRef.current[key] = remoteUpdatedAt || new Date().toISOString();
           setDraftSyncStateFor(key, 'saved');
         } else if (localIsNewer) {
@@ -1724,6 +1928,7 @@ function Workbench() {
             localAttachments.map((item) => item.id),
           );
         } else if (!localHasContent && !remoteHasContent) {
+          draftBaseRef.current[key] = remoteBase;
           setDraftSyncStateFor(key, 'idle');
         }
       } catch {
@@ -1900,6 +2105,12 @@ function Workbench() {
         ...current,
         [attachmentDraftKey]: [...(current[attachmentDraftKey] || []), ...uploaded].slice(0, MAX_ATTACHMENTS),
       }));
+      setDraftConflict((current) => current?.key === attachmentDraftKey
+        ? {
+            ...current,
+            localAttachments: [...current.localAttachments, ...uploaded].slice(0, MAX_ATTACHMENTS),
+          }
+        : current);
       markDraftDirty(attachmentDraftKey);
       setNotice(`已添加 ${uploaded.length} 个附件，发送时会携带文件内容。`);
     });
@@ -3073,6 +3284,9 @@ function Workbench() {
                     onChange={(e) => {
                       markDraftDirty(draftKey);
                       setDrafts((d) => ({ ...d, [draftKey]: e.target.value }));
+                      setDraftConflict((current) => current?.key === draftKey
+                        ? { ...current, localContent: e.target.value }
+                        : current);
                     }}
                     onPaste={(event) => {
                       const files = clipboardFiles(event);
@@ -3107,6 +3321,12 @@ function Workbench() {
                                 ...current,
                                 [attachmentDraftKey]: current[attachmentDraftKey].filter((item) => item.id !== attachment.id),
                               }));
+                              setDraftConflict((current) => current?.key === attachmentDraftKey
+                                ? {
+                                    ...current,
+                                    localAttachments: current.localAttachments.filter((item) => item.id !== attachment.id),
+                                  }
+                                : current);
                             }}
                           >
                             <Paperclip size={13} />
@@ -3190,13 +3410,32 @@ function Workbench() {
                     </div>
                   </div>
                 </div>
+                {draftConflict?.key === draftKey && (
+                  <div className="draft-conflict-panel" role="alert">
+                    <div className="draft-conflict-copy">
+                      <span>检测到其他设备同时修改了这份草稿，请选择要保留的版本。</span>
+                      <div className="draft-conflict-versions">
+                        <span><strong>本机版本：</strong>{draftConflict.localContent || '（空）'}</span>
+                        <span><strong>远端版本：</strong>{draftConflict.remoteContent || '（空）'}</span>
+                      </div>
+                    </div>
+                    <div className="draft-conflict-actions">
+                      <button type="button" onClick={() => resolveDraftConflict('local')}>
+                        保留本机并覆盖远端
+                      </button>
+                      <button type="button" onClick={() => resolveDraftConflict('remote')}>
+                        使用其他设备版本
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <p className="composer-hint">
                   Enter 发送 · Shift + Enter 换行<span>{isRecruitmentView ? '先澄清需求，再确认团队方案' : '任务在后台执行'}</span>
                   <span className={`draft-sync-status ${draftSyncState}`}>
                     {draftSyncState === 'saving'
                       ? '草稿同步中…'
                       : draftSyncState === 'conflict'
-                        ? '草稿有新版本，继续编辑后再同步'
+                        ? '草稿存在并行修改，请选择版本'
                       : draftSyncState === 'offline'
                         ? '服务暂不可用，已保存在本机'
                         : draftSyncState === 'saved'

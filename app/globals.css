@@ -2928,6 +2928,54 @@ h1 {
   color: #b36f28;
 }
 
+.draft-conflict-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 18px 8px;
+  padding: 10px 12px;
+  border: 1px solid #edc68f;
+  border-radius: 10px;
+  color: #8a5c21;
+  background: #fff8e9;
+  font-size: 12px;
+}
+
+.draft-conflict-copy {
+  min-width: 0;
+}
+
+.draft-conflict-versions {
+  display: grid;
+  gap: 3px;
+  margin-top: 5px;
+  color: #795d35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.draft-conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: flex-end;
+}
+
+.draft-conflict-actions button {
+  border: 1px solid #d7aa67;
+  border-radius: 7px;
+  padding: 5px 9px;
+  color: #784c16;
+  background: #fffdf8;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.draft-conflict-actions button:hover {
+  background: #fff1d4;
+}
+
 .recruitment-sync-status {
   display: block;
   margin-top: 5px;
@@ -3065,5 +3113,14 @@ h1 {
   }
   .context-panel {
     border-radius: 18px;
+  }
+  .draft-conflict-panel {
+    align-items: stretch;
+    flex-direction: column;
+    margin-left: 10px;
+    margin-right: 10px;
+  }
+  .draft-conflict-actions {
+    justify-content: flex-start;
   }
 }

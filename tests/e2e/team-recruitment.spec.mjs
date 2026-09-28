@@ -578,6 +578,55 @@ function seedDraftRecoveryTeams() {
   }
 }
 
+// Two independent server drafts let the browser test exercise both sides of
+// the optimistic-concurrency contract. The first changes different lines on
+// each device (which should merge automatically); the second changes the same
+// text (which must remain an explicit user decision).
+function seedDraftMergeTeams() {
+  const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
+  try {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const create = (slug, base) => {
+      const goal = `验证多设备草稿 ${slug} ${suffix}。`;
+      const saved = store.saveTeamSpace({
+        name: `多设备草稿团队 ${slug} ${suffix}`,
+        goal,
+        purpose: goal,
+        workspace: process.cwd(),
+        pmRoleId: 'project_manager',
+        memberRoleIds: ['project_manager'],
+        recruitment: {
+          phase: 'confirmed',
+          sessionId: null,
+          turns: 1,
+          brief: goal,
+          proposal: null,
+          confirmedAt: new Date().toISOString(),
+        },
+      });
+      const draft = store.saveTeamDraft({
+        spaceId: saved.id,
+        roleId: 'project_manager',
+        content: base,
+        attachmentIds: [],
+      });
+      return {
+        slug,
+        name: saved.name,
+        id: saved.id,
+        base,
+        revision: draft.revision,
+      };
+    };
+    return {
+      merge: create('自动合并', '初始标题\n初始正文'),
+      conflict: create('冲突决策', '共同草稿'),
+    };
+  } finally {
+    store.close();
+  }
+}
+
 function sidebarLocator(page) {
   const mobile = (page.viewportSize()?.width || 1024) < 768;
   return page.locator(mobile
@@ -706,6 +755,88 @@ test.describe('团队招募核心流程', () => {
     await expect(page.locator('textarea[aria-label^="发送给"]')).toHaveValue(alphaDraft);
     const betaRemote = await readDraft(teams.beta);
     expect(betaRemote.body.content).toBe(betaDraft);
+  });
+
+  test('多设备草稿会自动合并非重叠修改，并为重叠冲突提供版本选择', async ({ page }) => {
+    const teams = seedDraftMergeTeams();
+    const openTeam = async (team) => {
+      await openMobileSidebar(page);
+      const navigation = sidebarLocator(page).locator('button').filter({ hasText: team.name }).first();
+      await expect(navigation).toBeVisible();
+      await navigation.click({ force: true });
+      await expect(page.getByRole('heading', { name: team.name })).toBeVisible();
+    };
+    const readDraft = (team) => page.evaluate(async ({ spaceId }) => {
+      const response = await fetch(`/api/drafts?spaceId=${encodeURIComponent(spaceId)}&role=project_manager`);
+      return { status: response.status, body: await response.json() };
+    }, { spaceId: team.id });
+    const writeRemoteDraft = (team, revision, content) => page.evaluate(async ({ spaceId, revision, content }) => {
+      const response = await fetch('/api/drafts', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          spaceId,
+          roleId: 'project_manager',
+          content,
+          attachmentIds: [],
+          revision,
+        }),
+      });
+      return { status: response.status, body: await response.json() };
+    }, { spaceId: team.id, revision, content });
+
+    await page.goto('/');
+    await openTeam(teams.merge);
+    const mergeComposer = page.locator('textarea[aria-label^="发送给"]');
+    await expect(mergeComposer).toHaveValue(teams.merge.base);
+    const mergeInitial = await readDraft(teams.merge);
+    expect(mergeInitial).toMatchObject({ status: 200, body: { revision: teams.merge.revision } });
+
+    // Device A edits the first line while device B edits the second line. The
+    // browser's three-way merge should retain both edits after the 409 retry.
+    await mergeComposer.fill('本机标题\n初始正文');
+    const remoteMerge = await writeRemoteDraft(teams.merge, mergeInitial.body.revision, '初始标题\n远端正文');
+    expect(remoteMerge.status).toBe(200);
+    await expect.poll(async () => (await readDraft(teams.merge)).body.content, { timeout: 15_000 })
+      .toBe('本机标题\n远端正文');
+    await expect(mergeComposer).toHaveValue('本机标题\n远端正文');
+    await expect(page.locator('.draft-sync-status')).toContainText('草稿已同步');
+
+    await openTeam(teams.conflict);
+    const conflictComposer = page.locator('textarea[aria-label^="发送给"]');
+    await expect(conflictComposer).toHaveValue(teams.conflict.base);
+    const conflictInitial = await readDraft(teams.conflict);
+    await conflictComposer.fill('本机版本');
+    const remoteConflict = await writeRemoteDraft(teams.conflict, conflictInitial.body.revision, '远端版本');
+    expect(remoteConflict.status).toBe(200);
+
+    // Overlapping edits remain visible until the owner chooses which version
+    // should win; the UI must never silently discard either device's text.
+    const conflictPanel = page.getByRole('alert').filter({ hasText: '其他设备' });
+    await expect(conflictPanel).toBeVisible({ timeout: 15_000 });
+    await expect(conflictPanel).toContainText('本机版本');
+    await expect(conflictPanel).toContainText('远端版本');
+    await conflictPanel.getByRole('button', { name: /使用其他设备版本/ }).click();
+    await expect(conflictComposer).toHaveValue('远端版本');
+    await expect.poll(async () => (await readDraft(teams.conflict)).body.content).toBe('远端版本');
+    await expect(page.locator('.draft-sync-status')).toContainText('草稿已同步');
+
+    // Exercise the other explicit decision as well: choosing the local copy
+    // must retry against the observed remote revision and overwrite it.
+    const localChoiceInitial = await readDraft(teams.conflict);
+    await conflictComposer.fill('本机覆盖版本');
+    const remoteForLocalChoice = await writeRemoteDraft(
+      teams.conflict,
+      localChoiceInitial.body.revision,
+      '远端第二版本',
+    );
+    expect(remoteForLocalChoice.status).toBe(200);
+    const secondConflictPanel = page.getByRole('alert').filter({ hasText: '其他设备' });
+    await expect(secondConflictPanel).toBeVisible({ timeout: 15_000 });
+    await secondConflictPanel.getByRole('button', { name: /保留本机并覆盖远端/ }).click();
+    await expect(conflictComposer).toHaveValue('本机覆盖版本');
+    await expect.poll(async () => (await readDraft(teams.conflict)).body.content).toBe('本机覆盖版本');
+    await expect(page.locator('.draft-sync-status')).toContainText('草稿已同步');
   });
 
   test('刷新后保留后台任务视图和当前团队上下文', async ({ page }) => {
