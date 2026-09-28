@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 144/144, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 146/146, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Combined parent/frontend/backend/reviewer scenario using real orchestration MCP,
