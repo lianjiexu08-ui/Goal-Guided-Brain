@@ -16,6 +16,7 @@ import {
   approveToolRequest,
 } from './capability-gateway.mjs';
 import { loadUsageMeter, measureUsage } from './metering.mjs';
+import { modelMetrics } from './metrics.mjs';
 import { resolveApiKey, redact } from './runtime.mjs';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -1092,6 +1093,8 @@ export function createPlatform({
     const [collection, id, action] = parts;
     const ok = (body, status = 200) => ({ status, body });
     if (collection === 'manage' && method === 'GET') return ok(manage());
+    if (collection === 'metrics' && id === 'models' && method === 'GET')
+      return ok(modelMetrics(store, query));
     if (collection === 'drafts') {
       const spaceId = (method === 'GET' ? query.get('spaceId') : body.spaceId) || null;
       const roleId = (method === 'GET' ? query.get('role') : body.roleId) || '';

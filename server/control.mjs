@@ -132,9 +132,10 @@ export class ControlPlane {
       if ((currentJob?.dependencies || []).some(id => this.records.get('jobs', id)?.status !== 'completed')) return null;
       if ((meta.dependencies || []).some(id => !this.dependencyComplete(id))) return null;
       const token = randomBytes(32).toString('hex');
+      const startedAt = this.now();
       const execution = this.records.save('executions', {
         taskId: task.id, nodeId, agentId: task.role, groupId: this.taskGroup(task.id), batchId: meta.batchId || task.id,
-        epoch: 1, status: 'running', tokenHash: hashToken(token), expiresAt: this.now() + this.leaseMs,
+        epoch: 1, status: 'running', tokenHash: hashToken(token), startedAt, expiresAt: startedAt + this.leaseMs,
         requirementVersion: currentJob?.requirementVersion || meta.requirementVersion || 1,
         permissions: Array.isArray(meta.permissions) ? meta.permissions : [],
       }, task.id);
