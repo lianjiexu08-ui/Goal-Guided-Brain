@@ -202,6 +202,101 @@ function seedModelTeams() {
   }
 }
 
+function seedModelMetrics() {
+  const teams = seedModelTeams();
+  const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
+  try {
+    const attempts = [
+      {
+        id: 'metrics-alpha-attempt',
+        teamId: teams.alpha.id,
+        providerId: 'e2e-provider-alpha',
+        model: 'e2e-alpha-model',
+        status: 'completed',
+        tokens: { inputTokens: 120, outputTokens: 40, totalTokens: 160 },
+        cost: 0.003,
+      },
+      {
+        id: 'metrics-beta-attempt',
+        teamId: teams.beta.id,
+        providerId: 'e2e-provider-beta',
+        model: 'e2e-beta-model',
+        status: 'failed',
+        tokens: { inputTokens: 90, outputTokens: 20, totalTokens: 110 },
+        cost: null,
+      },
+    ];
+    for (const input of attempts) {
+      const task = store.createTask({
+        role: 'project_manager',
+        prompt: `E2E 模型指标 ${input.id}`,
+        workspace: process.cwd(),
+      });
+      const jobId = `job-${input.id}`;
+      const groupId = `group-${input.id}`;
+      store.records.save('jobs', {
+        title: task.title,
+        goal: task.prompt,
+        role: task.role,
+        groupId,
+        batchId: groupId,
+        status: input.status,
+        taskId: task.id,
+        nodeId: 'local',
+        workspace: process.cwd(),
+        workspaceKey: 'default',
+        requirementVersion: 1,
+        budgetTokens: 200000,
+        maxDurationMinutes: 30,
+        permissions: [],
+        spaceId: input.teamId,
+        teamId: input.teamId,
+      }, jobId);
+      store.records.save('task-meta', {
+        jobId,
+        groupId,
+        batchId: groupId,
+        nodeId: 'local',
+        workspaceKey: 'default',
+        workspaceMode: 'isolated',
+        providerIds: [input.providerId],
+        allowedProviderIds: [input.providerId],
+        requirementVersion: 1,
+        spaceId: input.teamId,
+        teamId: input.teamId,
+      }, task.id);
+      store.records.save('runtime-snapshots', {
+        route: {
+          providerId: input.providerId,
+          model: input.model,
+          routingCandidates: [{ providerId: input.providerId, model: input.model, status: 'selected' }],
+        },
+      }, task.id);
+      store.records.save('executions', {
+        taskId: task.id,
+        groupId,
+        status: input.status,
+        startedAt: 1000,
+        finishedAt: input.status === 'completed' ? 2500 : 2200,
+      }, task.id);
+      store.records.save('usage', {
+        taskId: task.id,
+        groupId,
+        jobId,
+        turn: 1,
+        ...input.tokens,
+        cost: input.cost,
+        providerId: input.providerId,
+        model: input.model,
+      }, `${task.id}:1`);
+      store.updateTask(task.id, { status: input.status, error: input.status === 'failed' ? 'fixture failure' : '' });
+    }
+    return teams;
+  } finally {
+    store.close();
+  }
+}
+
 function seedConfirmedTeams() {
   const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
   try {
@@ -821,6 +916,26 @@ test.describe('团队招募核心流程', () => {
     await expect(selector).toHaveValue('e2e-provider-beta::e2e-beta-model');
     await expect(selector.locator(`option[value="e2e-provider-beta::e2e-beta-model"]`)).toContainText('最近检查失败');
     await expect(page.getByText(/最近一次连通性检查失败：接口返回 HTTP 503/)).toBeVisible();
+  });
+
+  test('模型管理显示真实运行指标并支持按团队筛选', async ({ page }) => {
+    const teams = seedModelMetrics();
+    await page.goto('/');
+    await clickNavigation(page, '模型管理');
+    await expect(page.getByRole('heading', { name: '模型管理' })).toBeVisible();
+    const panel = page.getByRole('region', { name: '模型运行指标', exact: true });
+    await expect(panel).toBeVisible();
+    // Earlier flows in this shared browser fixture may leave other model
+    // attempts behind; assert the two rows created by this fixture directly.
+    const fixtureRows = panel.getByTestId('model-metrics-row').filter({ hasText: /e2e-(alpha|beta)-model/ });
+    await expect(fixtureRows).toHaveCount(2);
+    await expect(panel.getByTestId('model-metrics-row').filter({ hasText: 'e2e-alpha-model' })).toBeVisible();
+    await expect(panel.getByTestId('model-metrics-row').filter({ hasText: 'e2e-beta-model' })).toBeVisible();
+    await expect(panel.getByTestId('model-metrics-row').filter({ hasText: 'e2e-beta-model' }).getByText('未知', { exact: true })).toBeVisible();
+    await panel.getByRole('combobox', { name: '指标团队', exact: true }).selectOption(teams.alpha.id);
+    await expect(panel.getByTestId('model-metrics-row').filter({ hasText: 'e2e-alpha-model' })).toHaveCount(1);
+    await expect(panel.getByTestId('model-metrics-row').filter({ hasText: 'e2e-alpha-model' })).toBeVisible();
+    await expect(panel.getByTestId('model-metrics-row').filter({ hasText: 'e2e-beta-model' })).toHaveCount(0);
   });
 
   test('团队时间线可以加载更早动态并保持筛选入口', async ({ page }) => {
