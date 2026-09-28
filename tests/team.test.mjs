@@ -426,8 +426,7 @@ test('team task handoff keeps the receiving task in the same team', async () => 
       prompt: '先整理团队交付方案。',
     }, 'POST');
     assert.equal(source.status, 201);
-    await tick();
-    assert.equal(runs.length, 1);
+    await waitFor(() => runs.length === 1, '目标团队协作任务没有在测试窗口内启动。');
     runs[0].complete('交付方案已整理。');
     await tick();
 
@@ -573,8 +572,7 @@ test('multiple Chat teams keep independent ownership and can hand work to anothe
     assert.equal(delegated.body.sourceTeamId, source.id);
     assert.equal(delegated.body.targetTeamId, created.body.id);
     assert.ok(delegated.body.taskId);
-    await tick();
-    assert.equal(runs.length, 1);
+    await waitFor(() => runs.length === 1, '跨团队编排消息对应的项目经理任务没有在测试窗口内启动。');
     assert.match(runs[0].prompt, /运行监控清单/);
     const detail = await request(`teams/${created.body.id}`);
     assert.equal(detail.body.messages[0].fromTeamId, source.id);
@@ -733,8 +731,7 @@ test('team MCP can discover and delegate to an allowed long-lived team', async (
     }, 'POST')).body;
     await request(`teams/${source.id}`, { collaboration: { allowedTeamIds: [target.id, pending.id] } }, 'PUT');
     await request(`teams/${source.id}/messages`, { clientMessageId: 'mcp-source', content: '准备一次跨团队资料协作。' }, 'POST');
-    await tick();
-    assert.equal(runs.length, 1);
+    await waitFor(() => runs.length === 1, '团队消息对应的项目经理任务没有在测试窗口内启动。');
     const patch = runs[0].options.capabilityPatch.find((item) => item.id === 'workbench-orchestration');
     const client = new Client({ name: 'team-mcp-test', version: '1' });
     clients.push(client);

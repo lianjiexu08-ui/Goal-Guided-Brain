@@ -12,6 +12,16 @@ CREATE INDEX IF NOT EXISTS idx_records_collection_updated ON records(collection,
 export class Records {
   constructor(db) {
     this.db = db;
+    // SQLite can receive several writes within the same millisecond. Keep
+    // persisted timestamps strictly increasing so timeline cursors and
+    // chronological views do not fall back to lexicographic record IDs.
+    this.lastTimestampMs = 0;
+  }
+  nextTimestamp() {
+    const current = Date.now();
+    const next = Math.max(current, this.lastTimestampMs + 1);
+    this.lastTimestampMs = next;
+    return new Date(next).toISOString();
   }
   get(collection, id) {
     const row = this.db
@@ -55,7 +65,7 @@ export class Records {
       updatedAt: _updatedAt,
       ...data
     } = input;
-    const now = new Date().toISOString();
+    const now = this.nextTimestamp();
     this.db
       .prepare(`INSERT INTO records(collection,id,data,createdAt,updatedAt) VALUES(?,?,?,?,?)
       ON CONFLICT(collection,id) DO UPDATE SET data=excluded.data,revision=records.revision+1,updatedAt=excluded.updatedAt`)

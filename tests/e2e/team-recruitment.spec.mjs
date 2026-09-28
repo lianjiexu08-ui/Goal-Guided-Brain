@@ -260,6 +260,37 @@ function seedConfirmedTeams() {
   }
 }
 
+function seedCollaborationTeams() {
+  const teams = seedConfirmedTeams();
+  const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
+  try {
+    const source = store.teamSpace(teams.development.id);
+    const target = store.teamSpace(teams.operations.id);
+    if (!source || !target) throw new Error('E2E fixture requires two confirmed teams.');
+    store.saveTeamSpace({
+      ...source,
+      collaboration: {
+        enabled: true,
+        autoHandoff: true,
+        sharedBoard: true,
+        allowedTeamIds: [target.id],
+      },
+    }, source.id);
+    store.saveTeamSpace({
+      ...target,
+      collaboration: {
+        enabled: true,
+        autoHandoff: true,
+        sharedBoard: true,
+        allowedTeamIds: [source.id],
+      },
+    }, target.id);
+    return { source: { ...teams.development, id: source.id }, target: { ...teams.operations, id: target.id } };
+  } finally {
+    store.close();
+  }
+}
+
 function seedLongTimelineTeam() {
   const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
   try {
@@ -641,20 +672,23 @@ test.describe('团队招募核心流程', () => {
     await developmentComposer.fill('研发团队专属草稿');
     await clickNavigation(page, '团队动态');
     await expect(page.getByText('统一时间线', { exact: true })).toBeVisible();
-    await expect(page.getByText(development.message, { exact: true })).toBeVisible();
     const developmentTimeline = page.locator('[aria-label="团队统一时间线"]');
+    await expect(developmentTimeline.getByText(development.message, { exact: true })).toBeVisible();
+    await expect(page.getByRole('region', { name: '团队协作控制台', exact: true }).getByText(development.message, { exact: true })).toHaveCount(0);
     await developmentTimeline.getByRole('tab', { name: '证据', exact: true }).click();
     await expect(developmentTimeline.getByText('当前筛选没有记录', { exact: true })).toBeVisible();
     await developmentTimeline.getByRole('tab', { name: '全部', exact: true }).click();
-    await expect(page.getByText(development.message, { exact: true })).toBeVisible();
+    await expect(developmentTimeline.getByText(development.message, { exact: true })).toBeVisible();
 
     await openTeam(operations);
     const operationsComposer = page.locator('textarea[aria-label^="发送给"]');
     await expect(operationsComposer).toHaveValue('');
     await clickNavigation(page, '团队动态');
     await expect(page.getByText('统一时间线', { exact: true })).toBeVisible();
-    await expect(page.getByText(operations.message, { exact: true })).toBeVisible();
-    await expect(page.getByText(development.message, { exact: true })).toHaveCount(0);
+    const operationsTimeline = page.locator('[aria-label="团队统一时间线"]');
+    await expect(operationsTimeline.getByText(operations.message, { exact: true })).toBeVisible();
+    await expect(operationsTimeline.getByText(development.message, { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('region', { name: '团队协作控制台', exact: true }).getByText(operations.message, { exact: true })).toHaveCount(0);
 
     // A reload must preserve the active team route instead of falling back to
     // the first confirmed team and exposing another team's draft.
@@ -836,6 +870,60 @@ test.describe('团队招募核心流程', () => {
     await expect(timeline.locator('.cross-team-timeline-item').filter({ hasText: teams.development.name })).toHaveCount(0);
     await timeline.locator('.cross-team-timeline-item').filter({ hasText: teams.operations.name }).first().click();
     await expect(page.getByRole('heading', { name: teams.operations.name })).toBeVisible();
+  });
+
+  test('团队协作控制台可以委派目标并显示任务回传入口', async ({ page }) => {
+    const teams = seedCollaborationTeams();
+    const collaborationRequests = [];
+    await page.goto('/');
+    await page.route('**/api/teams/*/collaborate', async (route) => {
+      const request = route.request();
+      collaborationRequests.push({ url: request.url(), body: request.postDataJSON() });
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'e2e-handoff-message',
+          spaceId: teams.target.id,
+          teamId: teams.target.id,
+          kind: 'handoff',
+          senderType: 'team',
+          senderId: teams.source.id,
+          fromTeamId: teams.source.id,
+          toTeamId: teams.target.id,
+          content: request.postDataJSON().content,
+          status: 'sent',
+          taskId: 'e2e-collaboration-task',
+          sourceTeamId: teams.source.id,
+          targetTeamId: teams.target.id,
+          sessionId: 'e2e-collaboration-session',
+        }),
+      });
+    });
+    await openMobileSidebar(page);
+    await sidebarLocator(page).locator('button').filter({ hasText: teams.source.name }).first().click({ force: true });
+    await expect(page.getByRole('heading', { name: teams.source.name })).toBeVisible();
+    await clickNavigation(page, '团队动态');
+    const console = page.getByRole('region', { name: '团队协作控制台', exact: true });
+    await expect(console).toBeVisible();
+    await expect(console.getByRole('combobox', { name: '选择协作目标团队', exact: true })).toHaveValue(teams.target.id);
+    await expect(console.locator('.team-collaboration-target').getByText(teams.target.name, { exact: true })).toBeVisible();
+
+    const goal = `请回传 ${Date.now()} 的发布检查清单。`;
+    await console.getByRole('textbox', { name: '协作目标', exact: true }).fill(goal);
+    await console.getByRole('button', { name: '发起跨团队协作', exact: true }).click();
+    await expect(console.getByText(/协作请求已发送给/)).toBeVisible();
+    await expect(console.getByRole('button', { name: '查看任务', exact: true })).toBeVisible();
+    await expect.poll(() => collaborationRequests.length).toBe(1);
+    expect(collaborationRequests[0].url).toContain(`/api/teams/${teams.source.id}/collaborate`);
+    expect(collaborationRequests[0].body).toMatchObject({ targetTeamId: teams.target.id, content: goal });
+
+    await openMobileSidebar(page);
+    await sidebarLocator(page).locator('button').filter({ hasText: teams.target.name }).first().click({ force: true });
+    await expect(page.getByRole('heading', { name: teams.target.name })).toBeVisible();
+    await clickNavigation(page, '团队动态');
+    const targetConsole = page.getByRole('region', { name: '团队协作控制台', exact: true });
+    await expect(targetConsole).toBeVisible();
   });
 
   test('desktop/mobile 连续20次切换时团队模型、动态和草稿保持隔离', async ({ page }) => {
