@@ -123,6 +123,7 @@ ggb run --provider deepseek --model deepseek-chat "分析当前项目风险"
 echo "设计一个缓存方案" | ggb run --provider claude
 ggb chat --provider gemini --session personal
 ggb providers
+ggb doctor --json
 ```
 
 CLI 支持：
@@ -130,6 +131,7 @@ CLI 支持：
 - `ggb run`：执行一次任务，可使用 `--system`、`--no-stream`、`--json`、`--session` 和 `--continue`。
 - `ggb chat`：进入持续对话，支持 `/new`、`/model`、`/session`、`/help` 和 `/exit`。
 - `ggb providers`：查看普通模型预设和可选 TypeSafe 后端。
+- `ggb doctor`：检查 Node.js、平台、会话目录、Git、模型凭据和本地工作台服务；服务未启动只会给出提醒，不影响直接调用模型。`--json` 输出适合脚本和 CI 读取的报告，绝不会打印密钥。
 - `ggb decide`：向 TypeSafe 发送结构化 `state` 和 `questions`，只返回 JSON 判断结果。
 
 网页中的普通模型选择器不会把 TypeSafe 当作聊天模型；TypeSafe 只通过 `ggb decide`、管理页探测和编排 MCP 的 `evaluate_decision` 使用。
@@ -230,7 +232,7 @@ npm run test:e2e
 npm run build
 ```
 
-`npm run test:e2e` 会启动隔离的 API/UI 服务，在桌面和移动 Chromium 尺寸下验证团队招募、统一团队时间线筛选与分页、跨团队统一时间线浏览、跨团队风险筛选、团队协作控制台、协作目标团队白名单、助手编辑器的能力兼容与绑定范围、浏览器本地与服务端草稿跨刷新恢复、双团队草稿隔离、工作区视图恢复、模型切换、模型运行指标筛选、失败任务恢复、交付验收决定、后台任务待处理筛选与批量复核、待处理事项关联执行和真实二进制附件；当前基线为 40 个浏览器运行，后端确定性套件为 147/147，并包含两个团队连续 20 次交替消息的归属压力测试。首次运行若本机没有 Playwright 浏览器，请执行 `npx playwright install chromium`。测试使用临时数据库、本地确定性模型和 MCP fixture，不调用付费模型。每次功能迭代都应补充对应验证，检查 `git diff --check`，提交清晰的 Git commit，并推送到远程仓库：
+`npm run test:e2e` 会启动隔离的 API/UI 服务，在桌面和移动 Chromium 尺寸下验证团队招募、统一团队时间线筛选与分页、跨团队统一时间线浏览、跨团队风险筛选、团队协作控制台、协作目标团队白名单、助手编辑器的能力兼容与绑定范围、浏览器本地与服务端草稿跨刷新恢复、双团队草稿隔离、工作区视图恢复、模型切换、模型运行指标筛选、失败任务恢复、交付验收决定、后台任务待处理筛选与批量复核、待处理事项关联执行和真实二进制附件；当前基线为 40 个浏览器运行，后端确定性套件为 148/148，并包含两个团队连续 20 次交替消息的归属压力测试。首次运行若本机没有 Playwright 浏览器，请执行 `npx playwright install chromium`。测试使用临时数据库、本地确定性模型和 MCP fixture，不调用付费模型。每次功能迭代都应补充对应验证，检查 `git diff --check`，提交清晰的 Git commit，并推送到远程仓库：
 
 ```text
 https://github.com/lianjiexu08-ui/Goal-Guided-Brain.git

@@ -100,7 +100,7 @@ flowchart TD
 | 能力服务 | `server/capabilities.mjs`、`server/capability-gateway.mjs` | 安装、固定、探测和授权 Skill、MCP、Plugin。 |
 | 数据层 | `server/store.mjs`、`server/records.mjs`、`server/vault.mjs` | 业务实体、记录、迁移、备份和加密凭据。 |
 | 网页 | `app/page.tsx`、`app/management.tsx` | 团队招募、团队动态、任务、助手、模型和能力管理。 |
-| CLI | `scripts/cli.mjs` | `ggb run`、`ggb chat`、`ggb providers` 和 `ggb decide`。 |
+| CLI | `scripts/cli.mjs` | `ggb run`、`ggb chat`、`ggb providers`、`ggb doctor` 和 `ggb decide`。 |
 
 ## 从需求到交付
 
@@ -254,6 +254,7 @@ export DEEPSEEK_API_KEY=...
 ggb run --provider deepseek --model deepseek-chat "分析当前项目的风险"
 echo "设计一个缓存方案" | ggb run --provider claude
 ggb run --provider gemini --no-stream --json "总结这段代码"
+ggb doctor --json
 ```
 
 ### 持续对话
@@ -275,6 +276,8 @@ ggb decide \
 ```
 
 `ggb decide` 只返回结构化 JSON，不会生成聊天回复。TypeSafe 密钥是可选配置，不设置时不影响 `ggb run` 和 `ggb chat`。
+
+`ggb doctor` 是跨平台自检命令：它验证 Node.js 版本、运行平台、会话目录写权限、Git、已配置的模型凭据，以及可选的本地 API 和网页地址。API 或网页没有启动时报告为提醒，不会阻止 CLI 直接访问模型；`--json` 输出不包含任何凭据值。
 
 ### 供应商环境变量
 
@@ -429,7 +432,7 @@ npm test
 npm run build
 ```
 
-测试使用临时数据库、本地确定性模型和 MCP fixture，不调用付费模型。覆盖加密凭据、协议认证、模型路由、模型运行指标、能力绑定可见性、工具网关、任务租约、消息幂等、团队招募、跨团队协作白名单、工作树、定时任务、通知、恢复和 CLI 会话；当前后端套件为 147/147，桌面/移动浏览器基线为 40 个运行。
+测试使用临时数据库、本地确定性模型和 MCP fixture，不调用付费模型。覆盖加密凭据、协议认证、模型路由、模型运行指标、能力绑定可见性、工具网关、任务租约、消息幂等、团队招募、跨团队协作白名单、工作树、定时任务、通知、恢复和 CLI 会话；当前后端套件为 148/148，桌面/移动浏览器基线为 40 个运行。
 
 ### 每轮迭代要求
 

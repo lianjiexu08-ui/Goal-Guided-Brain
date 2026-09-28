@@ -42,6 +42,53 @@ function runDecide(url, args, extraEnv = {}) {
   });
 }
 
+function runDoctor(args = [], extraEnv = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cli, 'doctor', ...args], {
+      env: { ...process.env, PATH: process.env.PATH, ...extraEnv },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '', stderr = '';
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.on('error', reject);
+    child.on('close', code => resolve({ code, stdout, stderr }));
+  });
+}
+
+test('CLI doctor reports cross-platform runtime and service checks without exposing credentials', async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cli-doctor-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const api = http.createServer((_req, res) => {
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ status: 'ok' }));
+  });
+  const ui = http.createServer((_req, res) => {
+    res.setHeader('content-type', 'text/html');
+    res.end('<!doctype html><title>fixture</title>');
+  });
+  await Promise.all([
+    new Promise(resolve => api.listen(0, '127.0.0.1', resolve)),
+    new Promise(resolve => ui.listen(0, '127.0.0.1', resolve)),
+  ]);
+  t.after(() => { api.close(); ui.close(); });
+  const result = await runDoctor([
+    '--api-url', `http://127.0.0.1:${api.address().port}/api/health`,
+    '--ui-url', `http://127.0.0.1:${ui.address().port}/`,
+    '--json',
+  ], { DSH_SESSION_DIR: directory, DEEPSEEK_API_KEY: 'doctor-secret-fixture' });
+  assert.equal(result.code, 0);
+  assert.equal(result.stderr, '');
+  assert.equal(result.stdout.includes('doctor-secret-fixture'), false);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.ok, true);
+  assert.equal(report.platform.node, process.versions.node);
+  assert.equal(report.checks.find(check => check.id === 'session').status, 'pass');
+  assert.equal(report.checks.find(check => check.id === 'providers').status, 'pass');
+  assert.equal(report.checks.find(check => check.id === 'api').status, 'pass');
+  assert.equal(report.checks.find(check => check.id === 'ui').status, 'pass');
+});
+
 test('CLI sends a unified prompt to an OpenAI-compatible provider', async (t) => {
   const requests = [];
   const server = http.createServer(async (req, res) => {
