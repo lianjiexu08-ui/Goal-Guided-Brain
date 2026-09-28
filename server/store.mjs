@@ -97,8 +97,16 @@ export class Store {
       CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, sessionId TEXT NOT NULL REFERENCES sessions(id), role TEXT NOT NULL, workspace TEXT NOT NULL, title TEXT NOT NULL, prompt TEXT NOT NULL, status TEXT NOT NULL, result TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', log TEXT NOT NULL DEFAULT '', sourceTaskId TEXT, knowledgeIds TEXT NOT NULL DEFAULT '[]', context TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS idx_tasks_status_created ON tasks(status,createdAt);
       CREATE INDEX IF NOT EXISTS idx_tasks_session_created ON tasks(sessionId,createdAt);
-      CREATE TABLE IF NOT EXISTS knowledge (id TEXT PRIMARY KEY,title TEXT NOT NULL,content TEXT NOT NULL,scope TEXT NOT NULL,state TEXT NOT NULL,source TEXT NOT NULL,projectPath TEXT NOT NULL,updatedAt TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS knowledge (id TEXT PRIMARY KEY,title TEXT NOT NULL,content TEXT NOT NULL,scope TEXT NOT NULL,state TEXT NOT NULL,source TEXT NOT NULL,projectPath TEXT NOT NULL,teamId TEXT NOT NULL DEFAULT '',updatedAt TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS idx_knowledge_scope_project ON knowledge(scope,projectPath);`);
+    const knowledgeColumns = new Set(
+      this.db.prepare('PRAGMA table_info(knowledge)').all().map((column) => column.name),
+    );
+    // Databases created before team-scoped knowledge used an eight-column
+    // table. Keep those records readable and add the nullable-by-convention
+    // empty team ID without rewriting user content.
+    if (!knowledgeColumns.has('teamId')) this.db.exec("ALTER TABLE knowledge ADD COLUMN teamId TEXT NOT NULL DEFAULT ''");
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_knowledge_team ON knowledge(teamId)');
     fs.chmodSync(path.join(dir, 'workspace.sqlite'), 0o600);
     const config = {
       workspace,
@@ -844,11 +852,21 @@ export class Store {
     const existing = this.db
       .prepare('SELECT * FROM knowledge WHERE id=?')
       .get(id);
+    const scope = typeof input.scope === 'string' ? input.scope.trim() : '';
+    const teamId = scope === 'team'
+      ? String(input.teamId || existing?.teamId || '').trim()
+      : '';
+    if (scope === 'team') {
+      const team = teamId ? this.teamSpace(teamId) : null;
+      if (!team || team.status === 'archived') throw new Error('团队知识必须绑定到有效的团队。');
+    }
     const item = {
       ...input,
       id,
+      scope,
+      teamId,
       projectPath:
-        input.scope === 'personal'
+        scope === 'personal'
           ? ''
           : existing?.projectPath || input.projectPath || this.config.workspace,
       updatedAt: new Date().toISOString(),
@@ -866,7 +884,7 @@ export class Store {
       });
     this.db
       .prepare(
-        'INSERT INTO knowledge VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,content=excluded.content,scope=excluded.scope,state=excluded.state,source=excluded.source,projectPath=excluded.projectPath,updatedAt=excluded.updatedAt',
+        'INSERT INTO knowledge VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,content=excluded.content,scope=excluded.scope,state=excluded.state,source=excluded.source,projectPath=excluded.projectPath,teamId=excluded.teamId,updatedAt=excluded.updatedAt',
       )
       .run(
         id,
@@ -876,6 +894,7 @@ export class Store {
         item.state,
         item.source,
         item.projectPath,
+        item.teamId,
         item.updatedAt,
       );
     this.exportKnowledge(item);
@@ -908,6 +927,8 @@ export class Store {
     );
   }
   retrieve(task) {
+    const taskMeta = this.records.get('task-meta', task.id) || {};
+    const teamId = taskMeta.teamId || taskMeta.spaceId || null;
     const terms = [
       ...new Set(
         task.prompt
@@ -919,6 +940,7 @@ export class Store {
       .filter(
         (k) =>
           k.scope === 'personal' ||
+          (k.scope === 'team' && Boolean(teamId) && k.teamId === teamId) ||
           (k.projectPath === task.workspace &&
             ['project', task.role].includes(k.scope)),
       )

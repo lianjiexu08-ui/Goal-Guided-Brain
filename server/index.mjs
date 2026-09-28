@@ -759,9 +759,18 @@ export function createWorkbench({
           return send(200, store.archiveRole(parts[2], parts[3] === 'archive'));
       }
       if (['POST', 'PUT'].includes(req.method) && parts[1] === 'knowledge') {
+        const existingKnowledge = req.method === 'PUT' && parts[2]
+          ? store.knowledge().find((item) => item.id === parts[2])
+          : null;
+        const knowledgeScope = typeof body.scope === 'string'
+          ? body.scope
+          : existingKnowledge?.scope;
+        const knowledgeTeamId = knowledgeScope === 'team'
+          ? (typeof body.teamId === 'string' ? body.teamId : existingKnowledge?.teamId)
+          : undefined;
         if (
-          !['personal', 'project', ...store.roles().map((r) => r.id)].includes(
-            body.scope,
+          !['personal', 'project', 'team', ...store.roles().map((r) => r.id)].includes(
+            knowledgeScope,
           )
         )
           throw new Error('知识范围无效。');
@@ -769,7 +778,7 @@ export function createWorkbench({
           throw new Error('知识状态无效。');
         if (
           req.method === 'PUT' &&
-          !store.knowledge().some((k) => k.id === parts[2])
+          !existingKnowledge
         )
           return send(404, { error: '知识不存在。' });
         const item = store.saveKnowledge(
@@ -782,7 +791,8 @@ export function createWorkbench({
                 store.sessions().some((s) => s.workspace === body.projectPath))
                 ? body.projectPath
                 : undefined,
-            scope: body.scope,
+            scope: knowledgeScope,
+            ...(knowledgeTeamId ? { teamId: knowledgeTeamId } : {}),
             state: body.state,
             source:
               typeof body.source === 'string'

@@ -149,6 +149,7 @@ type Knowledge = {
   source: string;
   updatedAt: string;
   projectPath: string;
+  teamId?: string | null;
 };
 type Config = {
   workspace: string;
@@ -1400,6 +1401,7 @@ function Workbench() {
   const knowledge = (data?.knowledge || []).filter(
     (k) =>
       k.scope === 'personal' ||
+      (k.scope === 'team' && k.teamId === teamSpace?.id) ||
       (k.projectPath === conversationWorkspace &&
         ['project', role].includes(k.scope)),
   );
@@ -2006,7 +2008,8 @@ function Workbench() {
       item || {
         title: task?.title || '',
         content: task?.result || '',
-        scope: 'project',
+        scope: task?.spaceId || teamSpace?.id ? 'team' : 'project',
+        teamId: task?.spaceId || teamSpace?.id || null,
         projectPath:
           task?.workspace ||
           (isConversationView
@@ -3220,7 +3223,9 @@ function Workbench() {
                             ? '个人'
                             : k.scope === 'project'
                               ? '项目共享'
-                              : '角色专属'}
+                              : k.scope === 'team'
+                                ? '团队共享'
+                                : '角色专属'}
                         </small>
                       </span>
                     </button>
@@ -3574,6 +3579,7 @@ function Workbench() {
                   { id: 'all', label: '全部' },
                   { id: 'project', label: '项目共享' },
                   { id: 'personal', label: '个人知识' },
+                  ...(teamSpace ? [{ id: 'team', label: `${teamSpace.name} · 团队知识` }] : []),
                   ...roles.map((r) => ({ id: r.id, label: r.name })),
                 ].map((tag) => (
                   <button
@@ -3590,7 +3596,9 @@ function Workbench() {
             {(() => {
               const currentWorkspace = data?.config.workspace;
               const scopedKnowledge = (data?.knowledge || []).filter(
-                (k) => k.scope === 'personal' || k.projectPath === currentWorkspace,
+                (k) => k.scope === 'personal' ||
+                  (k.scope === 'team' && k.teamId === teamSpace?.id) ||
+                  (k.scope !== 'team' && k.projectPath === currentWorkspace),
               );
               const filteredKnowledge = scopedKnowledge
                 .filter((k) => {
@@ -3655,7 +3663,9 @@ function Workbench() {
                                 ? '个人知识'
                                 : k.scope === 'project'
                                   ? '项目共享'
-                                  : roles.find((r) => r.id === k.scope)?.name}
+                                  : k.scope === 'team'
+                                    ? '团队共享'
+                                    : roles.find((r) => r.id === k.scope)?.name}
                             </span>
                           </div>
                         </div>
@@ -3937,11 +3947,16 @@ function Workbench() {
                     label="知识可用范围"
                     value={knowledgeForm.scope || 'project'}
                     onChange={(scope) =>
-                      setKnowledgeForm((f) => ({ ...f, scope }))
+                      setKnowledgeForm((f) => ({
+                        ...f,
+                        scope,
+                        teamId: scope === 'team' ? (f.teamId || teamSpace?.id || null) : null,
+                      }))
                     }
                     options={[
                       { value: 'personal', label: '个人 · 所有项目' },
                       { value: 'project', label: '项目 · 所有助手共享' },
+                      ...(teamSpace ? [{ value: 'team', label: `${teamSpace.name} · 团队成员共享` }] : []),
                       ...roles.map((r) => ({
                         value: r.id,
                         label: `${r.name}专属`,

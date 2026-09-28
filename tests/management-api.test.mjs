@@ -239,6 +239,50 @@ test('knowledge changes and deletion retain versioned source snapshots', async (
   assert.equal((await request('state')).body.knowledge.length, 0);
 });
 
+test('team knowledge is persisted with its team scope and rejects unknown teams', async (t) => {
+  const { app, request, workspace } = await fixture(t);
+  const team = (await request('spaces', {
+    name: '团队知识 fixture',
+    goal: '验证团队知识隔离。',
+    purpose: '验证团队知识隔离。',
+    workspace,
+    pmRoleId: 'project_manager',
+    memberRoleIds: ['project_manager'],
+  })).body;
+  const created = await request('knowledge', {
+    title: '团队发布约定',
+    content: '发布前必须有回滚方案。',
+    scope: 'team',
+    teamId: team.id,
+    state: 'confirmed',
+    source: '团队确认',
+  });
+  assert.equal(created.status, 200);
+  assert.deepEqual(created.body, {
+    id: created.body.id,
+    title: '团队发布约定',
+    content: '发布前必须有回滚方案。',
+    scope: 'team',
+    teamId: team.id,
+    state: 'confirmed',
+    source: '团队确认',
+    projectPath: app.store.config.workspace,
+    updatedAt: created.body.updatedAt,
+  });
+  const state = (await request('state')).body;
+  assert.deepEqual(state.knowledge.find((item) => item.id === created.body.id), created.body);
+  const invalid = await request('knowledge', {
+    title: '无效团队知识',
+    content: '不能保存。',
+    scope: 'team',
+    teamId: 'missing-team',
+    state: 'confirmed',
+    source: 'fixture',
+  });
+  assert.equal(invalid.status, 400);
+  assert.match(invalid.body.error, /有效的团队/);
+});
+
 test('persisted assistant requirements constrain provider selection after editing', async t => {
   const { app, request } = await fixture(t);
   const small = await request('providers', { name: 'Small', protocol: 'openai-completions', baseUrl: 'http://127.0.0.1:1/v1', models: [{ id: 'small', tools: true, vision: false, contextWindow: 1024 }] });

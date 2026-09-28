@@ -379,6 +379,43 @@ function seedConfirmedTeams() {
   }
 }
 
+function seedTeamKnowledge() {
+  const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
+  try {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const create = (name, goal) => store.saveTeamSpace({
+      name: `${name} ${suffix}`,
+      goal,
+      purpose: goal,
+      workspace: process.cwd(),
+      pmRoleId: 'project_manager',
+      memberRoleIds: ['project_manager'],
+      recruitment: { phase: 'confirmed', sessionId: null, turns: 1, brief: goal, proposal: null, confirmedAt: new Date().toISOString() },
+    });
+    const development = create('知识研发团队', '验证研发团队知识隔离。');
+    const operations = create('知识运维团队', '验证运维团队知识隔离。');
+    store.saveKnowledge({
+      title: '研发团队专属约定',
+      content: '研发变更必须包含自动化测试。',
+      scope: 'team',
+      teamId: development.id,
+      state: 'confirmed',
+      source: '研发团队 fixture',
+    });
+    store.saveKnowledge({
+      title: '运维团队专属约定',
+      content: '生产发布必须先执行回滚演练。',
+      scope: 'team',
+      teamId: operations.id,
+      state: 'confirmed',
+      source: '运维团队 fixture',
+    });
+    return { development, operations };
+  } finally {
+    store.close();
+  }
+}
+
 function seedCollaborationTeams() {
   const teams = seedConfirmedTeams();
   const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
@@ -995,6 +1032,20 @@ test.describe('团队招募核心流程', () => {
     await expect(panel.getByTestId('model-metrics-row').filter({ hasText: 'e2e-alpha-model' })).toHaveCount(1);
     await expect(panel.getByTestId('model-metrics-row').filter({ hasText: 'e2e-alpha-model' })).toBeVisible();
     await expect(panel.getByTestId('model-metrics-row').filter({ hasText: 'e2e-beta-model' })).toHaveCount(0);
+  });
+
+  test('知识库按当前团队隔离团队专属知识', async ({ page }) => {
+    const teams = seedTeamKnowledge();
+    await page.goto('/');
+    await openMobileSidebar(page);
+    await sidebarLocator(page).locator('button').filter({ hasText: teams.development.name }).first().click({ force: true });
+    await expect(page.getByRole('heading', { name: teams.development.name })).toBeVisible();
+    await clickNavigation(page, '知识库');
+    await expect(page.getByRole('heading', { name: '每次工作，都有积累。' })).toBeVisible();
+    const cards = page.locator('.knowledge-card-wrapper');
+    await expect(cards.filter({ hasText: '研发团队专属约定' })).toHaveCount(1);
+    await expect(cards.filter({ hasText: '运维团队专属约定' })).toHaveCount(0);
+    await expect(page.getByText('团队共享', { exact: true }).first()).toBeVisible();
   });
 
   test('助手编辑器显示能力兼容状态和现有绑定范围', async ({ page }) => {

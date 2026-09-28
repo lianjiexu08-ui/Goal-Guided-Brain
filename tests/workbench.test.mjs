@@ -351,6 +351,66 @@ test('knowledge retrieval isolates role and project, preserves sources, and expo
     fs.rmSync(s.dir, { recursive: true, force: true });
   }
 });
+
+test('team-scoped knowledge stays isolated when teams share a workspace', () => {
+  const s = sandbox();
+  const store = new Store(s.dataDir, s.workspace, { seedProjectManager: true });
+  try {
+    const teamA = store.saveTeamSpace({
+      name: '研发团队',
+      goal: '交付产品代码。',
+      purpose: '负责研发实现。',
+      workspace: s.workspace,
+      pmRoleId: 'project_manager',
+      memberRoleIds: ['project_manager', 'developer'],
+    });
+    const teamB = store.saveTeamSpace({
+      name: '运维团队',
+      goal: '维护线上服务。',
+      purpose: '负责运维和发布。',
+      workspace: s.workspace,
+      pmRoleId: 'project_manager',
+      memberRoleIds: ['project_manager', 'assistant'],
+    });
+    store.saveKnowledge({
+      title: '研发分支约定',
+      content: '研发变更必须包含自动化测试。',
+      scope: 'team',
+      teamId: teamA.id,
+      state: 'confirmed',
+      source: '研发团队确认',
+    });
+    store.saveKnowledge({
+      title: '运维发布约定',
+      content: '生产发布必须先执行回滚演练。',
+      scope: 'team',
+      teamId: teamB.id,
+      state: 'confirmed',
+      source: '运维团队确认',
+    });
+    assert.throws(() => store.saveKnowledge({
+      title: '无效团队知识',
+      content: '不能保存',
+      scope: 'team',
+      teamId: 'missing-team',
+      state: 'confirmed',
+      source: 'fixture',
+    }), /有效的团队/);
+    const task = store.createTask({
+      role: 'project_manager',
+      prompt: '整理研发交付规范',
+      workspace: s.workspace,
+    });
+    store.records.save('task-meta', { teamId: teamA.id, spaceId: teamA.id }, task.id);
+    const context = store.prepareContext(task);
+    assert.match(context, /研发变更必须包含自动化测试/);
+    assert.doesNotMatch(context, /生产发布必须先执行回滚演练/);
+  } finally {
+    store.close();
+    fs.rmSync(s.dir, { recursive: true, force: true });
+  }
+});
+
 test('running tasks become interrupted after a restart; queued work remains queued', () => {
   const s = sandbox();
   let store = new Store(s.dataDir, s.workspace);
