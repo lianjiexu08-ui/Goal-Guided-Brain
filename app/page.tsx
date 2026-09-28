@@ -192,6 +192,7 @@ type TeamMessage = {
   status: string;
   error?: string | null;
   createdAt: string;
+  updatedAt?: string;
   attachmentIds?: string[];
   attachments?: Attachment[];
 };
@@ -1180,6 +1181,8 @@ function Workbench() {
   const draftsRef = useRef<Record<string, string>>({});
   const draftAttachmentsRef = useRef<Record<string, Attachment[]>>({});
   const [draftSyncState, setDraftSyncState] = useState<'idle' | 'saving' | 'saved' | 'offline' | 'conflict'>('idle');
+  const [recruitmentSyncState, setRecruitmentSyncState] = useState<'idle' | 'syncing' | 'synced' | 'offline'>('idle');
+  const recruitmentCursorRef = useRef<Record<string, string>>({});
   const roles = data?.roles || [];
   const activeRoles = roles.filter((r) => !r.archived);
   const assistant = roles.find((r) => r.id === role) || {
@@ -1543,6 +1546,41 @@ function Workbench() {
       setDraftSyncStateFor(key, error.status === 409 ? 'saved' : 'offline');
     }
   }
+  const syncRecruitment = useCallback(async (spaceId: string) => {
+    const cursor = recruitmentCursorRef.current[spaceId] || '';
+    const query = new URLSearchParams({ limit: '100' });
+    if (cursor) query.set('after', cursor);
+    if (spaceId === selectedSpaceId) setRecruitmentSyncState('syncing');
+    try {
+      const page = await api<{
+        messages: TeamMessage[];
+        cursor?: string | null;
+        recruitment?: TeamRecruitment;
+      }>(`spaces/${spaceId}/recruitment?${query.toString()}`);
+      setData((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          spaces: current.spaces.map((space) => {
+            if (space.id !== spaceId) return space;
+            const messages = new Map(
+              (space.messages || []).map((message) => [message.id, message]),
+            );
+            for (const message of page.messages || []) messages.set(message.id, message);
+            return {
+              ...space,
+              recruitment: page.recruitment || space.recruitment,
+              messages: [...messages.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+            };
+          }),
+        };
+      });
+      if (page.cursor) recruitmentCursorRef.current[spaceId] = page.cursor;
+      if (spaceId === selectedSpaceId) setRecruitmentSyncState('synced');
+    } catch {
+      if (spaceId === selectedSpaceId) setRecruitmentSyncState('offline');
+    }
+  }, [selectedSpaceId]);
   async function refresh() {
     try {
       const next = await api<State>('state');
@@ -1587,6 +1625,22 @@ function Workbench() {
       clearInterval(timer);
     };
   }, []);
+  useEffect(() => {
+    const spaceId = isRecruitmentView && teamSpace?.id && teamSpace.recruitment?.phase !== 'confirmed'
+      ? teamSpace.id
+      : null;
+    if (!spaceId) {
+      const reset = window.setTimeout(() => setRecruitmentSyncState('idle'), 0);
+      return () => window.clearTimeout(reset);
+    }
+    recruitmentCursorRef.current[spaceId] = recruitmentCursorRef.current[spaceId] || '';
+    const initial = window.setTimeout(() => void syncRecruitment(spaceId), 0);
+    const timer = window.setInterval(() => void syncRecruitment(spaceId), 2000);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(timer);
+    };
+  }, [isRecruitmentView, teamSpace?.id, teamSpace?.recruitment?.phase, syncRecruitment]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const cached = readDraftCache();
@@ -2654,6 +2708,17 @@ function Workbench() {
                     </span>
                   </h1>
                   <p className="conversation-subtitle">{isRecruitmentView ? '把要解决的问题、交付物和约束直接发给项目经理。团队名称会根据实际工作内容生成，确认后才会进入“我的团队”。' : isTeamConversation ? teamSpace?.goal : teamSpace?.memberSettings?.[role]?.responsibility || assistant.desc}</p>
+                  {isRecruitmentView && (
+                    <small className={`recruitment-sync-status ${recruitmentSyncState}`}>
+                      {recruitmentSyncState === 'syncing'
+                        ? '正在同步招募会话'
+                        : recruitmentSyncState === 'synced'
+                          ? '招募会话已同步，可在其他设备继续'
+                          : recruitmentSyncState === 'offline'
+                            ? '暂时无法同步，会话内容会在恢复后继续同步'
+                            : ''}
+                    </small>
+                  )}
                 </div>
                 <div className="conversation-controls">
                   {teamSpace && (isRecruiting ? recruitmentSpace : confirmedSpaces[0]) ? (

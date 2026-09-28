@@ -489,6 +489,40 @@ export class Store {
       .list('space-messages')
       .filter((message) => message.spaceId === spaceId);
   }
+  recruitmentPage(spaceId, { after = null, limit = 100 } = {}) {
+    const space = this.teamSpace(spaceId);
+    if (!space) return { items: [], hasMore: false, cursor: null };
+    const sessionId = space.recruitment?.sessionId || null;
+    const tasks = new Map(this.tasks().map((task) => [task.id, task]));
+    const messages = this.teamMessages(spaceId)
+      .filter((message) => {
+        if (!sessionId || !message.taskId) return true;
+        return tasks.get(message.taskId)?.sessionId === sessionId;
+      })
+      .map((message) => ({
+        ...message,
+        cursorAt: message.updatedAt || message.createdAt,
+      }))
+      .sort((a, b) => a.cursorAt.localeCompare(b.cursorAt) || String(a.id).localeCompare(String(b.id)));
+    const cursorParts = typeof after === 'string' && after.trim() ? after.split('|') : [];
+    const afterAt = cursorParts[0] || null;
+    const afterId = cursorParts.slice(1).join('|') || null;
+    const filtered = messages.filter((message) =>
+      !afterAt || message.cursorAt > afterAt || (message.cursorAt === afterAt && Boolean(afterId && String(message.id) > afterId)),
+    );
+    const pageSize = Math.max(1, Math.min(200, Number(limit) || 100));
+    const page = filtered.slice(0, pageSize + 1);
+    const hasMore = page.length > pageSize;
+    const items = (hasMore ? page.slice(0, pageSize) : page).map(({ cursorAt: _cursorAt, ...message }) => message);
+    const last = page[page.length - (hasMore ? 2 : 1)];
+    return {
+      items,
+      hasMore,
+      cursor: last ? `${last.cursorAt}|${last.id}` : after || null,
+      sessionId,
+      recruitment: space.recruitment,
+    };
+  }
   taskDelivery(task) {
     const meta = this.records.get('task-meta', task.id) || {};
     const job = meta.jobId ? this.records.get('jobs', meta.jobId) : null;

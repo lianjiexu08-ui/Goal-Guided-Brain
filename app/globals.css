@@ -2928,6 +2928,16 @@ h1 {
   color: #b36f28;
 }
 
+.recruitment-sync-status {
+  display: block;
+  margin-top: 5px;
+  color: #6d8d87;
+}
+
+.recruitment-sync-status.offline {
+  color: #b36f28;
+}
+
 .context-panel {
   border: 1px solid #dce8e4;
   border-radius: 22px;

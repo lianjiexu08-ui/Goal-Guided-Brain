@@ -630,6 +630,11 @@ async function recruitmentPage(page) {
 }
 
 test.describe('团队招募核心流程', () => {
+  test('招募页面显示可跨设备继续的会话同步状态', async ({ page }) => {
+    await recruitmentPage(page);
+    await expect(page.getByText('招募会话已同步，可在其他设备继续', { exact: true })).toBeVisible();
+  });
+
   test('草稿跨页面恢复，发布新需求不会复用旧草稿', async ({ page }) => {
     const composer = await recruitmentPage(page);
     const draft = '为开发团队建立一条可验收的交付流程';

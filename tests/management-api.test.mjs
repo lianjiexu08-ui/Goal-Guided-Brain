@@ -283,6 +283,50 @@ test('team knowledge is persisted with its team scope and rejects unknown teams'
   assert.match(invalid.body.error, /有效的团队/);
 });
 
+test('recruitment endpoint provides a durable cursor for another device to catch up', async (t) => {
+  const { app, request, workspace } = await fixture(t);
+  const team = (await request('spaces', {
+    name: '招募会话 fixture',
+    goal: '验证招募会话同步。',
+    purpose: '验证招募会话同步。',
+    workspace,
+    pmRoleId: 'project_manager',
+    memberRoleIds: ['project_manager'],
+    recruitment: { phase: 'discovery', sessionId: null, turns: 0, proposal: null },
+  })).body;
+  app.store.saveTeamMessage({
+    spaceId: team.id,
+    teamId: team.id,
+    clientMessageId: 'recruitment-device-one',
+    kind: 'request',
+    senderType: 'owner',
+    senderId: 'owner',
+    content: '第一台设备的需求',
+    status: 'sent',
+  }, 'recruitment-device-one');
+  app.store.saveTeamMessage({
+    spaceId: team.id,
+    teamId: team.id,
+    clientMessageId: 'recruitment-device-two',
+    kind: 'reply',
+    senderType: 'agent',
+    senderId: 'project_manager',
+    content: '第二台设备可以继续看到这条回复',
+    status: 'answered',
+  }, 'recruitment-device-two');
+  const first = await request(`spaces/${team.id}/recruitment?limit=1`);
+  assert.equal(first.status, 200);
+  assert.equal(first.body.messages.length, 1);
+  assert.equal(first.body.hasMore, true);
+  assert.equal(first.body.recruitment.phase, 'discovery');
+  assert.ok(first.body.cursor);
+  const second = await request(`spaces/${team.id}/recruitment?limit=10&after=${encodeURIComponent(first.body.cursor)}`);
+  assert.equal(second.status, 200);
+  assert.equal(second.body.messages.length, 1);
+  assert.equal(second.body.messages[0].content, '第二台设备可以继续看到这条回复');
+  assert.equal(second.body.hasMore, false);
+});
+
 test('persisted assistant requirements constrain provider selection after editing', async t => {
   const { app, request } = await fixture(t);
   const small = await request('providers', { name: 'Small', protocol: 'openai-completions', baseUrl: 'http://127.0.0.1:1/v1', models: [{ id: 'small', tools: true, vision: false, contextWindow: 1024 }] });

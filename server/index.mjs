@@ -565,6 +565,21 @@ export function createWorkbench({
               hasMore,
             });
           }
+          if (req.method === 'GET' && parts[3] === 'recruitment' && !parts[4]) {
+            const page = store.recruitmentPage(space.id, {
+              after: options.query.get('after') || null,
+              limit: options.query.get('limit') || 100,
+            });
+            const { items: recruitmentItems, ...recruitmentSummary } = page;
+            return send(200, {
+              ...recruitmentSummary,
+              messages: recruitmentItems.map((message) => ({
+                ...message,
+                attachmentIds: Array.isArray(message.attachmentIds) ? message.attachmentIds : [],
+                attachments: platform.attachments.list(message.attachmentIds),
+              })),
+            });
+          }
           if (req.method === 'PUT' && !parts[3]) {
             const requestedRecruitment = body.recruitment;
             if (
