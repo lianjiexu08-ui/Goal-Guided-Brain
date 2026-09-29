@@ -131,12 +131,14 @@ pi 对项目级设置、Skill、扩展和包安装引入 project trust；默认�
 
 pi 提供交互、一次性打印、JSON 事件和 RPC 模式。RPC 支持 steering/follow-up，用户可以在模型工作时追加指令，而不是强制取消当前轮。
 
-当前 CLI 已支持一次性调用和 SSE，但还应增加：
+当前 CLI 已支持一次性调用、SSE 和第一版 RPC；`ggb rpc` 通过 stdin/stdout JSONL 暴露可恢复会话事件，已经支持：
 
 - `dsh --mode json`：每行一个稳定事件，便于 CI 和 IDE。
-- `dsh --mode rpc`：stdin/stdout JSONL，支持 `prompt`、`steer`、`follow_up`、`abort`。
+- `ggb rpc`：stdin/stdout JSONL，支持 `prompt`、`follow_up`、`set_model`、`session`、`ping` 和 `abort`；中止不会写入虚假的 response。
 - `dsh --continue`、`--session`、`--fork`。
 - 事件中包含 `sessionId`、`taskId`、`provider`、`model`、`usage` 和 `workspace`，禁止输出密钥。
+
+第一版仍保留在 CLI 本地 Agent Core 中，下一步再让网页后台任务消费同一套事件，并补齐 `steer`、`taskId`、usage 和 workspace 字段。
 
 ## 不建议照搬
 

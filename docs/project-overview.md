@@ -100,7 +100,7 @@ flowchart TD
 | 能力服务 | `server/capabilities.mjs`、`server/capability-gateway.mjs` | 安装、固定、探测和授权 Skill、MCP、Plugin。 |
 | 数据层 | `server/store.mjs`、`server/records.mjs`、`server/vault.mjs` | 业务实体、记录、迁移、备份和加密凭据。 |
 | 网页 | `app/page.tsx`、`app/management.tsx` | 团队招募、团队动态、任务、助手、模型和能力管理。 |
-| CLI | `scripts/cli.mjs` | `ggb run`、`ggb chat`、`ggb providers`、`ggb doctor`、`ggb decide` 和 `ggb node`。 |
+| CLI | `scripts/cli.mjs` | `ggb run`、`ggb chat`、`ggb rpc`、`ggb providers`、`ggb doctor`、`ggb decide` 和 `ggb node`。 |
 
 ## 从需求到交付
 
@@ -266,6 +266,7 @@ export DEEPSEEK_API_KEY=...
 ggb run --provider deepseek --model deepseek-chat "分析当前项目的风险"
 echo "设计一个缓存方案" | ggb run --provider claude
 ggb run --provider gemini --no-stream --json "总结这段代码"
+printf '{"type":"prompt","id":"p1","text":"检查项目"}\n' | ggb rpc --provider deepseek --session automation
 ggb doctor --json
 ggb node --control-url https://workbench.example.com --workspace project=/absolute/path --print-config
 ```
@@ -276,7 +277,7 @@ ggb node --control-url https://workbench.example.com --workspace project=/absolu
 ggb chat --provider claude --session personal
 ```
 
-交互中支持 `/new`、`/model [供应商/]模型`、`/session`、`/help` 和 `/exit`。会话以 JSONL 保存，`--continue` 可以恢复最近会话；密钥不会写入会话文件。
+交互中支持 `/new`、`/model [供应商/]模型`、`/session`、`/help` 和 `/exit`。会话以 JSONL 保存，`--continue` 可以恢复最近会话；密钥不会写入会话文件。`ggb rpc` 使用 stdin/stdout JSONL，支持 `prompt`、`follow_up`、`set_model`、`abort`、`session` 和 `ping`，输出 `turn_start`、`text_delta`、`turn_end`、`model_changed`、`aborted` 和 `error` 等稳定事件，适合 IDE、脚本和其他客户端接入。
 
 ### 结构化决策
 
@@ -454,7 +455,7 @@ npm test
 npm run build
 ```
 
-测试使用临时数据库、本地确定性模型和 MCP fixture，不调用付费模型。覆盖加密凭据、协议认证、模型路由、模型运行指标、能力绑定可见性、能力风险摘要、能力启用确认与审计、Team Charter 能力绑定确认与审计、工具网关、任务租约、消息幂等、团队招募、团队模板复制、多设备招募会话游标、服务端草稿版本、多设备草稿自动合并与冲突选择、跨团队协作白名单、团队自治暂停/恢复、团队自治限额、团队专属知识隔离、工作树、定时任务、定时任务失败通知、任务介入事项持久通知与已读状态、恢复、CLI 节点 bootstrap、`ggb node` 统一入口、远程节点在线/执行状态和断线恢复事件；当前后端套件为 170/170，桌面/移动浏览器基线为 62 个运行，并包含手机端团队上下文、快速切换团队、底部主导航、导航抽屉、触控文件入口、底部设置面板和执行节点配对向导回归。
+测试使用临时数据库、本地确定性模型和 MCP fixture，不调用付费模型。覆盖加密凭据、协议认证、模型路由、模型运行指标、能力绑定可见性、能力风险摘要、能力启用确认与审计、Team Charter 能力绑定确认与审计、工具网关、任务租约、消息幂等、团队招募、团队模板复制、多设备招募会话游标、服务端草稿版本、多设备草稿自动合并与冲突选择、跨团队协作白名单、团队自治暂停/恢复、团队自治限额、团队专属知识隔离、工作树、定时任务、定时任务失败通知、任务介入事项持久通知与已读状态、恢复、CLI 节点 bootstrap、`ggb node` 统一入口、`ggb rpc` JSONL 事件流与中止、远程节点在线/执行状态和断线恢复事件；当前后端套件为 172/172，桌面/移动浏览器基线为 62 个运行，并包含手机端团队上下文、快速切换团队、底部主导航、导航抽屉、触控文件入口、底部设置面板和执行节点配对向导回归。
 
 ### 每轮迭代要求
 

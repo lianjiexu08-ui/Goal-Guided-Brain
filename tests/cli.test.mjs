@@ -70,6 +70,21 @@ function runNode(args, extraEnv = {}) {
   });
 }
 
+function runRpc(url, args, messages, extraEnv = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cli, 'rpc', '--base-url', url, '--api-key', 'fixture-key', ...args], {
+      env: { ...process.env, PATH: process.env.PATH, ...extraEnv },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '', stderr = '';
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.on('error', reject);
+    child.on('close', code => resolve({ code, stdout, stderr }));
+    child.stdin.end(messages.map(message => JSON.stringify(message)).join('\n') + '\n');
+  });
+}
+
 test('CLI doctor reports cross-platform runtime and service checks without exposing credentials', async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cli-doctor-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
@@ -229,6 +244,64 @@ test('CLI emits streaming SSE chunks as they arrive', async (t) => {
   const result = await runCli(`http://127.0.0.1:${server.address().port}`, ['--provider', 'deepseek', 'hello'], '', false);
   assert.equal(result.code, 0);
   assert.equal(result.stdout, 'one two\n');
+});
+
+test('CLI rpc exposes stable JSONL events and switches models between turns', async (t) => {
+  const requests = [];
+  const server = http.createServer(async (req, res) => {
+    let body = ''; for await (const chunk of req) body += chunk;
+    requests.push(JSON.parse(body));
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    const answer = requests.length === 1 ? 'rpc one' : 'rpc two';
+    res.end(`data: ${JSON.stringify({ choices: [{ delta: { content: answer } }] })}\n\ndata: [DONE]\n\n`);
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cli-rpc-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const result = await runRpc(`http://127.0.0.1:${server.address().port}/v1`, [], [
+    { type: 'ping' },
+    { type: 'prompt', id: 'p1', text: 'first' },
+    { type: 'set_model', provider: 'gemini', model: 'fixture-gemini' },
+    { type: 'follow_up', id: 'p2', text: 'second' },
+  ], { DSH_SESSION_DIR: directory });
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.stderr, '');
+  const events = result.stdout.trim().split('\n').map(line => JSON.parse(line));
+  assert.deepEqual(events.map(event => event.type), [
+    'session_start', 'ready', 'turn_start', 'text_delta', 'turn_end',
+    'model_changed', 'turn_start', 'text_delta', 'turn_end',
+  ]);
+  assert.equal(events.find(event => event.type === 'turn_end' && event.id === 'p1').text, 'rpc one');
+  assert.equal(events.find(event => event.type === 'turn_end' && event.id === 'p2').model, 'fixture-gemini');
+  assert.equal(requests[0].model, 'deepseek-chat');
+  assert.equal(requests[1].model, 'fixture-gemini');
+  const session = fs.readFileSync(path.join(directory, `${events[0].sessionId}.jsonl`), 'utf8');
+  assert.match(session, /model_change/);
+  assert.match(session, /first/);
+  assert.match(session, /second/);
+});
+
+test('CLI rpc aborts the active turn without writing a false response', async (t) => {
+  const server = http.createServer(async (_req, res) => {
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    await new Promise(resolve => setTimeout(resolve, 250));
+    if (!res.destroyed) res.end('data: [DONE]\n\n');
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cli-rpc-abort-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const result = await runRpc(`http://127.0.0.1:${server.address().port}/v1`, [], [
+    { type: 'prompt', id: 'abort-me', text: 'long task' },
+    { type: 'abort', id: 'abort-me' },
+  ], { DSH_SESSION_DIR: directory });
+  assert.equal(result.code, 0, result.stderr);
+  const events = result.stdout.trim().split('\n').map(line => JSON.parse(line));
+  assert.equal(events.at(-1).type, 'aborted');
+  assert.equal(events.some(event => event.type === 'turn_end'), false);
+  const session = fs.readFileSync(path.join(directory, `${events[0].sessionId}.jsonl`), 'utf8');
+  assert.equal(session.includes('"type":"response"'), false);
 });
 
 test('CLI persists JSONL sessions and continues the latest turns', async (t) => {
