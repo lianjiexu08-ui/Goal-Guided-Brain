@@ -207,6 +207,8 @@ export function createWorkbench({
   const getState = () => ({
     roles: store.roles(),
     skillCatalog: SKILLS.map(({ id, name }) => ({ id, name })),
+    unreadNotificationCount: store.records.list('notifications').filter((item) => item.read !== true && !item.readAt).length,
+    openAttentionCount: store.records.list('attention').filter((item) => !['resolved', 'dismissed'].includes(item.status)).length,
     capabilities: platform.capabilities.list().map((capability) => ({
       id: capability.id,
       name: capability.name,

@@ -436,6 +436,8 @@ type Provider = {
 type State = {
   roles: Assistant[];
   skillCatalog: { id: string; name: string }[];
+  unreadNotificationCount: number;
+  openAttentionCount: number;
   capabilities: Capability[];
   providers: Provider[];
   tasks: Task[];
@@ -1373,6 +1375,10 @@ function Workbench() {
   const tasks = data?.tasks || [];
   const allSessions = (data?.sessions || []).filter((s) => s.role === role);
   const reviewTasks = tasks.filter(taskNeedsOwnerAction);
+  const actionableNotificationCount = Math.max(
+    Number(data?.unreadNotificationCount || 0),
+    Number(data?.openAttentionCount || 0),
+  );
   const allReviewTasksSelected = reviewTasks.length > 0 && reviewTasks.every((task) => selectedReviewTaskIds.includes(task.id));
   const spaces = data?.spaces || [];
   const confirmedSpaces = spaces.filter(
@@ -2880,8 +2886,11 @@ function Workbench() {
                 >
                   <item.icon />
                   <span>{item.label}</span>
-                  {item.id === 'tasks' && running.length > 0 && (
-                    <b>{running.length}</b>
+                  {item.id === 'tasks' && running.length > 0 && <b>{running.length}</b>}
+                  {item.id === 'attention' && actionableNotificationCount > 0 && (
+                    <b aria-hidden="true">
+                      {actionableNotificationCount > 9 ? '9+' : actionableNotificationCount}
+                    </b>
                   )}
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -4303,6 +4312,7 @@ function Workbench() {
           >
             <Menu size={18} />
             <span>更多</span>
+            {actionableNotificationCount > 0 && <b aria-hidden="true">{actionableNotificationCount > 9 ? '9+' : actionableNotificationCount}</b>}
           </button>
         </nav>
       )}
