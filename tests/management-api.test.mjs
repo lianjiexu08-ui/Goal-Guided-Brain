@@ -41,6 +41,39 @@ test('health endpoint supports HEAD probes without a response body', async (t) =
   assert.equal(response.body, null);
 });
 
+test('task events expose an oldest-first incremental cursor', async (t) => {
+  const { app, request } = await fixture(t);
+  const task = app.store.createTask({
+    role: 'developer',
+    prompt: '验证任务事件可以增量读取。',
+    workspace: process.cwd(),
+  });
+  for (const [id, type] of [
+    ['event-a', 'turn/start'],
+    ['event-b', 'text/delta'],
+    ['event-c', 'turn/end'],
+  ]) {
+    app.store.records.save('task-events', {
+      taskId: task.id,
+      type,
+      data: { id },
+      at: new Date().toISOString(),
+    }, id);
+  }
+  const first = await request(`tasks/${task.id}/events?limit=2`);
+  assert.equal(first.status, 200);
+  assert.deepEqual(first.body.items.map((event) => event.type), ['turn/start', 'text/delta']);
+  assert.equal(first.body.hasMore, true);
+  assert.match(first.body.cursor, /\|event-b$/);
+  const second = await request(
+    `tasks/${task.id}/events?limit=2&after=${encodeURIComponent(first.body.cursor)}`,
+  );
+  assert.equal(second.status, 200);
+  assert.deepEqual(second.body.items.map((event) => event.type), ['turn/end']);
+  assert.equal(second.body.hasMore, false);
+  assert.equal((await request('tasks/missing-task/events')).status, 404);
+});
+
 test('TypeSafe-only configuration does not masquerade as a chat model', async (t) => {
   const { app, request } = await fixture(t);
   app.platform.providers.save({

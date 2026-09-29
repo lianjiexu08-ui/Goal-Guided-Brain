@@ -339,6 +339,41 @@ test('协作任务详情提供失败原因和执行实例重试入口', async ({
   await expect(detail.getByText(new RegExp(`恢复自执行实例 · ${fixture.taskId}`))).toBeVisible();
 });
 
+test('协作任务详情会增量显示新到达的执行事件', async ({ page }) => {
+  const fixture = seedFailedJob();
+  await page.goto('/');
+  const mobile = (page.viewportSize()?.width || 1024) < 768;
+  if (mobile) {
+    await page.getByRole('button', { name: 'Toggle Sidebar', exact: true }).click();
+    await expect(page.locator('[data-sidebar="sidebar"][data-mobile="true"]')).toBeVisible();
+  }
+  const sidebar = page.locator(
+    mobile ? '[data-sidebar="sidebar"][data-mobile="true"]' : '[data-sidebar="sidebar"]',
+  );
+  await sidebar.getByRole('button', { name: '协作任务', exact: true }).click();
+  await page.getByRole('button', { name: '失败恢复验收任务', exact: true }).first().click();
+  const detail = page.getByRole('dialog', { name: '失败恢复验收任务' });
+  await detail.getByRole('button', { name: 'E2E 验证失败执行可以恢复并保留旧结果', exact: true }).click();
+  await expect(detail.getByText('已自动切换模型', { exact: true })).toBeVisible();
+
+  const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
+  try {
+    store.records.save('task-events', {
+      taskId: fixture.taskId,
+      type: 'routing/fallback',
+      data: {
+        from: { providerId: 'e2e-primary-provider', providerName: 'E2E primary provider', model: 'e2e-primary-model' },
+        to: { providerId: 'e2e-recovery-provider', providerName: 'E2E recovery provider', model: 'e2e-recovery-model' },
+        reason: 'E2E 增量事件已收到。',
+      },
+      at: new Date().toISOString(),
+    }, `e2e-live-event-${randomUUID()}`);
+  } finally {
+    store.close();
+  }
+  await expect(detail.getByText('原因：E2E 增量事件已收到。', { exact: true })).toBeVisible({ timeout: 10000 });
+});
+
 test('协作任务详情支持所有者验收决定', async ({ page }) => {
   seedAcceptanceJob();
   await page.goto('/');

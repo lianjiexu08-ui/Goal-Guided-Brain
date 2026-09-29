@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Activity,
   Archive,
@@ -1713,19 +1713,79 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
   const [acceptanceNote, setAcceptanceNote] = useState('');
   const [command, setCommand] = useState('npm');
   const [args, setArgs] = useState('test');
+  const eventCursorRef = useRef<string | null>(null);
+  const eventPollBusyRef = useRef(false);
+  const mergeEvents = useCallback((current: Entity | null, incoming: Entity[]) => {
+    if (!current || !incoming.length) return current;
+    const byId = new Map(entityList(current.events).map((event) => [String(event.id), event]));
+    for (const event of incoming) byId.set(String(event.id), event);
+    const events = [...byId.values()].sort((a, b) => {
+      const at = txt(a, 'createdAt') || txt(a, 'at');
+      const bt = txt(b, 'createdAt') || txt(b, 'at');
+      return bt.localeCompare(at) || String(b.id).localeCompare(String(a.id));
+    });
+    return { ...current, events };
+  }, []);
   useEffect(() => {
     let cancelled = false;
+    eventCursorRef.current = null;
     void api<Entity>(`tasks/${taskId}`)
       .then((item) => {
-        if (!cancelled) setExecution(item);
+        if (!cancelled) {
+          const events = entityList(item.events).sort((a, b) => {
+            const at = txt(a, 'createdAt') || txt(a, 'at');
+            const bt = txt(b, 'createdAt') || txt(b, 'at');
+            return bt.localeCompare(at) || String(b.id).localeCompare(String(a.id));
+          });
+          const latest = events[0];
+          eventCursorRef.current = latest
+            ? `${txt(latest, 'createdAt') || txt(latest, 'at')}|${String(latest.id)}`
+            : null;
+          setExecution(item);
+        }
       })
       .catch((err) => {
         if (!cancelled) setError((err as Error).message);
       });
     return () => {
       cancelled = true;
-    };
+      };
   }, [taskId]);
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      if (cancelled || eventPollBusyRef.current) return;
+      eventPollBusyRef.current = true;
+      try {
+        const after = eventCursorRef.current;
+        const suffix = after ? `?after=${encodeURIComponent(after)}&limit=100` : '?limit=100';
+        const page = await api<{ items?: Entity[]; cursor?: string | null }>(`tasks/${taskId}/events${suffix}`);
+        const items = Array.isArray(page.items) ? page.items : [];
+        if (!cancelled && items.length) {
+          eventCursorRef.current = page.cursor || eventCursorRef.current;
+          setExecution((current) => mergeEvents(current, items));
+          // Status, delivery and verification live beside the event log. Refresh
+          // the aggregate only when new events arrive, keeping idle polling cheap.
+          void api<Entity>(`tasks/${taskId}`).then((item) => {
+            if (!cancelled) setExecution(item);
+          }).catch(() => {});
+        } else if (!cancelled && page.cursor) {
+          eventCursorRef.current = page.cursor;
+        }
+      } catch {
+        // The initial task request surfaces errors. A transient poll failure
+        // should not replace a usable execution detail with an error state.
+      } finally {
+        eventPollBusyRef.current = false;
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 2500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [mergeEvents, taskId]);
   const workspace =
     execution?.executionWorkspace &&
     typeof execution.executionWorkspace === 'object'

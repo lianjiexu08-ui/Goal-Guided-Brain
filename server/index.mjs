@@ -75,6 +75,37 @@ export function createWorkbench({
       exceeded: budgetTokens > 0 && usedTokens >= budgetTokens,
     };
   };
+  const publicTaskEvents = (taskId, { after = null, limit = 100 } = {}) => {
+    const cursorParts = typeof after === 'string' && after.trim()
+      ? after.split('|')
+      : [];
+    const afterAt = cursorParts[0] || null;
+    const afterId = cursorParts.slice(1).join('|') || null;
+    const ordered = store.records
+      .list('task-events')
+      .filter((event) => event.taskId === taskId)
+      .sort((a, b) => {
+        const at = String(a.createdAt || '');
+        const bt = String(b.createdAt || '');
+        return at.localeCompare(bt) || String(a.id).localeCompare(String(b.id));
+      })
+      .filter((event) => !afterAt
+        || event.createdAt > afterAt
+        || (event.createdAt === afterAt && Boolean(afterId && String(event.id) > afterId)));
+    const pageSize = Math.max(1, Math.min(200, Number(limit) || 100));
+    const page = ordered.slice(0, pageSize + 1);
+    const hasMore = page.length > pageSize;
+    const items = (hasMore ? page.slice(0, pageSize) : page).map((event) => ({
+      ...event,
+      at: event.at || event.createdAt,
+    }));
+    const last = page[pageSize - 1];
+    return {
+      items,
+      hasMore,
+      cursor: last ? `${last.createdAt}|${last.id}` : (after || null),
+    };
+  };
   const publicCrossTeamTimeline = ({ teamId = '', kind = 'all', limit = 60, before = null } = {}) => {
     const teams = store.teamSpaces()
       .filter((space) => space.status !== 'archived' && space.recruitment?.phase === 'confirmed')
@@ -450,6 +481,17 @@ export function createWorkbench({
         }
         if (parts[2] && req.method === 'DELETE')
           return send(200, { ok: platform.attachments.remove(parts[2]) });
+      }
+      // Task detail keeps its historical newest-first event snapshot for
+      // compatibility. This endpoint is the shared incremental projection
+      // used by the web inspector and future CLI/background consumers.
+      if (req.method === 'GET' && parts[1] === 'tasks' && parts[2] && parts[3] === 'events') {
+        if (parts[4]) return send(404, { error: '任务事件接口不存在。' });
+        if (!store.task(parts[2])) return send(404, { error: '任务不存在。' });
+        return send(200, publicTaskEvents(parts[2], {
+          after: options.query.get('after') || null,
+          limit: options.query.get('limit') || 100,
+        }));
       }
       if (
         req.method === 'GET' &&

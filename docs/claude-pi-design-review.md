@@ -138,7 +138,7 @@ pi 提供交互、一次性打印、JSON 事件和 RPC 模式。RPC 支持 steer
 - `dsh --continue`、`--session`、`--fork`。
 - 事件中包含 `sessionId`、`taskId`、`provider`、`model`、`usage` 和 `workspace`，禁止输出密钥。
 
-第一版仍保留在 CLI 本地 Agent Core 中，下一步再让网页后台任务消费同一套事件，并补齐 `steer`、`taskId`、usage 和 workspace 字段。
+第一版仍保留在 CLI 本地 Agent Core 中；网页任务详情已经通过 `/api/tasks/:id/events` 消费可增量读取的事件游标，后台任务和 CLI 仍需要进一步统一到同一条 Agent Core 事件总线，并补齐 `steer`、`taskId`、usage 和 workspace 字段。
 
 ## 不建议照搬
 
