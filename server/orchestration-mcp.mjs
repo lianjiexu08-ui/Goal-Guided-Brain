@@ -4,10 +4,35 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { bearer } from './auth.mjs';
 import { SKILLS } from './roles.mjs';
+import { assessCapabilityRisk } from './capabilities.mjs';
 
 const string = { type: 'string' };
 const objectSchema = (properties = {}, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const jsonValue = { type: ['string', 'object', 'array'] };
+function catalogComponents(service, capability) {
+  const empty = { commands: [], agents: [], mcp: [] };
+  if (!service || capability.kind === 'mcp') return empty;
+  try {
+    const components = service.components(capability.id);
+    const safe = (items = []) => items.map(item => ({
+      id: item.id,
+      name: item.name,
+      description: item.description || '',
+      runnable: item.runnable,
+      userInvocable: item.userInvocable,
+      diagnostics: Array.isArray(item.diagnostics) ? item.diagnostics : [],
+    }));
+    return {
+      commands: safe(components.commands),
+      agents: safe(components.agents),
+      mcp: safe(components.mcp),
+    };
+  } catch {
+    // A stale or tampered bundle remains visible with its risk and diagnostics,
+    // but component inspection must not make the read-only catalog fail.
+    return empty;
+  }
+}
 const decisionQuestion = {
   type: 'object',
   properties: {
@@ -117,6 +142,10 @@ export function createOrchestrationServer({ control, token, capabilities }) {
                 kind: current.kind,
                 version: current.version || null,
                 digest: current.digest || null,
+                source: current.source || null,
+                compatibility: current.compatibility || (Array.isArray(current.diagnostics) && current.diagnostics.length ? 'partial' : 'compatible'),
+                diagnostics: Array.isArray(current.diagnostics) ? current.diagnostics : [],
+                risk: assessCapabilityRisk(current),
                 enabled: current.enabled !== false,
                 tools: Array.isArray(current.tools) ? current.tools : [],
                 commands,
@@ -154,7 +183,13 @@ export function createOrchestrationServer({ control, token, capabilities }) {
                 name: capability.name,
                 kind: capability.kind,
                 version: capability.version || null,
+                digest: capability.digest || null,
+                source: capability.source || null,
+                compatibility: capability.compatibility || (Array.isArray(capability.diagnostics) && capability.diagnostics.length ? 'partial' : 'compatible'),
                 description: capability.description || '',
+                diagnostics: Array.isArray(capability.diagnostics) ? capability.diagnostics : [],
+                risk: assessCapabilityRisk(capability),
+                components: catalogComponents(capabilities, capability),
                 tools: Array.isArray(capability.tools) ? capability.tools : [],
                 health: capability.health ? {
                   ok: capability.health.ok === true,

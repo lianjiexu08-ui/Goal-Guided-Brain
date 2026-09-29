@@ -89,6 +89,19 @@ test('CLI doctor reports cross-platform runtime and service checks without expos
   assert.equal(report.checks.find(check => check.id === 'ui').status, 'pass');
 });
 
+test('CLI doctor identifies a WSL2 environment from standard process variables', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cli-wsl-doctor-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const result = await runDoctor(['--json', '--api-url', 'http://127.0.0.1:1/api/health', '--ui-url', 'http://127.0.0.1:1/'], {
+    DSH_SESSION_DIR: directory,
+    WSL_DISTRO_NAME: 'Ubuntu-24.04',
+  });
+  assert.equal(result.code, 0);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.platform.wsl, true);
+  assert.match(report.checks.find(check => check.id === 'platform').detail, /WSL2/);
+});
+
 test('CLI sends a unified prompt to an OpenAI-compatible provider', async (t) => {
   const requests = [];
   const server = http.createServer(async (req, res) => {

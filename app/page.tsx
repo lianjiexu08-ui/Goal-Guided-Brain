@@ -337,6 +337,27 @@ type TeamSpace = {
   messages: TeamMessage[];
   timeline?: TeamTimelineItem[];
 };
+type TeamTemplate = {
+  id: string;
+  name: string;
+  description?: string;
+  sourceTeamId?: string | null;
+  sourceTeamName?: string | null;
+  teamType?: TeamForm['teamType'];
+  goal: string;
+  purpose?: string;
+  model?: string | null;
+  providerId?: string | null;
+  workspaceMode?: TeamForm['workspaceMode'];
+  pmRoleId: string;
+  memberRoleIds: string[];
+  responsibilities?: Record<string, string>;
+  memberSettings?: TeamSpace['memberSettings'];
+  autonomy?: TeamSpace['autonomy'];
+  collaboration?: TeamSpace['collaboration'];
+  createdAt?: string;
+  updatedAt?: string;
+};
 type TeamCollaborator = {
   id: string;
   chatId?: string;
@@ -357,6 +378,8 @@ type TeamForm = {
   teamType: 'custom' | 'development' | 'operations' | 'product' | 'project';
   allowCollaboration: boolean;
   autonomyMode: 'auto' | 'assist';
+  model: string;
+  providerId: string;
 };
 type Capability = {
   id: string;
@@ -405,6 +428,7 @@ type State = {
   sessions: Session[];
   knowledge: Knowledge[];
   spaces: TeamSpace[];
+  teamTemplates: TeamTemplate[];
   config: Config;
 };
 const modelDisplayName = (model: ProviderModel) =>
@@ -1175,10 +1199,12 @@ function Workbench() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [modal, setModal] = useState<
-    'settings' | 'knowledge' | 'handoff' | 'team' | 'rename-team' | null
+    'settings' | 'knowledge' | 'handoff' | 'team' | 'rename-team' | 'team-template' | null
   >(null);
   const [teamRenameForm, setTeamRenameForm] = useState({ name: '' });
+  const [teamTemplateForm, setTeamTemplateForm] = useState({ name: '', description: '' });
   const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
+  const [teamTemplateId, setTeamTemplateId] = useState('');
   const [teamForm, setTeamForm] = useState<TeamForm>({
     name: '',
     goal: '',
@@ -1190,6 +1216,8 @@ function Workbench() {
     teamType: 'custom',
     allowCollaboration: true,
     autonomyMode: 'auto',
+    model: '',
+    providerId: '',
   });
   const [taskDetail, setTaskDetail] = useState<Task | null>(null);
   const [handoffTask, setHandoffTask] = useState<Task | null>(null);
@@ -1263,6 +1291,7 @@ function Workbench() {
   const recruitmentCursorRef = useRef<Record<string, string>>({});
   const roles = data?.roles || [];
   const activeRoles = roles.filter((r) => !r.archived);
+  const teamTemplates = data?.teamTemplates || [];
   const assistant = roles.find((r) => r.id === role) || {
     ...blankAssistant,
     name: data ? '暂无助手' : '载入中',
@@ -2318,6 +2347,43 @@ function Workbench() {
       teamType: (teamSpace.teamType as TeamForm['teamType']) || 'custom',
       allowCollaboration: teamSpace.collaboration?.enabled !== false,
       autonomyMode: teamSpace.autonomy?.mode === 'assist' ? 'assist' : 'auto',
+      model: teamSpace.model || '',
+      providerId: teamSpace.providerId || '',
+    });
+    setTeamTemplateId('');
+    setModal('team');
+  }
+  function openSaveTeamTemplate() {
+    if (!teamSpace || teamSpace.recruitment?.phase !== 'confirmed') return;
+    setTeamTemplateForm({
+      name: `${teamSpace.name} 模板`,
+      description: teamSpace.purpose || teamSpace.goal || '',
+    });
+    setModal('team-template');
+  }
+  function openCreateTeam(templateId = '') {
+    const template = teamTemplates.find((item) => item.id === templateId);
+    const pm = activeRoles.find((item) => item.id === (template?.pmRoleId || 'project_manager')) || activeRoles[0];
+    const memberRoleIds = template?.memberRoleIds?.length
+      ? [...template.memberRoleIds]
+      : pm
+        ? [pm.id]
+        : [];
+    setEditingTeamId(null);
+    setTeamTemplateId(template?.id || '');
+    setTeamForm({
+      name: template ? `${template.name} · 新团队` : '',
+      goal: template?.goal || '',
+      pmRoleId: template?.pmRoleId || pm?.id || 'project_manager',
+      memberRoleIds,
+      allowedTeamIds: [],
+      workspace: data?.config.workspace || '',
+      workspaceMode: template?.workspaceMode || 'isolated',
+      teamType: template?.teamType || 'custom',
+      allowCollaboration: template?.collaboration?.enabled !== false,
+      autonomyMode: template?.autonomy?.mode === 'assist' ? 'assist' : 'auto',
+      model: template?.model || '',
+      providerId: template?.providerId || '',
     });
     setModal('team');
   }
@@ -2800,7 +2866,9 @@ function Workbench() {
                     options={confirmedSpaces.map((space) => ({ value: space.id, label: space.name }))}
                   />
                 ) : null}
+                <button className="secondary-button" type="button" disabled={busy || !activeRoles.length} onClick={() => openCreateTeam()}><Copy size={14} /> 新建团队</button>
                 <button className="secondary-button" type="button" disabled={busy || !activeRoles.length} onClick={() => void startRecruitment(true)}><Plus size={15} /> 发布新需求</button>
+                <button className="text-button" type="button" disabled={busy || !teamSpace || teamSpace.recruitment?.phase !== 'confirmed'} onClick={openSaveTeamTemplate}><Copy size={13} /> 保存为模板</button>
                 <button className="text-button" type="button" disabled={busy || !teamSpace} onClick={openTeamRename}><Pencil size={13} /> 重命名</button>
                 <button className="text-button" type="button" onClick={openTeamSettings}>团队设置</button>
                 <div className="team-health"><span className="live-dot" /> {rosterReady ? `${teamMembers.length} 位成员已配置` : recruitment?.phase === 'proposed' ? '方案待确认' : '正在招募'}</div>
@@ -4051,13 +4119,15 @@ function Workbench() {
               ? '工作空间设置'
               : modal === 'knowledge'
                 ? '编辑知识'
-                : modal === 'handoff'
+              : modal === 'handoff'
                   ? '交给其他助手'
                   : modal === 'rename-team'
                     ? '重命名团队'
-              : editingTeamId
-                ? '团队设置'
-                : '手动创建团队'}
+                    : modal === 'team-template'
+                      ? '保存团队模板'
+                      : editingTeamId
+                        ? '团队设置'
+                        : '手动创建团队'}
           </DialogTitle>
           <DialogDescription>
             {modal === 'settings'
@@ -4068,9 +4138,11 @@ function Workbench() {
                   ? '将目标、成果和补充要求传给目标助手，创建独立会话。'
                   : modal === 'rename-team'
                     ? '只修改团队显示名称，团队消息、成员和任务都会保留。'
+                  : modal === 'team-template'
+                    ? '模板只保存团队配置，不会包含消息、任务、招募会话、草稿或附件。使用模板创建新团队时，需要重新确认名称、目标、目录和协作边界。'
                   : editingTeamId
-                    ? '调整当前团队的职责、成员、执行目录和自驱模式；已有任务保持原来的执行快照。'
-                    : '每个团队拥有自己的职责、成员和工作目录。你可以在团队招募中切换团队，团队也可以通过项目经理互相协作。'}
+                      ? '调整当前团队的职责、成员、执行目录和自驱模式；已有任务保持原来的执行快照。'
+                      : '每个团队拥有自己的职责、成员和工作目录。你可以在团队招募中切换团队，团队也可以通过项目经理互相协作。'}
           </DialogDescription>
           {modal === 'settings' && (
             <form
@@ -4492,6 +4564,49 @@ function Workbench() {
               </button>
             </form>
           )}
+          {modal === 'team-template' && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!teamSpace) return;
+                void action(async () => {
+                  await api<TeamTemplate>('team-templates', 'POST', {
+                    sourceTeamId: teamSpace.id,
+                    name: teamTemplateForm.name.trim(),
+                    description: teamTemplateForm.description.trim(),
+                  });
+                  await refresh();
+                  setModal(null);
+                  setNotice(`团队“${teamSpace.name}”已保存为模板`);
+                });
+              }}
+            >
+              <label>
+                模板名称
+                <input
+                  required
+                  maxLength={80}
+                  value={teamTemplateForm.name}
+                  onChange={(e) => setTeamTemplateForm((form) => ({ ...form, name: e.target.value }))}
+                  placeholder="例如：标准研发交付团队"
+                />
+              </label>
+              <label>
+                模板说明
+                <textarea
+                  rows={3}
+                  maxLength={2000}
+                  value={teamTemplateForm.description}
+                  onChange={(e) => setTeamTemplateForm((form) => ({ ...form, description: e.target.value }))}
+                  placeholder="说明适用的工作类型、成员组合和交付边界。"
+                />
+              </label>
+              <p className="team-template-boundary">会保存成员职责、成员模型/能力、团队模型、自治模式和执行目录模式；不会复制历史消息、任务、招募会话、草稿、附件或原团队协作白名单。</p>
+              <button className="primary-button" type="submit" disabled={busy || !teamSpace}>
+                <Copy size={15} /> 保存模板
+              </button>
+            </form>
+          )}
           {modal === 'rename-team' && (
             <form
               onSubmit={(e) => {
@@ -4550,20 +4665,54 @@ function Workbench() {
                       enabled: teamForm.allowCollaboration,
                       allowedTeamIds: teamForm.allowedTeamIds,
                     },
+                    model: teamForm.model || null,
+                    providerId: teamForm.providerId || null,
                   };
                   const saved = await api<TeamSpace>(
-                    editingTeamId ? `spaces/${editingTeamId}` : 'spaces',
+                    editingTeamId
+                      ? `spaces/${editingTeamId}`
+                      : teamTemplateId
+                        ? `team-templates/${teamTemplateId}/apply`
+                        : 'spaces',
                     editingTeamId ? 'PUT' : 'POST',
-                    payload,
+                    teamTemplateId && !editingTeamId
+                      ? {
+                          name: teamForm.name,
+                          goal: teamForm.goal,
+                          purpose: teamForm.goal,
+                          workspace: teamForm.workspace,
+                          workspaceMode: teamForm.workspaceMode,
+                          teamType: teamForm.teamType,
+                          model: teamForm.model || null,
+                          providerId: teamForm.providerId || null,
+                          collaboration: payload.collaboration,
+                        }
+                      : payload,
                   );
                   setSelectedSpaceId(saved.id);
                   setRole(saved.pmRoleId);
                   setModal(null);
                   if (!editingTeamId) setView('workspace');
-                  setNotice(editingTeamId ? `团队“${saved.name}”设置已保存` : `团队“${saved.name}”已创建`);
+                  setNotice(editingTeamId ? `团队“${saved.name}”设置已保存` : teamTemplateId ? `已从模板创建团队“${saved.name}”` : `团队“${saved.name}”已创建`);
                 });
               }}
             >
+              {!editingTeamId && (
+                <label>
+                  配置来源
+                  <select
+                    aria-label="选择团队模板"
+                    value={teamTemplateId}
+                    onChange={(e) => openCreateTeam(e.target.value)}
+                  >
+                    <option value="">空白团队</option>
+                    {teamTemplates.map((template) => (
+                      <option key={template.id} value={template.id}>{template.name}</option>
+                    ))}
+                  </select>
+                  <small className="field-help">选择模板只会预填配置；创建时仍需重新确认团队名称、目标、目录、模型和协作权限。</small>
+                </label>
+              )}
               <label>
                 团队名称
                 <input
@@ -4616,6 +4765,25 @@ function Workbench() {
                     options={activeRoles.map((item) => ({ value: item.id, label: item.name }))}
                   />
                 </div>
+                <label>
+                  默认模型
+                  <select
+                    value={teamForm.model && teamForm.providerId ? `${teamForm.providerId}::${teamForm.model}` : ''}
+                    onChange={(e) => {
+                      const [providerId = '', model = ''] = e.target.value.split('::');
+                      setTeamForm((form) => ({ ...form, providerId, model }));
+                    }}
+                  >
+                    <option value="">沿用工作空间模型</option>
+                    {teamForm.model && teamForm.providerId && !modelOptions.some((item) => item.key === `${teamForm.providerId}::${teamForm.model}`) && (
+                      <option value={`${teamForm.providerId}::${teamForm.model}`}>当前配置 · {teamForm.model}</option>
+                    )}
+                    {modelOptions.map((item) => (
+                        <option key={item.key} value={item.key}>{item.providerName} · {item.model.name}</option>
+                      ))}
+                  </select>
+                  <small className="field-help">模板中的模型会预填；可在这里重新选择。</small>
+                </label>
                 <label>
                   工作目录
                   <input

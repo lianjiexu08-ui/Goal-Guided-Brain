@@ -6,7 +6,7 @@ import { Vault } from './vault.mjs';
 import { ProviderService } from './providers.mjs';
 import { ControlPlane } from './control.mjs';
 import { AuthService } from './auth.mjs';
-import { CapabilityService, inspectBundle } from './capabilities.mjs';
+import { assessCapabilityRisk, CapabilityService, inspectBundle } from './capabilities.mjs';
 import { AutomationService, scheduleNextTimes, runCheck } from './automation.mjs';
 import { WorkspaceManager } from './workspaces.mjs';
 import { command } from './workspaces.mjs';
@@ -878,6 +878,9 @@ export function createPlatform({
           ...page.tools.map((t) => ({
             name: t.name,
             description: t.description,
+            ...(typeof t.annotations?.readOnlyHint === 'boolean'
+              ? { readOnlyHint: t.annotations.readOnlyHint }
+              : {}),
           })),
         );
         cursor = page.nextCursor;
@@ -965,6 +968,7 @@ export function createPlatform({
       const binding = capabilityBindings.get(capability.id) || { assistants: [], teams: [] };
       return {
         ...capability,
+        risk: assessCapabilityRisk(capability),
         bindings: binding,
         boundAssistantCount: binding.assistants.length,
         boundTeamCount: binding.teams.length,

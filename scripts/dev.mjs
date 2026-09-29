@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { terminateProcessTree } from '../server/runtime.mjs';
 const children = [
   spawn(process.execPath, ['server/index.mjs'], { stdio: 'inherit' }),
   spawn(
@@ -18,7 +19,7 @@ let stopping = false;
 function stop(code = 0) {
   if (stopping) return;
   stopping = true;
-  for (const child of children) child.kill('SIGTERM');
+  for (const child of children) terminateProcessTree(child.pid);
   setTimeout(() => process.exit(code), 1500);
 }
 for (const child of children) {

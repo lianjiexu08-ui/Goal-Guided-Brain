@@ -8,6 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { Records, RECORDS_SCHEMA } from '../server/records.mjs';
 import {
   CapabilityService,
+  assessCapabilityRisk,
   inspectBundle,
   fetchLimited,
 } from '../server/capabilities.mjs';
@@ -256,6 +257,57 @@ test('MCP metadata uses credential references and runtime namespaces fit native 
   } finally {
     f.close();
   }
+});
+
+test('capability risk summaries distinguish read-only connectors from executable integrations', () => {
+  const skill = assessCapabilityRisk({ kind: 'skill', diagnostics: [] });
+  assert.equal(skill.level, 'low');
+  assert.equal(skill.requiresReview, false);
+  assert.deepEqual(skill.reasons, []);
+
+  const incompatibleSkill = assessCapabilityRisk({
+    kind: 'skill',
+    diagnostics: ['原平台 shell 预处理尚不支持。'],
+  });
+  assert.equal(incompatibleSkill.level, 'medium');
+  assert.equal(incompatibleSkill.requiresReview, true);
+
+  const readOnlyRemote = assessCapabilityRisk({
+    kind: 'mcp',
+    transport: 'streamable-http',
+    health: {
+      tools: [
+        { name: 'read_docs', annotations: { readOnlyHint: true } },
+        { name: 'list_pages', readOnlyHint: true },
+      ],
+    },
+  });
+  assert.equal(readOnlyRemote.level, 'low');
+  assert.equal(readOnlyRemote.requiresReview, false);
+  assert.equal(readOnlyRemote.signals.readOnly, true);
+  assert.ok(readOnlyRemote.reasons.some((reason) => /只读/.test(reason)));
+
+  const executable = assessCapabilityRisk({
+    kind: 'mcp',
+    transport: 'stdio',
+    command: 'fixture-server',
+    credentialId: 'fixture-credential',
+  });
+  assert.equal(executable.level, 'high');
+  assert.equal(executable.requiresReview, true);
+  assert.ok(executable.reasons.some((reason) => /本地进程/.test(reason)));
+  assert.ok(executable.reasons.some((reason) => /凭据/.test(reason)));
+
+  const hookedPlugin = assessCapabilityRisk({
+    kind: 'plugin',
+    hooksPath: 'hooks/hooks.json',
+    allowHooks: true,
+    commands: [{ id: 'deploy' }],
+  });
+  assert.equal(hookedPlugin.level, 'high');
+  assert.equal(hookedPlugin.requiresReview, true);
+  assert.equal(hookedPlugin.signals.hasHooks, true);
+  assert.equal(hookedPlugin.signals.hasCommands, true);
 });
 
 test('bounded downloads reject oversized local fixture responses', async () => {

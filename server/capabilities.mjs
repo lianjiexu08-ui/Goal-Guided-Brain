@@ -7,6 +7,92 @@ import { command } from './workspaces.mjs';
 import { parse as parseArguments } from 'shell-quote';
 
 function bounded(value, max = 2000) { return String(value || '').slice(0, max); }
+
+/**
+ * Summarise the amount of trust an installed capability needs before an
+ * assistant can use it.  The result is deliberately derived from persisted
+ * metadata only: no credentials or command arguments are ever returned.
+ *
+ * A Skill containing instructions only is low risk.  Commands, agents and
+ * hooks can cause work to be executed, while MCP connections can reach a
+ * local process or a remote network service.  A connected MCP whose health
+ * probe explicitly marks every tool read-only is kept at low risk when it
+ * has no credential, so the catalog does not make read-only documentation
+ * connectors look like write-capable integrations.
+ */
+export function assessCapabilityRisk(capability = {}) {
+  const reasons = [];
+  let score = 0;
+  const kind = String(capability.kind || 'unknown');
+  const diagnostics = Array.isArray(capability.diagnostics)
+    ? capability.diagnostics.filter((value) => typeof value === 'string' && value.trim())
+    : [];
+  const commands = Array.isArray(capability.commands) ? capability.commands : [];
+  const agents = Array.isArray(capability.agents) ? capability.agents : [];
+  const pluginMcp = Array.isArray(capability.mcp) ? capability.mcp : [];
+  const healthTools = Array.isArray(capability.health?.tools) ? capability.health.tools : [];
+  const readOnlyMcp = kind === 'mcp' && healthTools.length > 0 && healthTools.every((tool) =>
+    tool?.readOnlyHint === true || tool?.annotations?.readOnlyHint === true,
+  );
+  const hasCredential = Boolean(
+    capability.credentialId ||
+    (capability.envRefs && typeof capability.envRefs === 'object' && Object.keys(capability.envRefs).length) ||
+    (Array.isArray(capability.requiredEnv) && capability.requiredEnv.length) ||
+    (Array.isArray(capability.requiredHeaders) && capability.requiredHeaders.length),
+  );
+
+  if (kind === 'mcp') {
+    if (capability.transport === 'stdio') {
+      score += 4;
+      reasons.push('MCP 会在执行节点启动本地进程。');
+    } else {
+      score += 2;
+      reasons.push('MCP 会访问远程网络服务。');
+    }
+    if (hasCredential) {
+      score += 2;
+      reasons.push('MCP 使用独立凭据访问外部系统。');
+    }
+    if (readOnlyMcp && !hasCredential && capability.transport !== 'stdio') {
+      score = Math.min(score, 1);
+      reasons.push('探测到的工具全部声明为只读。');
+    }
+  }
+
+  if (commands.length || agents.length) {
+    score += 2;
+    reasons.push('能力包含可运行的命令或助手模板。');
+  }
+  if (pluginMcp.length) {
+    score += 2;
+    reasons.push('插件声明了 MCP 连接，需要单独配置并审查外部访问。');
+  }
+  if (capability.hooksPath) {
+    score += capability.allowHooks ? 4 : 2;
+    reasons.push(capability.allowHooks ? '已允许插件 Hook 在任务生命周期执行。' : '插件包含 Hook 配置，启用前仍需审查。');
+  }
+  if (diagnostics.length) {
+    // A compatibility warning means the imported behavior differs from its
+    // source platform. Keep it above low risk even when the bundle contains
+    // no executable component, so an agent cannot silently treat an
+    // unsupported instruction as a normal Skill.
+    score += 2;
+    reasons.push(`存在 ${diagnostics.length} 条兼容性诊断，不能按原平台行为直接假设。`);
+  }
+  const level = score >= 4 ? 'high' : score >= 2 ? 'medium' : 'low';
+  return {
+    level,
+    requiresReview: level !== 'low',
+    reasons: [...new Set(reasons)],
+    signals: {
+      readOnly: readOnlyMcp,
+      hasCredential,
+      hasCommands: commands.length > 0 || agents.length > 0,
+      hasHooks: Boolean(capability.hooksPath),
+      hasNetwork: kind === 'mcp' && capability.transport !== 'stdio',
+    },
+  };
+}
 function inside(root, relative) {
   const destination = path.resolve(root, relative);
   if (destination !== root && !destination.startsWith(`${root}${path.sep}`)) throw new Error('能力文件路径越界。');

@@ -5,7 +5,7 @@ These are deployment templates. The repository's automated tests exercise local 
 ## Requirements
 
 - Node.js 22.13 or newer, npm, Git and a supported DSH executable on execution nodes.
-- Linux for an always-on control plane; macOS, Linux, or a Linux distribution under WSL2 for execution nodes. Native Windows processes are not supported by the process-group cancellation code.
+- Linux for an always-on control plane; macOS, Linux, or Windows for execution nodes. Windows workers use Node's `taskkill.exe /t` process-tree termination and understand npm's `.cmd` DSH shims. WSL2 remains the recommended Windows deployment because Git, shell tools and third-party skills are usually Linux-oriented; native Windows has compatibility coverage but still needs a real Windows acceptance run.
 - A persistent volume for the controller database, artifacts and encrypted credentials. Maintain a separate backup of vault unlock material.
 - A DNS name and inbound TCP 80/443 for Caddy certificate issuance. Keep application ports 3088 and 3089 bound to loopback.
 
@@ -40,6 +40,12 @@ Nodes establish outbound HTTPS connections. Heartbeats occur every ten seconds; 
 
 Selected Skill and plugin files are transferred with the assignment as bounded, content-addressed bundles. The node validates their hash and maps control-plane paths to its own cache. Executable dependencies used by those bundles must still be installed on the execution node.
 
+The path mapping is portable across a mixed controller/worker pair: a POSIX
+controller may send `/srv/...` paths to a Windows worker, and a Windows
+controller may send `C:\...` paths to a Linux or macOS worker. The worker never
+uses the controller path as a local filesystem path; it remaps the verified
+bundle into its own data directory before starting the runtime.
+
 MCP connections currently run through the control-plane tool gateway. A configured stdio command therefore runs on the controller, including when its requesting Agent runs on a remote node. Node-local stdio servers are not yet supported; do not configure a node-only absolute path as a controller MCP command. Remote HTTP MCP servers can expose node-hosted tools when that endpoint is reachable from the controller.
 
 The gateway enforces an optional exact tool-name allowlist. An empty list permits discovering every advertised tool. A tool declaring `readOnlyHint: true` is treated as read-only under the owner's trust in the selected provider; that annotation is not independent proof of safety. Other tools require an explicit grant for the tool and argument set before invocation. Unknown results remain blocked pending inspection, and repeated successful calls return the saved result. These checks govern MCP calls and do not make arbitrary third-party terminal scripts a security boundary.
@@ -49,6 +55,22 @@ The gateway enforces an optional exact tool-name allowlist. An empty list permit
 Use a Linux Node.js installation and Linux DSH executable inside WSL2. Keep source and execution directories in the Linux filesystem, for example `/home/user/projects`, rather than a Windows-mounted repository when reliable Git permissions and process handling matter. Paths in the node configuration must use Linux syntax.
 
 Run the same node command inside WSL2. For a persistent service, enable systemd in the distribution and use the Linux node unit after adjusting its user and paths. WSL and the Windows host must both remain running for local node work to continue. Always-on monitoring should target a cloud node or the cloud controller.
+
+### Native Windows worker (compatibility path)
+
+Native Windows workers can run the same `scripts/node.mjs` process when Node.js,
+Git, the DSH executable and the required skill/plugin dependencies are installed
+on Windows. The worker accepts `C:\...` workspace mappings and npm-generated
+`dsh.cmd` shims; cancellation uses `taskkill.exe` to terminate the complete
+runtime tree. Use PowerShell to pair the node, for example:
+
+```powershell
+node scripts/node.mjs --config C:\dsh\node.json --pair YOUR_ONE_TIME_CODE --name windows-node
+```
+
+Keep the node data directory and workspace outside temporary or network-mounted
+paths. This path has deterministic fixture coverage in the repository but has
+not yet replaced the required real Windows/WSL2 acceptance run.
 
 ## Recovery And Verification
 

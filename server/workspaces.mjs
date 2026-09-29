@@ -3,7 +3,7 @@ import path from 'node:path';
 import net from 'node:net';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { childEnvironment } from './runtime.mjs';
+import { childEnvironment, terminateProcessTree } from './runtime.mjs';
 
 export function command(
   executable,
@@ -22,7 +22,9 @@ export function command(
       failure;
     const timer = setTimeout(() => {
       failure = new Error(`${executable} 执行超时。`);
-      child.kill('SIGKILL');
+      // `SIGKILL` is not a Windows signal and does not terminate a command
+      // shim's descendants.  Use the platform-aware process-tree helper.
+      terminateProcessTree(child.pid, { force: true });
     }, timeout);
     const collect = (target) => (data) => {
       bytes += data.length;

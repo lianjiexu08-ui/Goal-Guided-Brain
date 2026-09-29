@@ -158,7 +158,14 @@ test('project manager proposes a Team Charter and owner confirmation materialize
     const catalog = JSON.parse((await client.callTool({ name: 'list_capability_catalog', arguments: {} })).content[0].text);
     assert.ok(catalog.skills.some(skill => skill.id === 'development-workflow'));
     assert.ok(catalog.providers.some(item => item.id === provider.id && item.models.some(model => model.id === 'recruitment-model')));
-    assert.ok(catalog.capabilities.some(item => item.id === capability.id && item.enabled !== false));
+    const catalogCapability = catalog.capabilities.find(item => item.id === capability.id);
+    assert.ok(catalogCapability && catalogCapability.enabled !== false);
+    assert.equal(catalogCapability.source, null);
+    assert.equal(catalogCapability.compatibility, 'compatible');
+    assert.equal(catalogCapability.risk.level, 'medium');
+    assert.equal(catalogCapability.risk.requiresReview, true);
+    assert.ok(catalogCapability.risk.reasons.some(reason => /远程网络服务/.test(reason)));
+    assert.deepEqual(catalogCapability.components, { commands: [], agents: [], mcp: [] });
     const proposed = JSON.parse((await client.callTool({ name: 'propose_team', arguments: {
       teamName: '交付小队',
       goal: '交付一个可上线的协作工具 MVP。',

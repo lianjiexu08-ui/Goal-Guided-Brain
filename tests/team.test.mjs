@@ -118,6 +118,105 @@ test('team space routes owner messages to the project manager and persists repli
   }
 });
 
+test('team templates save durable configuration and create an isolated team copy', async () => {
+  const fixture = sandbox();
+  const app = createWorkbench({ ...fixture, requireCredential: false, runtimeFactory: () => ({ start() {}, cancel() {} }) });
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  const request = async (route, body, method = 'GET') => {
+    const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  try {
+    const draft = await request('teams', {
+      name: '尚未确认团队',
+      goal: '只用于验证模板来源边界。',
+      purpose: '等待招募确认。',
+      pmRoleId: 'project_manager',
+      memberRoleIds: ['project_manager'],
+      recruitment: { phase: 'discovery' },
+    }, 'POST');
+    assert.equal(draft.status, 201);
+    const draftTemplate = await request('team-templates', { sourceTeamId: draft.body.id, name: '不应保存' }, 'POST');
+    assert.equal(draftTemplate.status, 400);
+
+    const source = await request('teams', {
+      name: '平台研发团队',
+      goal: '负责平台功能开发、测试和版本交付。',
+      purpose: '把需求稳定地交付到线上。',
+      teamType: 'development',
+      pmRoleId: 'project_manager',
+      memberRoleIds: ['project_manager', 'developer', 'product'],
+      workspace: fixture.workspace,
+      workspaceMode: 'isolated',
+      responsibilities: { developer: '实现功能并运行测试。' },
+      memberSettings: { developer: { label: '主开发', modelHint: 'dev-model' } },
+      model: 'team-model',
+      providerId: 'team-provider',
+      autonomy: { mode: 'assist', maxDepth: 3, maxJobs: 12, budgetTokens: 50000, requireApprovalKinds: ['deploy'] },
+      collaboration: { enabled: true, autoHandoff: true, sharedBoard: true, allowedTeamIds: ['private-target'] },
+      recruitment: { phase: 'confirmed' },
+    }, 'POST');
+    assert.equal(source.status, 201);
+    const template = await request('team-templates', {
+      sourceTeamId: source.body.id,
+      name: '标准研发交付模板',
+      description: '用于重复创建研发交付团队。',
+    }, 'POST');
+    assert.equal(template.status, 201);
+    assert.equal(template.body.name, '标准研发交付模板');
+    assert.equal(template.body.sourceTeamId, source.body.id);
+    assert.deepEqual(template.body.memberRoleIds, ['project_manager', 'developer', 'product']);
+    assert.equal(template.body.model, 'team-model');
+    assert.equal(template.body.providerId, 'team-provider');
+    assert.deepEqual(template.body.collaboration.allowedTeamIds, []);
+
+    const listed = await request('team-templates');
+    assert.ok(listed.body.some((item) => item.id === template.body.id));
+    const copied = await request(`team-templates/${template.body.id}/apply`, {
+      name: '支付研发团队',
+      goal: '负责支付链路的开发、测试和上线。',
+      workspace: fixture.workspace,
+      recruitment: {
+        phase: 'confirmed',
+        sessionId: 'source-session-must-not-copy',
+        turns: 99,
+        proposal: { teamName: '旧方案' },
+        confirmedAt: '2000-01-01T00:00:00.000Z',
+      },
+    }, 'POST');
+    assert.equal(copied.status, 201);
+    assert.notEqual(copied.body.id, source.body.id);
+    assert.equal(copied.body.name, '支付研发团队');
+    assert.equal(copied.body.goal, '负责支付链路的开发、测试和上线。');
+    assert.equal(copied.body.recruitment.phase, 'confirmed');
+    assert.equal(copied.body.recruitment.sessionId, null);
+    assert.equal(copied.body.recruitment.turns, 0);
+    assert.equal(copied.body.recruitment.proposal, null);
+    assert.notEqual(copied.body.recruitment.confirmedAt, '2000-01-01T00:00:00.000Z');
+    assert.deepEqual(copied.body.memberRoleIds, source.body.memberRoleIds);
+    assert.equal(copied.body.memberSettings.developer.label, '主开发');
+    assert.equal(copied.body.model, 'team-model');
+    assert.equal(copied.body.providerId, 'team-provider');
+    assert.equal(copied.body.autonomy.mode, 'assist');
+    assert.deepEqual(copied.body.collaboration.allowedTeamIds, []);
+    const detail = await request(`teams/${copied.body.id}`);
+    assert.equal(detail.body.messages.length, 0);
+    assert.equal(detail.body.tasks.length, 0);
+
+    const removed = await request(`team-templates/${template.body.id}`, undefined, 'DELETE');
+    assert.deepEqual(removed.body, { ok: true });
+    const after = await request('team-templates');
+    assert.ok(!after.body.some((item) => item.id === template.body.id));
+  } finally {
+    await app.close();
+    fs.rmSync(fixture.dir, { recursive: true, force: true });
+  }
+});
+
 test('team timeline exposes an older page without duplicating the latest window', async () => {
   const fixture = sandbox();
   const app = createWorkbench({ ...fixture, requireCredential: false });

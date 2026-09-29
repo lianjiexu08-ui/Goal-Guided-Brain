@@ -209,6 +209,9 @@ test(
       url: `http://127.0.0.1:${upstream.address().port}/mcp`,
       tools: ['get_contract'],
     });
+    const probe = await request(`capabilities/${mcp.id}/probe`, {});
+    assert.equal(probe.ok, true);
+    assert.equal(probe.tools[0].readOnlyHint, true);
     const roles = Object.fromEntries(
       ['coordinator', 'frontend', 'backend'].map((name) => [
         name,

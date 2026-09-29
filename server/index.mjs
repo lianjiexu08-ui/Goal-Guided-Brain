@@ -282,6 +282,7 @@ export function createWorkbench({
       })),
       timeline: publicTeamTimeline(space.id),
     })),
+    teamTemplates: store.teamTemplates(),
     config: {
       ...store.config,
       hasApiKey: platform.hasCredential(),
@@ -497,6 +498,20 @@ export function createWorkbench({
       if (parts[1] === 'profile' && !parts[2]) {
         if (req.method === 'GET') return send(200, store.profile());
         if (req.method === 'PUT') return send(200, store.saveProfile(body));
+      }
+      if (parts[1] === 'team-templates') {
+        if (req.method === 'GET' && !parts[2]) return send(200, store.teamTemplates());
+        if (req.method === 'POST' && !parts[2]) return send(201, store.saveTeamTemplate(body));
+        if (parts[2]) {
+          const template = store.teamTemplate(parts[2]);
+          if (!template) return send(404, { error: '团队模板不存在。' });
+          if (req.method === 'GET' && !parts[3]) return send(200, template);
+          if (req.method === 'PUT' && !parts[3]) return send(200, store.saveTeamTemplate(body, template.id));
+          if (req.method === 'DELETE' && !parts[3]) return send(200, { ok: store.removeTeamTemplate(template.id) });
+          if (req.method === 'POST' && parts[3] === 'apply') {
+            return send(201, store.createTeamFromTemplate(template.id, body));
+          }
+        }
       }
       // `teams` is the public name used by the multi-team Chat UI. Keep
       // `/spaces` as a backwards-compatible alias for existing clients.

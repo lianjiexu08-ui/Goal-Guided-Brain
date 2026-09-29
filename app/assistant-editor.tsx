@@ -582,6 +582,11 @@ export function AssistantEditor({
                     const diagnostics = Array.isArray(capability.diagnostics)
                       ? capability.diagnostics.filter((item): item is string => typeof item === 'string')
                       : [];
+                    const risk = capability.risk && typeof capability.risk === 'object'
+                      ? (capability.risk as { level?: string; requiresReview?: boolean; reasons?: unknown[] })
+                      : null;
+                    const riskLabel = risk?.level === 'high' ? '高风险' : risk?.level === 'medium' ? '中风险' : risk?.level === 'low' ? '低风险' : '';
+                    const firstRiskReason = typeof risk?.reasons?.[0] === 'string' ? risk.reasons[0] : '';
                     const unavailable = capability.enabled === false || compatibility === 'unsupported';
                     const usage = [
                       typeof capability.boundAssistantCount === 'number' ? `${capability.boundAssistantCount} 个助手` : '',
@@ -611,6 +616,12 @@ export function AssistantEditor({
                             {[capability.kind, compatibility === 'partial' ? '部分兼容' : compatibility === 'compatible' ? '可直接使用' : compatibility === 'unsupported' ? '不支持' : '', capability.enabled === false ? '已停用' : '', usage].filter(Boolean).join(' · ')}
                           </small>
                           {diagnostics[0] && <small className="assistant-capability-warning">{diagnostics[0]}</small>}
+                          {risk && (
+                            <small className={risk.requiresReview ? 'assistant-capability-warning' : undefined}>
+                              {riskLabel}{risk.requiresReview ? ' · 绑定前需要复核' : ''}
+                              {firstRiskReason ? ` · ${firstRiskReason}` : ''}
+                            </small>
+                          )}
                         </span>
                       </label>
                     );

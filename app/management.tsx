@@ -137,6 +137,9 @@ const statuses: Record<string, string> = {
   considered: '候选',
   unavailable: '不可用',
   ineligible: '能力不满足',
+  'risk-low': '低风险',
+  'risk-medium': '中风险',
+  'risk-high': '高风险',
 };
 const time = (value: unknown) =>
   typeof value === 'string' && value
@@ -193,7 +196,7 @@ function IconButton({
 }
 function Badge({ value }: { value: string }) {
   if (!value) return null;
-  const tone = ['failed', 'error', 'unhealthy', 'revoked', 'unavailable', 'rejected'].includes(value)
+  const tone = ['failed', 'error', 'unhealthy', 'revoked', 'unavailable', 'rejected', 'risk-high'].includes(value)
     ? 'error'
     : [
           'blocked',
@@ -208,6 +211,7 @@ function Badge({ value }: { value: string }) {
           'state_unknown',
           'budget_exceeded',
           'budget-exceeded',
+          'risk-medium',
         ].includes(value)
       ? 'warning'
       : ['disabled', 'offline', 'cancelled', 'paused', 'dismissed'].includes(
@@ -4192,6 +4196,38 @@ export function Management({
                   detail.item.diagnostics.map((value, index) => (
                     <p key={index}>{String(value)}</p>
                   ))}
+                {detail.collection === 'capabilities' && (() => {
+                  const rawRisk = detail.item.risk;
+                  if (!rawRisk || typeof rawRisk !== 'object' || Array.isArray(rawRisk)) return null;
+                  const risk = rawRisk as Entity;
+                  const signals = risk.signals && typeof risk.signals === 'object' && !Array.isArray(risk.signals)
+                    ? risk.signals as Record<string, unknown>
+                    : {};
+                  const signalLabels: [string, string][] = [
+                    ['readOnly', '只读'],
+                    ['hasCredential', '凭据'],
+                    ['hasCommands', '命令/助手'],
+                    ['hasHooks', 'Hook'],
+                    ['hasNetwork', '网络'],
+                  ];
+                  return (
+                    <section className="capability-risk" aria-label="能力风险评估">
+                      <h3>风险评估</h3>
+                      <Badge value={`risk-${txt(risk, 'level') || 'unknown'}`} />
+                      <p>
+                        {risk.requiresReview === true
+                          ? '绑定前需要人工复核。'
+                          : '当前元数据未发现需要额外复核的执行信号。'}
+                      </p>
+                      {Array.isArray(risk.reasons) && (risk.reasons as unknown[]).map((reason, index) => (
+                        <p key={index}>{String(reason)}</p>
+                      ))}
+                      <div className="manage-muted">
+                        信号：{signalLabels.filter(([key]) => signals[key] === true).map(([, label]) => label).join(' · ') || '无'}
+                      </div>
+                    </section>
+                  );
+                })()}
                 {detail.collection === 'capabilities' &&
                   Boolean(detail.item.bindings) &&
                   typeof detail.item.bindings === 'object' && (

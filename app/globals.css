@@ -2004,6 +2004,7 @@ h1 {
 .team-collaborator-picker:disabled { opacity: .62; }
 .team-picker-help { margin: -2px 0 10px; color: #8a9ba2; font-size: 10px; line-height: 1.5; }
 .team-picker-empty { display: block; padding: 7px 2px; color: #8a9ba2; font-size: 10px; line-height: 1.5; }
+.team-template-boundary { margin: -2px 0 12px; padding: 9px 11px; border: 1px solid #dfeee7; border-radius: 9px; color: #6f8881; background: #f6fbf8; font-size: 10px; line-height: 1.55; }
 .team-member-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
 .team-member-option { flex-direction: row !important; align-items: flex-start; gap: 9px !important; padding: 8px; border-radius: 7px; background: #f8fbfc; }
 .team-member-option:hover { background: #f0f8f5; }

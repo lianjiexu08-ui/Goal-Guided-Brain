@@ -292,6 +292,144 @@ export class Store {
     const space = this.records.get('spaces', id);
     return space ? this.normalizeTeamSpace(space) : null;
   }
+  teamTemplates() {
+    return this.records.list('team-templates').map((template) => this.normalizeTeamTemplate(template));
+  }
+  teamTemplate(id) {
+    const template = this.records.get('team-templates', id);
+    return template ? this.normalizeTeamTemplate(template) : null;
+  }
+  normalizeTeamTemplate(template) {
+    if (!template) return template;
+    return {
+      description: '',
+      sourceTeamId: null,
+      sourceTeamName: null,
+      teamType: 'custom',
+      purpose: '',
+      goal: '',
+      model: null,
+      providerId: null,
+      workspaceMode: 'isolated',
+      pmRoleId: 'project_manager',
+      memberRoleIds: ['project_manager'],
+      responsibilities: {},
+      memberSettings: {},
+      autonomy: { mode: 'auto', maxDepth: 4, maxJobs: 32, budgetTokens: 200000, requireApprovalKinds: [] },
+      collaboration: { enabled: true, autoHandoff: true, sharedBoard: true, allowedTeamIds: [] },
+      ...template,
+    };
+  }
+  saveTeamTemplate(input, id) {
+    const existing = id ? this.teamTemplate(id) : undefined;
+    if (id && !existing) throw new Error('团队模板不存在。');
+    const sourceTeamId = typeof input.sourceTeamId === 'string' && input.sourceTeamId.trim()
+      ? input.sourceTeamId.trim()
+      : (existing?.sourceTeamId || null);
+    const source = sourceTeamId ? this.teamSpace(sourceTeamId) : null;
+    if (sourceTeamId && !source) throw new Error('模板来源团队不存在。');
+    if (source && source.status === 'archived') throw new Error('归档团队不能保存为模板。');
+    if (source && source.recruitment?.phase !== 'confirmed') throw new Error('只有已确认的团队才能保存为模板。');
+    const name = String(input.name ?? existing?.name ?? source?.name ?? '').trim();
+    if (!name || name.length > 80) throw new Error('团队模板名称无效。');
+    const description = String(input.description ?? existing?.description ?? source?.purpose ?? source?.goal ?? '').trim();
+    if (description.length > 2000) throw new Error('团队模板说明不能超过 2000 字符。');
+    const config = source || existing;
+    if (!config) throw new Error('请提供模板来源团队。');
+    const memberRoleIds = [...new Set(
+      (Array.isArray(config.memberRoleIds) ? config.memberRoleIds : [config.pmRoleId || 'project_manager'])
+        .filter((value) => typeof value === 'string' && this.role(value) && !this.role(value).archived),
+    )];
+    const pmRoleId = String(config.pmRoleId || memberRoleIds[0] || 'project_manager').trim();
+    if (!memberRoleIds.includes(pmRoleId)) memberRoleIds.unshift(pmRoleId);
+    return this.records.save('team-templates', {
+      ...existing,
+      name,
+      description,
+      sourceTeamId: source?.id || sourceTeamId || existing?.sourceTeamId || null,
+      sourceTeamName: source?.name || existing?.sourceTeamName || null,
+      teamType: config.teamType || 'custom',
+      goal: String(config.goal || '').trim().slice(0, 2000),
+      purpose: String(config.purpose || config.goal || '').trim().slice(0, 2000),
+      model: config.model || null,
+      providerId: config.providerId || null,
+      workspaceMode: config.workspaceMode || 'isolated',
+      pmRoleId,
+      memberRoleIds,
+      responsibilities: config.responsibilities && typeof config.responsibilities === 'object' && !Array.isArray(config.responsibilities)
+        ? config.responsibilities
+        : {},
+      memberSettings: config.memberSettings && typeof config.memberSettings === 'object' && !Array.isArray(config.memberSettings)
+        ? config.memberSettings
+        : {},
+      autonomy: config.autonomy || { mode: 'auto', maxDepth: 4, maxJobs: 32, budgetTokens: 200000, requireApprovalKinds: [] },
+      collaboration: {
+        enabled: config.collaboration?.enabled !== false,
+        autoHandoff: config.collaboration?.autoHandoff !== false,
+        sharedBoard: config.collaboration?.sharedBoard !== false,
+        // A template must not preserve a team's private allow-list. Targets
+        // are selected after the new team is created.
+        allowedTeamIds: [],
+      },
+    }, id);
+  }
+  removeTeamTemplate(id) {
+    if (!this.teamTemplate(id)) throw new Error('团队模板不存在。');
+    return this.records.remove('team-templates', id);
+  }
+  createTeamFromTemplate(templateId, input = {}) {
+    const template = this.teamTemplate(templateId);
+    if (!template) throw new Error('团队模板不存在。');
+    const name = String(input.name ?? '').trim();
+    const goal = String(input.goal ?? template.goal ?? '').trim();
+    if (!name || name.length > 80) throw new Error('新团队名称无效。');
+    if (!goal || goal.length > 2000) throw new Error('新团队目标无效。');
+    const workspace = String(input.workspace ?? this.config.workspace).trim();
+    const model = Object.hasOwn(input, 'model') ? input.model : template.model;
+    const providerId = Object.hasOwn(input, 'providerId') ? input.providerId : template.providerId;
+    // A copy starts a fresh recruitment identity. Never carry the source
+    // team's session, turns, proposal or confirmation timestamp across.
+    const requestedPhase = input.recruitment && typeof input.recruitment === 'object' && !Array.isArray(input.recruitment)
+      && input.recruitment.phase === 'discovery'
+      ? 'discovery'
+      : 'confirmed';
+    const recruitment = {
+      phase: requestedPhase,
+      sessionId: null,
+      turns: 0,
+      brief: goal,
+      proposal: null,
+      confirmedAt: requestedPhase === 'confirmed' ? new Date().toISOString() : null,
+    };
+    return this.saveTeamSpace({
+      name,
+      goal,
+      purpose: String(input.purpose ?? goal).trim(),
+      teamType: input.teamType ?? template.teamType,
+      model,
+      providerId,
+      workspace,
+      workspaceMode: input.workspaceMode ?? template.workspaceMode,
+      pmRoleId: template.pmRoleId,
+      memberRoleIds: template.memberRoleIds,
+      responsibilities: template.responsibilities,
+      memberSettings: template.memberSettings,
+      autonomy: template.autonomy,
+      collaboration: {
+        ...template.collaboration,
+        ...(input.collaboration && typeof input.collaboration === 'object' ? input.collaboration : {}),
+        allowedTeamIds: Array.isArray(input.collaboration?.allowedTeamIds)
+          ? [...new Set(input.collaboration.allowedTeamIds
+            .filter((value) => typeof value === 'string')
+            .filter((value) => {
+              const target = this.teamSpace(value);
+              return target && target.status === 'active' && target.recruitment?.phase === 'confirmed';
+            }))]
+          : [],
+      },
+      recruitment,
+    });
+  }
   normalizeTeamSpace(space) {
     if (!space) return space;
     // Spaces created before recruitment existed were already user-created

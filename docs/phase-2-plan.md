@@ -3,7 +3,7 @@
 ## Accepted scope
 
 Single-owner cloud control plane, optional local-only mode, macOS/Linux workers,
-Windows workers through WSL2, multi-provider DSH runs, durable agent mailboxes,
+Windows workers (with WSL2 as the recommended deployment), multi-provider DSH runs, durable agent mailboxes,
 isolated development directories, skills/MCP/plugin capabilities, schedules and
 monitoring. Existing roles, sessions, tasks and knowledge remain readable.
 
@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 151/151, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 156/156, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Combined parent/frontend/backend/reviewer scenario using real orchestration MCP,
@@ -61,10 +61,10 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 151 passing tests. The repeatable
-Playwright baseline contains forty-six passing desktop/mobile runs covering team
+The current deterministic suite contains 156 passing tests. The repeatable
+Playwright baseline contains forty-eight passing desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
-draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, utility-view route restoration,
+draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
 binary drag-and-drop attachments, Team Charter confirmation, team renaming, team
 settings editing, two-team context switching, cross-team model selection,
 provider probe status feedback, sustained 20-switch isolation and failed-task

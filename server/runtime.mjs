@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,23 +10,92 @@ import { SKILLS } from './roles.mjs';
 import { providerEndpoint } from './providers.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-export function findDsh() {
-  const candidates = [
-    process.env.DSH_EXECUTABLE,
-    path.join(os.homedir(), '.local/bin/dsh'),
-    ...String(process.env.PATH || '')
-      .split(path.delimiter)
-      .map((p) => path.join(p, 'dsh')),
-  ];
-  return candidates.find((p) => {
-    if (!p) return false;
+/**
+ * Return the executable names we will probe for the native DSH runtime.
+ *
+ * npm creates `.cmd` shims on Windows and a normal Windows installation may
+ * expose either `dsh.exe` or `dsh.cmd`.  Keep this discovery independent from
+ * the current host so the node/worker code can be tested with a Windows
+ * fixture on macOS/Linux as well.
+ */
+export function dshCandidates({
+  platform = process.platform,
+  homeDir = os.homedir(),
+  pathValue = process.env.PATH || '',
+  configured = process.env.DSH_EXECUTABLE,
+} = {}) {
+  const names = platform === 'win32' ? ['dsh.exe', 'dsh.cmd', 'dsh.bat', 'dsh'] : ['dsh'];
+  const join = platform === 'win32' ? path.win32.join : path.join;
+  const homeCandidates = platform === 'win32'
+    ? [
+        join(homeDir, 'AppData', 'Roaming', 'npm', 'dsh.cmd'),
+        join(homeDir, '.local', 'bin', 'dsh.exe'),
+        join(homeDir, '.local', 'bin', 'dsh.cmd'),
+      ]
+    : [path.join(homeDir, '.local/bin/dsh')];
+  const pathEntries = String(pathValue)
+    .split(platform === 'win32' ? ';' : path.delimiter)
+    .filter(Boolean);
+  const configuredValue = String(configured || '').trim();
+  const configuredInPath = configuredValue && !configuredValue.includes('/') && !configuredValue.includes('\\')
+    ? pathEntries.map((directory) => join(directory, configuredValue))
+    : [];
+  return [...new Set([
+    configuredValue,
+    ...configuredInPath,
+    ...homeCandidates,
+    ...pathEntries.flatMap((directory) => names.map((name) => join(directory, name))),
+  ].filter(Boolean))];
+}
+
+export function findDsh(options = {}) {
+  const platform = options.platform || process.platform;
+  const access = options.access || ((filename) => {
+    if (!filename) return false;
     try {
-      fs.accessSync(p, fs.constants.X_OK);
+      // Windows does not use executable permission bits.  Checking F_OK also
+      // lets an npm-generated `.cmd` shim be selected there.
+      fs.accessSync(filename, platform === 'win32' ? fs.constants.F_OK : fs.constants.X_OK);
       return true;
     } catch {
       return false;
     }
   });
+  return dshCandidates(options).find((candidate) => access(candidate)) || '';
+}
+
+export function terminateProcessTree(
+  pid,
+  { platform = process.platform, kill = process.kill, run = execFileSync, force = false } = {},
+) {
+  if (!pid || !Number.isInteger(Number(pid))) return false;
+  const value = Number(pid);
+  if (platform === 'win32') {
+    try {
+      // `taskkill /t` is the Windows equivalent of killing a detached Unix
+      // process group.  It also handles npm/Node child trees correctly.
+      run('taskkill.exe', ['/pid', String(value), '/t', ...(force ? ['/f'] : [])], { stdio: 'ignore' });
+      return true;
+    } catch {
+      try {
+        kill(value);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  }
+  try {
+    kill(-value, force ? 'SIGKILL' : 'SIGTERM');
+    return true;
+  } catch {
+    try {
+      kill(value, force ? 'SIGKILL' : 'SIGTERM');
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }
 export function resolveApiKey(dataDir) {
   if (process.env.DEEPSEEK_API_KEY) return process.env.DEEPSEEK_API_KEY;
@@ -332,6 +401,11 @@ export class DshRun {
         {
           cwd: this.task.workspace,
           detached: true,
+          // npm's Windows command shims are `.cmd` files rather than native
+          // executables.  Node only launches those through a shell.
+          ...(process.platform === 'win32' && /\.(?:cmd|bat)$/i.test(executable)
+            ? { shell: true, windowsHide: true }
+            : {}),
           stdio: ['pipe', 'pipe', 'pipe'],
           env: {
             ...childEnvironment(this.extraEnv),
@@ -603,14 +677,10 @@ export class DshRun {
   }
   kill() {
     if (!this.child?.pid) return;
-    try {
-      process.kill(-this.child.pid, 'SIGTERM');
-    } catch {}
+    terminateProcessTree(this.child.pid);
     const pid = this.child.pid;
     const timer = setTimeout(() => {
-      try {
-        process.kill(-pid, 'SIGKILL');
-      } catch {}
+      terminateProcessTree(pid, { force: true });
     }, 2000);
     timer.unref();
     this.child.once('close', () => clearTimeout(timer));

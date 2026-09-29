@@ -627,6 +627,50 @@ function seedDraftMergeTeams() {
   }
 }
 
+function seedTeamTemplateSource() {
+  const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
+  try {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const goal = '负责平台功能开发、自动化测试和版本交付。';
+    const source = store.saveTeamSpace({
+      name: `模板来源研发团队 ${suffix}`,
+      goal,
+      purpose: '把需求稳定地交付到线上。',
+      teamType: 'development',
+      workspace: process.cwd(),
+      workspaceMode: 'isolated',
+      pmRoleId: 'project_manager',
+      memberRoleIds: ['project_manager', 'developer'],
+      responsibilities: { developer: '实现功能并运行自动化测试。' },
+      memberSettings: { developer: { label: '主开发', modelHint: 'template-model', capabilityIds: ['development-workflow'] } },
+      model: 'template-model',
+      providerId: 'template-provider',
+      recruitment: { phase: 'confirmed', sessionId: null, turns: 1, brief: goal, proposal: null, confirmedAt: new Date().toISOString() },
+    });
+    store.saveTeamMessage({
+      spaceId: source.id,
+      teamId: source.id,
+      clientMessageId: `template-source-${suffix}`,
+      kind: 'reply',
+      senderType: 'agent',
+      senderId: 'project_manager',
+      content: '来源团队历史消息，复制时不能带走。',
+      status: 'sent',
+    }, `template-source-message-${suffix}`);
+    const sourceTask = store.createTask({
+      role: 'project_manager',
+      prompt: '来源团队历史任务，复制时不能带走。',
+      workspace: process.cwd(),
+      teamId: source.id,
+      spaceId: source.id,
+    });
+    store.records.save('task-meta', { teamId: source.id, spaceId: source.id }, sourceTask.id);
+    return { source };
+  } finally {
+    store.close();
+  }
+}
+
 function sidebarLocator(page) {
   const mobile = (page.viewportSize()?.width || 1024) < 768;
   return page.locator(mobile
@@ -679,6 +723,55 @@ async function recruitmentPage(page) {
 }
 
 test.describe('团队招募核心流程', () => {
+  test('保存团队模板并创建独立副本，重新确认身份和边界', async ({ page }) => {
+    const { source } = seedTeamTemplateSource();
+    await page.goto('/');
+    await openMobileSidebar(page);
+    const sourceNav = sidebarLocator(page).locator('button').filter({ hasText: source.name }).first();
+    await expect(sourceNav).toBeVisible();
+    await sourceNav.click({ force: true });
+    await expect(page.getByRole('heading', { name: source.name })).toBeVisible();
+    await clickNavigation(page, '团队动态');
+    await page.getByRole('button', { name: '保存为模板', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '保存团队模板', exact: true })).toBeVisible();
+    const templateName = `研发模板 ${Date.now()}`;
+    await page.getByRole('textbox', { name: '模板名称', exact: true }).fill(templateName);
+    await page.getByRole('button', { name: '保存模板', exact: true }).click();
+    await expect(page.getByText(`团队“${source.name}”已保存为模板`, { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: '新建团队', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '手动创建团队', exact: true })).toBeVisible();
+    const templatePicker = page.getByRole('combobox', { name: '选择团队模板', exact: true });
+    await expect(templatePicker).toBeVisible();
+    await templatePicker.selectOption({ label: templateName });
+    const copyName = `支付交付团队 ${Date.now()}`;
+    const copyGoal = '负责支付链路的开发、测试和上线。';
+    await page.getByRole('textbox', { name: '团队名称', exact: true }).fill(copyName);
+    await page.getByRole('textbox', { name: '团队职责 / 目标', exact: true }).fill(copyGoal);
+    await page.getByRole('textbox', { name: '工作目录', exact: true }).fill(process.cwd());
+    await page.getByRole('button', { name: '创建团队', exact: true }).click();
+    await expect(page.getByText(new RegExp(`已从模板创建团队“${copyName}`))).toBeVisible();
+    await expect(page.getByRole('heading', { name: copyName })).toBeVisible();
+
+    const copied = await page.evaluate(async (name) => {
+      const teams = await fetch('/api/teams').then((response) => response.json());
+      const team = teams.find((item) => item.name === name);
+      const detail = await fetch(`/api/teams/${team.id}`).then((response) => response.json());
+      return { team, detail };
+    }, copyName);
+    expect(copied.team).toMatchObject({
+      name: copyName,
+      goal: copyGoal,
+      model: 'template-model',
+      providerId: 'template-provider',
+    });
+    expect(copied.team.memberRoleIds).toEqual(['project_manager', 'developer']);
+    expect(copied.team.memberSettings.developer.label).toBe('主开发');
+    expect(copied.team.collaboration.allowedTeamIds).toEqual([]);
+    expect(copied.detail.messages).toEqual([]);
+    expect(copied.detail.tasks).toEqual([]);
+  });
+
   test('招募页面显示可跨设备继续的会话同步状态', async ({ page }) => {
     await recruitmentPage(page);
     await expect(page.getByText('招募会话已同步，可在其他设备继续', { exact: true })).toBeVisible();
@@ -1196,6 +1289,7 @@ test.describe('团队招募核心流程', () => {
     const capability = dialog.getByRole('checkbox', { name: '绑定能力：E2E 证据整理能力', exact: true });
     await expect(capability).toBeChecked();
     await expect(dialog.getByText(/部分兼容/)).toBeVisible();
+    await expect(dialog.getByText(/中风险/)).toBeVisible();
     await expect(dialog.getByText(/1 个助手/)).toBeVisible();
     await expect(dialog.getByText('需要先检查执行节点。')).toBeVisible();
     expect(fixture.capabilityId).toBeTruthy();

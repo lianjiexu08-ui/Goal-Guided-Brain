@@ -4,8 +4,24 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { DshRun, findDsh } from '../server/runtime.mjs';
+import { DshRun, dshCandidates, findDsh, terminateProcessTree } from '../server/runtime.mjs';
 import { ROLES } from '../server/store.mjs';
+
+test('runtime discovery includes npm Windows shims and platform-aware termination uses taskkill', () => {
+  const candidates = dshCandidates({ platform: 'win32', homeDir: 'C:\\Users\\fixture', pathValue: 'C:\\Node\\bin;D:\\Tools', configured: '' });
+  assert.ok(candidates.includes('C:\\Users\\fixture\\AppData\\Roaming\\npm\\dsh.cmd'));
+  assert.ok(candidates.includes('C:\\Node\\bin\\dsh.exe'));
+  assert.equal(findDsh({ platform: 'win32', configured: 'C:\\Tools\\dsh.cmd', access: () => true }), 'C:\\Tools\\dsh.cmd');
+  assert.equal(findDsh({ platform: 'win32', configured: 'dsh.cmd', pathValue: 'C:\\Tools', access: value => value === 'C:\\Tools\\dsh.cmd' }), 'C:\\Tools\\dsh.cmd');
+  const calls = [];
+  assert.equal(terminateProcessTree(42, {
+    platform: 'win32',
+    force: true,
+    run: (executable, args) => calls.push({ executable, args }),
+    kill: () => { throw new Error('fallback should not run'); },
+  }), true);
+  assert.deepEqual(calls, [{ executable: 'taskkill.exe', args: ['/pid', '42', '/t', '/f'] }]);
+});
 
 test(
   'configured execution duration terminates a stalled native runtime',
