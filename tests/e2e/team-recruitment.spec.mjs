@@ -1120,10 +1120,11 @@ test.describe('团队招募核心流程', () => {
     await expect(context).toBeVisible();
     await expect(context.getByRole('button', { name: '切换团队和工作空间', exact: true })).toBeVisible();
     await context.getByRole('button', { name: '切换团队和工作空间', exact: true }).click();
-    const sidebar = sidebarLocator(page);
-    await expect(sidebar).toBeVisible();
-    await sidebar.locator('button').filter({ hasText: teams.development.name }).first().click({ force: true });
-    await expect(sidebar).toBeHidden({ timeout: 2_000 });
+    const switcher = page.getByRole('dialog');
+    await expect(switcher).toBeVisible();
+    await expect(switcher.getByText('切换当前工作', { exact: true })).toBeVisible();
+    await switcher.getByRole('button', { name: new RegExp(teams.development.name) }).click();
+    await expect(switcher).toBeHidden({ timeout: 2_000 });
     await expect(context).toContainText(teams.development.name);
 
     const attachmentButton = page.getByRole('button', { name: '添加附件', exact: true });

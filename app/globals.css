@@ -33,6 +33,8 @@
   --radius-sm: 6px;
 }
 :root {
+  --ggb-viewport-height: 100dvh;
+  --ggb-keyboard-inset: 0px;
   --background: #fff;
   --foreground: #243039;
   --primary: #1b7565;
@@ -3652,5 +3654,106 @@ h1 {
   }
   .work-dialog {
     -webkit-overflow-scrolling: touch;
+  }
+  [data-slot='sidebar-wrapper'] {
+    height: var(--ggb-viewport-height, 100dvh);
+    min-height: var(--ggb-viewport-height, 100dvh);
+  }
+  .workspace-shell {
+    min-height: 0;
+  }
+  [data-keyboard-open='true'] .mobile-bottom-nav {
+    display: none;
+  }
+  [data-keyboard-open='true'] .composer-area {
+    padding-bottom: 12px;
+  }
+  .mobile-switcher-dialog {
+    gap: 12px !important;
+  }
+  .mobile-switcher-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .mobile-switcher-section {
+    display: grid;
+    gap: 7px;
+  }
+  .mobile-switcher-label {
+    padding: 0 4px 2px;
+    color: #819791;
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: .08em;
+  }
+  .mobile-switcher-option {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    width: 100%;
+    min-height: 58px;
+    padding: 10px 12px;
+    border: 1px solid #dceae4;
+    border-radius: 13px;
+    color: #2e6b60;
+    background: #fbfefc;
+    text-align: left;
+  }
+  .mobile-switcher-option > svg:first-child {
+    flex: 0 0 auto;
+    color: #3c8a76;
+  }
+  .mobile-switcher-option > span {
+    display: grid;
+    min-width: 0;
+    flex: 1;
+    gap: 2px;
+  }
+  .mobile-switcher-option strong,
+  .mobile-switcher-option small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mobile-switcher-option strong {
+    color: #28534f;
+    font-size: 13px;
+  }
+  .mobile-switcher-option small {
+    color: #79918b;
+    font-size: 10px;
+  }
+  .mobile-switcher-option.active {
+    border-color: #83cdb6;
+    background: #eaf7f0;
+    box-shadow: inset 3px 0 #3b9079;
+  }
+  .mobile-switcher-option:active,
+  .mobile-switcher-all:active {
+    transform: scale(.99);
+  }
+  .mobile-switcher-empty {
+    margin: 0;
+    padding: 12px;
+    border: 1px dashed #cfe1da;
+    border-radius: 12px;
+    color: #78918a;
+    background: #f8fcfa;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .mobile-switcher-all {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-height: 46px;
+    border: 1px solid #cfe3db;
+    border-radius: 12px;
+    color: #327363;
+    background: #fff;
+    font-size: 12px;
+    font-weight: 650;
   }
 }

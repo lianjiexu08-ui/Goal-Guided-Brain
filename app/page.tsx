@@ -1271,7 +1271,7 @@ function Workbench() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [modal, setModal] = useState<
-    'settings' | 'knowledge' | 'handoff' | 'team' | 'rename-team' | 'team-template' | null
+    'settings' | 'knowledge' | 'handoff' | 'team' | 'rename-team' | 'team-template' | 'mobile-switcher' | null
   >(null);
   const [teamRenameForm, setTeamRenameForm] = useState({ name: '' });
   const [teamTemplateForm, setTeamTemplateForm] = useState({ name: '', description: '' });
@@ -2167,6 +2167,33 @@ function Workbench() {
     }
   }, [notice]);
   useEffect(() => {
+    if (!isMobile || typeof window === 'undefined') return;
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const root = document.documentElement;
+    const updateViewport = () => {
+      const viewportHeight = Math.round(viewport.height);
+      const keyboardInset = Math.max(
+        0,
+        Math.round(window.innerHeight - viewport.height - viewport.offsetTop),
+      );
+      root.style.setProperty('--ggb-viewport-height', `${viewportHeight}px`);
+      root.style.setProperty('--ggb-keyboard-inset', `${keyboardInset}px`);
+      if (keyboardInset > 120) root.dataset.keyboardOpen = 'true';
+      else delete root.dataset.keyboardOpen;
+    };
+    updateViewport();
+    viewport.addEventListener('resize', updateViewport);
+    viewport.addEventListener('scroll', updateViewport);
+    return () => {
+      viewport.removeEventListener('resize', updateViewport);
+      viewport.removeEventListener('scroll', updateViewport);
+      root.style.removeProperty('--ggb-viewport-height');
+      root.style.removeProperty('--ggb-keyboard-inset');
+      delete root.dataset.keyboardOpen;
+    };
+  }, [isMobile]);
+  useEffect(() => {
     if (currentTasks.length > 0) {
       endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
@@ -2413,6 +2440,20 @@ function Workbench() {
     });
     setProfileForm(data?.config.profile || profileForm);
     setModal('settings');
+  }
+  function dismissMobileInput() {
+    if (!isMobile || typeof document === 'undefined') return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement) active.blur();
+  }
+  function openMobileSwitcher() {
+    if (!isMobile) {
+      setOpenMobile(true);
+      return;
+    }
+    dismissMobileInput();
+    setOpenMobile(false);
+    setModal('mobile-switcher');
   }
   function openKnowledge(task?: Task, item?: Knowledge) {
     setKnowledgeHistory(null);
@@ -2973,7 +3014,7 @@ function Workbench() {
               type="button"
               className="mobile-context-switch"
               aria-label="切换团队和工作空间"
-              onClick={() => setOpenMobile(true)}
+              onClick={openMobileSwitcher}
             >
               切换
             </button>
@@ -3552,6 +3593,10 @@ function Workbench() {
                   <textarea
                     ref={composerRef}
                     aria-label={`发送给${assistantName}`}
+                    enterKeyHint="send"
+                    inputMode="text"
+                    autoCapitalize="sentences"
+                    spellCheck
                     placeholder={isRecruitmentView ? '描述你想完成的事，先不用决定要几个智能体…' : `告诉${assistantName}，你想完成什么…`}
                     value={drafts[draftKey] || ''}
                     disabled={!assistant.id || assistant.archived}
@@ -4315,7 +4360,10 @@ function Workbench() {
             type="button"
             className={isRecruitmentView ? 'active' : ''}
             aria-current={isRecruitmentView ? 'page' : undefined}
-            onClick={openTeamConversation}
+            onClick={() => {
+              dismissMobileInput();
+              openTeamConversation();
+            }}
           >
             <MessageSquare size={18} />
             <span>招募</span>
@@ -4324,7 +4372,10 @@ function Workbench() {
             type="button"
             className={view === 'team' ? 'active' : ''}
             aria-current={view === 'team' ? 'page' : undefined}
-            onClick={openTeamOverview}
+            onClick={() => {
+              dismissMobileInput();
+              openTeamOverview();
+            }}
           >
             <Users size={18} />
             <span>团队</span>
@@ -4333,7 +4384,10 @@ function Workbench() {
             type="button"
             className={view === 'tasks' ? 'active' : ''}
             aria-current={view === 'tasks' ? 'page' : undefined}
-            onClick={() => setView('tasks')}
+            onClick={() => {
+              dismissMobileInput();
+              setView('tasks');
+            }}
           >
             <Workflow size={18} />
             <span>任务</span>
@@ -4343,7 +4397,10 @@ function Workbench() {
             type="button"
             className={isMoreView ? 'active' : ''}
             aria-current={isMoreView ? 'page' : undefined}
-            onClick={() => setOpenMobile(true)}
+            onClick={() => {
+              dismissMobileInput();
+              setOpenMobile(true);
+            }}
           >
             <Menu size={18} />
             <span>更多</span>
@@ -4384,10 +4441,12 @@ function Workbench() {
         onOpenChange={(open) => !open && setModal(null)}
       >
         <DialogContent
-          className={`work-dialog${modal === 'team-template' ? ' team-template-dialog' : ''}${modal === 'team' ? ' team-settings-dialog' : ''}`}
+          className={`work-dialog${modal === 'team-template' ? ' team-template-dialog' : ''}${modal === 'team' ? ' team-settings-dialog' : ''}${modal === 'mobile-switcher' ? ' mobile-switcher-dialog' : ''}`}
         >
           <DialogTitle>
-            {modal === 'settings'
+            {modal === 'mobile-switcher'
+              ? '切换当前工作'
+              : modal === 'settings'
               ? '工作空间设置'
               : modal === 'knowledge'
                 ? '编辑知识'
@@ -4402,7 +4461,9 @@ function Workbench() {
                         : '手动创建团队'}
           </DialogTitle>
           <DialogDescription>
-            {modal === 'settings'
+            {modal === 'mobile-switcher'
+              ? '只切换当前对话和团队上下文，草稿会按团队分别保留。'
+              : modal === 'settings'
               ? '配置应用于新任务；已经开始的任务保持当前配置。'
               : modal === 'knowledge'
                 ? '保存到本地，后续任务会按相关性读取。'
@@ -4560,6 +4621,69 @@ function Workbench() {
                 保存设置和个人偏好
               </button>
             </form>
+          )}
+          {modal === 'mobile-switcher' && (
+            <div className="mobile-switcher-panel" aria-label="手机端快速切换工作">
+              <div className="mobile-switcher-section">
+                <span className="mobile-switcher-label">需求发布</span>
+                <button
+                  type="button"
+                  className={`mobile-switcher-option${isRecruitmentView ? ' active' : ''}`}
+                  onClick={() => {
+                    if (recruitmentSpace) selectTeam(recruitmentSpace.id);
+                    else void startRecruitment();
+                    setView('recruitment');
+                    setModal(null);
+                  }}
+                >
+                  <MessageSquare size={17} />
+                  <span><strong>团队招募</strong><small>发布需求、澄清目标并生成团队方案</small></span>
+                  {isRecruitmentView && <Check size={17} />}
+                </button>
+                <button
+                  type="button"
+                  className="mobile-switcher-option"
+                  onClick={() => {
+                    setModal(null);
+                    void startRecruitment(true);
+                  }}
+                >
+                  <Plus size={17} />
+                  <span><strong>另起一个需求</strong><small>创建独立的需求草稿，不影响已有团队</small></span>
+                </button>
+              </div>
+              <div className="mobile-switcher-section">
+                <span className="mobile-switcher-label">我的团队</span>
+                {confirmedSpaces.length > 0 ? confirmedSpaces.map((space) => (
+                  <button
+                    type="button"
+                    className={`mobile-switcher-option${selectedSpaceId === space.id && isConversationView ? ' active' : ''}`}
+                    key={space.id}
+                    onClick={() => {
+                      selectTeam(space.id);
+                      setView('workspace');
+                      setModal(null);
+                    }}
+                  >
+                    <Users size={17} />
+                    <span><strong>{space.name}</strong><small>{space.goal || '打开团队工作空间'}</small></span>
+                    {selectedSpaceId === space.id && isConversationView && <Check size={17} />}
+                  </button>
+                )) : (
+                  <p className="mobile-switcher-empty">确认团队招募方案后，团队会显示在这里。</p>
+                )}
+              </div>
+              <button
+                type="button"
+                className="mobile-switcher-all"
+                onClick={() => {
+                  setModal(null);
+                  setOpenMobile(true);
+                }}
+              >
+                打开完整工作空间导航 <ArrowRight size={15} />
+              </button>
+            </div>
           )}
           {modal === 'knowledge' && (
             <form
