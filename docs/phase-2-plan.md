@@ -35,6 +35,7 @@ They are not sign-off for the separate real deployment gates below.
 - [x] Existing regression suite plus new deterministic integration tests: 157/157, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
+- [x] Cross-platform CI matrix runs lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
 - [x] Combined parent/frontend/backend/reviewer scenario using real orchestration MCP,
   a local external MCP, pinned Skill, isolated Git worktrees, peer messages,
   checkpoints, pause/change-provider/resume, automatic summary and a tested integration.

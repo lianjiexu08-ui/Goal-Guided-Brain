@@ -243,3 +243,5 @@ https://github.com/lianjiexu08-ui/Goal-Guided-Brain.git
 ```
 
 当前项目仍在持续迭代中。真实 Linux、Windows/WSL2、云端 HTTPS、节点离线调度和生产模型质量需要在目标环境中单独验收，不能用本机测试代替。
+
+仓库的 GitHub Actions 会在每次主分支推送和 Pull Request 上，用 Node.js 22 和 24 分别运行 Ubuntu、macOS、Windows 的 lint、类型检查、后端/CLI 测试、`ggb doctor` 和生产构建，并在 Ubuntu 上运行桌面/移动 Chromium 回归。这个矩阵是跨平台兼容性门禁，不能替代真实 Windows/WSL2 节点、HTTPS 和离线调度验收。
