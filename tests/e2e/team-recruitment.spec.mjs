@@ -1191,6 +1191,7 @@ test.describe('团队招募核心流程', () => {
     await expect(shell).toHaveText(/^[a-f0-9]{32}$/);
     const commands = dialog.locator('pre');
     await expect(commands.nth(0)).toContainText('--control-url');
+    await expect(commands.nth(0)).toContainText('ggb node');
     await expect(commands.nth(0)).toContainText('--workspace');
     await expect(commands.nth(0)).toContainText('--pair');
     await expect(commands.nth(1)).toContainText('$HOME');

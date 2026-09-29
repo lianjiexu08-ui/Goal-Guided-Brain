@@ -3406,10 +3406,10 @@ export function Management({
   const powershellQuote = (value: string) => `'${value.replaceAll("'", "''")}'`;
   const nodeName = pairName.trim() || 'my-node';
   const shellBootstrapCommand = pairingCode
-    ? `node scripts/node.mjs --control-url ${shellQuote(pairingControlUrl)} --workspace ${shellQuote(`default=${pairingWorkspace}`)} --data-dir ~/.dsh-node --max-concurrent 3 --pair ${shellQuote(pairingCode)} --name ${shellQuote(nodeName)}`
+    ? `ggb node --control-url ${shellQuote(pairingControlUrl)} --workspace ${shellQuote(`default=${pairingWorkspace}`)} --data-dir ~/.dsh-node --max-concurrent 3 --pair ${shellQuote(pairingCode)} --name ${shellQuote(nodeName)}`
     : '';
   const powershellBootstrapCommand = pairingCode
-    ? `node scripts/node.mjs --control-url ${powershellQuote(pairingControlUrl)} --workspace ${powershellQuote(`default=${pairingWorkspace}`)} --data-dir "$HOME\\.dsh-node" --max-concurrent 3 --pair ${powershellQuote(pairingCode)} --name ${powershellQuote(nodeName)}`
+    ? `ggb node --control-url ${powershellQuote(pairingControlUrl)} --workspace ${powershellQuote(`default=${pairingWorkspace}`)} --data-dir "$HOME\\.dsh-node" --max-concurrent 3 --pair ${powershellQuote(pairingCode)} --name ${powershellQuote(nodeName)}`
     : '';
   const filtered = items.filter((item) =>
     `${title(item)} ${description(collection, item, data!)}`
