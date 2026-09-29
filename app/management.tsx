@@ -90,6 +90,7 @@ const statuses: Record<string, string> = {
   completed: '已完成',
   failed: '失败',
   cancelled: '已取消',
+  archived: '已归档',
   paused: '已暂停',
   blocked: '等待处理',
   interrupted: '已中断',
@@ -3314,6 +3315,7 @@ export function Management({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
   const [tab, setTab] = useState('');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(0);
@@ -3471,7 +3473,10 @@ export function Management({
   const powershellBootstrapCommand = pairingCode
     ? `ggb node --control-url ${powershellQuote(pairingControlUrl)} --workspace ${powershellQuote(`default=${pairingWorkspace}`)} --data-dir "$HOME\\.dsh-node" --max-concurrent 3 --pair ${powershellQuote(pairingCode)} --name ${powershellQuote(nodeName)}`
     : '';
-  const filtered = items.filter((item) =>
+  const visibleItems = collection === 'jobs' && !showArchived
+    ? items.filter((item) => item.archived !== true)
+    : items;
+  const filtered = visibleItems.filter((item) =>
     `${title(item)} ${description(collection, item, data!)}`
       .toLowerCase()
       .includes(query.toLowerCase()),
@@ -3719,6 +3724,17 @@ export function Management({
             onClick={() => void openDetail(item)}
           />
         )}
+      {collection === 'jobs' &&
+        ['completed', 'failed', 'cancelled', 'interrupted'].includes(status(item)) && (
+          <IconButton
+            icon={Archive}
+            label={item.archived === true ? '恢复任务' : '归档任务'}
+            disabled={busy}
+            onClick={() => void act(`jobs/${item.id}/archive`, {
+              archived: item.archived !== true,
+            })}
+          />
+        )}
       {collection === 'notifications' &&
         !item.read &&
         !item.readAt &&
@@ -3777,7 +3793,7 @@ export function Management({
           <p>
             {collection === 'market'
               ? 'Skill · MCP · Plugin'
-              : `${items.length} 条记录`}
+            : `${visibleItems.length} 条记录`}
           </p>
         </div>
         <div className="manage-actions">
@@ -4090,8 +4106,22 @@ export function Management({
                   setQuery(event.target.value);
                   setPage(0);
                 }}
-              />
+                />
             </div>
+            {collection === 'jobs' && (
+              <button
+                type="button"
+                className="secondary-button"
+                aria-pressed={showArchived}
+                onClick={() => {
+                  setShowArchived((current) => !current);
+                  setPage(0);
+                }}
+              >
+                <Archive size={15} />
+                {showArchived ? '隐藏已归档' : '显示已归档'}
+              </button>
+            )}
           </div>
           <div className="manage-list">
             {filtered
@@ -4124,7 +4154,7 @@ export function Management({
                         </small>
                       )}
                   </div>
-                  <Badge value={status(item)} />
+                  <Badge value={item.archived === true ? 'archived' : status(item)} />
                   {rowActions(item)}
                 </div>
               ))}

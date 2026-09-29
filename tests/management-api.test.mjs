@@ -74,6 +74,30 @@ test('task events expose an oldest-first incremental cursor', async (t) => {
   assert.equal((await request('tasks/missing-task/events')).status, 404);
 });
 
+test('completed jobs can be archived and restored without losing history', async (t) => {
+  const { app, request } = await fixture(t);
+  const job = app.store.records.save('jobs', {
+    title: '可归档任务',
+    goal: '验证长期任务历史治理。',
+    role: 'assistant',
+    groupId: 'archive-fixture-group',
+    status: 'completed',
+    budgetTokens: 200000,
+    maxDurationMinutes: 30,
+    archived: false,
+  }, 'archive-fixture-job');
+  const archived = await request(`jobs/${job.id}/archive`, { archived: true }, 'POST');
+  assert.equal(archived.status, 200);
+  assert.equal(archived.body.archived, true);
+  assert.ok(archived.body.archivedAt);
+  assert.equal((await request(`jobs/${job.id}`)).body.archived, true);
+  const restored = await request(`jobs/${job.id}/archive`, { archived: false }, 'POST');
+  assert.equal(restored.status, 200);
+  assert.equal(restored.body.archived, false);
+  assert.equal(restored.body.archivedAt, null);
+  assert.equal(restored.body.title, '可归档任务');
+});
+
 test('TypeSafe-only configuration does not masquerade as a chat model', async (t) => {
   const { app, request } = await fixture(t);
   app.platform.providers.save({

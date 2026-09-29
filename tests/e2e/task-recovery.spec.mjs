@@ -123,7 +123,7 @@ function seedFailedJob() {
   }
 }
 
-function seedAcceptanceJob({ rejected = false } = {}) {
+function seedAcceptanceJob({ rejected = false, title = '交付验收闭环任务' } = {}) {
   const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
   try {
     const groupId = randomUUID();
@@ -136,7 +136,7 @@ function seedAcceptanceJob({ rejected = false } = {}) {
     const job = store.records.save(
       'jobs',
       {
-        title: '交付验收闭环任务',
+        title,
         goal: '实现并验证验收决定闭环。',
         acceptance: '通过测试并由所有者确认交付。',
         role: 'developer',
@@ -227,7 +227,7 @@ function seedAcceptanceJob({ rejected = false } = {}) {
         occurredAt: new Date().toISOString(),
       }, `attention:${attentionId}`);
     }
-    return { taskId: task.id, notificationTitle };
+    return { taskId: task.id, notificationTitle, title };
   } finally {
     store.close();
   }
@@ -372,6 +372,30 @@ test('协作任务详情会增量显示新到达的执行事件', async ({ page 
     store.close();
   }
   await expect(detail.getByText('原因：E2E 增量事件已收到。', { exact: true })).toBeVisible({ timeout: 10000 });
+});
+
+test('协作任务可以归档并从历史中恢复', async ({ page }) => {
+  const fixture = seedAcceptanceJob({ title: `归档验收任务 ${randomUUID().slice(0, 8)}` });
+  await page.goto('/');
+  const mobile = (page.viewportSize()?.width || 1024) < 768;
+  if (mobile) {
+    await page.getByRole('button', { name: 'Toggle Sidebar', exact: true }).click();
+    await expect(page.locator('[data-sidebar="sidebar"][data-mobile="true"]')).toBeVisible();
+  }
+  const sidebar = page.locator(
+    mobile ? '[data-sidebar="sidebar"][data-mobile="true"]' : '[data-sidebar="sidebar"]',
+  );
+  await sidebar.getByRole('button', { name: '协作任务', exact: true }).click();
+  const row = () => page.locator('.manage-list .manage-row').filter({ hasText: fixture.title }).first();
+  await expect(row()).toBeVisible();
+  await row().getByRole('button', { name: '归档任务', exact: true }).click();
+  await expect(row()).toHaveCount(0);
+  await page.getByRole('button', { name: '显示已归档', exact: true }).click();
+  await expect(row()).toBeVisible();
+  await expect(row().getByText('已归档', { exact: true })).toBeVisible();
+  await row().getByRole('button', { name: '恢复任务', exact: true }).click();
+  await expect(row().getByRole('button', { name: '归档任务', exact: true })).toBeVisible();
+  await expect(row().getByText('已完成', { exact: true })).toBeVisible();
 });
 
 test('协作任务详情支持所有者验收决定', async ({ page }) => {

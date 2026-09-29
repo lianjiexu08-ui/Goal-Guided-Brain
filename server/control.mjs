@@ -1059,6 +1059,21 @@ export class ControlPlane {
         const job = this.records.get('jobs', id);
         if (!job) throw fail('任务不存在。', 404);
         if (principal.type !== 'owner') throw fail('任务控制和需求修改由所有者执行。', 403);
+        if (method === 'POST' && action === 'archive') {
+          if (!terminal.has(job.status) || job.status === 'state_unknown')
+            throw fail('只有已结束且状态明确的任务才能归档。', 409);
+          const archived = typeof body.archived === 'boolean' ? body.archived : !job.archived;
+          return {
+            status: 200,
+            body: this.records.save('jobs', {
+              ...job,
+              archived,
+              archivedAt: archived ? new Date(this.now()).toISOString() : null,
+              archivedBy: archived ? 'owner' : null,
+            }, id),
+          };
+        }
+        if (job.archived) throw fail('任务已归档，请先恢复后再修改或执行操作。', 409);
         if (method === 'PUT' && !action) {
           const goal = required(body.goal || job.goal, '任务目标');
           const changed = goal !== job.goal || (body.acceptance !== undefined && body.acceptance !== job.acceptance);
