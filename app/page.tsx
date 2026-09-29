@@ -35,7 +35,9 @@ import {
   Menu,
   MessageSquare,
   Pencil,
+  Pause,
   Paperclip,
+  Play,
   Plus,
   RefreshCw,
   Search,
@@ -1562,7 +1564,7 @@ function Workbench() {
   const mobileContextDetail = isRecruitmentView
     ? '需求发布 · 先和项目经理澄清目标'
     : isConversationView
-      ? (teamSpace?.goal || '当前团队工作空间')
+      ? `${teamSpace?.status === 'paused' ? '自治已暂停 · ' : ''}${teamSpace?.goal || '当前团队工作空间'}`
       : '工作空间';
   const isMoreView = !isRecruitmentView && !['workspace', 'team', 'tasks'].includes(view);
   const teamSessionIds = teamSpace
@@ -2513,6 +2515,17 @@ function Workbench() {
     setTeamTemplateId('');
     setModal('team');
   }
+  async function toggleTeamAutonomy() {
+    if (!teamSpace || teamSpace.recruitment?.phase !== 'confirmed') return;
+    const paused = teamSpace.status === 'paused';
+    await action(async () => {
+      await api<TeamSpace>(
+        `spaces/${teamSpace.id}/autonomy/${paused ? 'resume' : 'pause'}`,
+        'POST',
+      );
+      setNotice(paused ? '团队自治已恢复，可以继续接收和执行新任务。' : '团队自治已暂停，新的任务不会继续派发。');
+    });
+  }
   function openSaveTeamTemplate() {
     if (!teamSpace || teamSpace.recruitment?.phase !== 'confirmed') return;
     setTeamTemplateForm({
@@ -3059,7 +3072,22 @@ function Workbench() {
                 <button className="text-button" type="button" disabled={busy || !teamSpace || teamSpace.recruitment?.phase !== 'confirmed'} onClick={openSaveTeamTemplate}><Copy size={13} /> 保存为模板</button>
                 <button className="text-button" type="button" disabled={busy || !teamSpace} onClick={openTeamRename}><Pencil size={13} /> 重命名</button>
                 <button className="text-button" type="button" onClick={openTeamSettings}>团队设置</button>
-                <div className="team-health"><span className="live-dot" /> {rosterReady ? `${teamMembers.length} 位成员已配置` : recruitment?.phase === 'proposed' ? '方案待确认' : '正在招募'}</div>
+                {teamSpace?.recruitment?.phase === 'confirmed' && (
+                  <button
+                    className={`secondary-button team-autonomy-toggle${teamSpace.status === 'paused' ? ' is-paused' : ''}`}
+                    type="button"
+                    disabled={busy}
+                    aria-label={teamSpace.status === 'paused' ? '恢复团队自治' : '暂停团队自治'}
+                    onClick={() => void toggleTeamAutonomy()}
+                  >
+                    {teamSpace.status === 'paused' ? <Play size={14} /> : <Pause size={14} />}
+                    {teamSpace.status === 'paused' ? '恢复自治' : '暂停自治'}
+                  </button>
+                )}
+                <div className={`team-health${teamSpace?.status === 'paused' ? ' is-paused' : ''}`}>
+                  <span className="live-dot" />
+                  {teamSpace?.status === 'paused' ? '自治已暂停 · 新任务不会派发' : rosterReady ? `${teamMembers.length} 位成员已配置` : recruitment?.phase === 'proposed' ? '方案待确认' : '正在招募'}
+                </div>
               </div>
             </div>
             {confirmedSpaces.length > 0 && (

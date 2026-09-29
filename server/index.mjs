@@ -601,6 +601,10 @@ export function createWorkbench({
               })),
             });
           }
+          if (req.method === 'POST' && parts[3] === 'autonomy' && ['pause', 'resume'].includes(parts[4])) {
+            const nextStatus = parts[4] === 'pause' ? 'paused' : 'active';
+            return send(200, platform.control.setTeamStatus(space.id, nextStatus));
+          }
           if (req.method === 'PUT' && !parts[3]) {
             const requestedRecruitment = body.recruitment;
             if (

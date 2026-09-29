@@ -127,6 +127,9 @@ export class ControlPlane {
     if ((meta.nodeId || 'local') !== nodeId) return false;
     if (task.status !== 'queued' || this.records.get('executions', task.id)) return false;
     const job = meta.jobId && this.records.get('jobs', meta.jobId);
+    const teamId = meta.teamId || meta.spaceId || job?.teamId || job?.spaceId;
+    const team = teamId ? this.store.teamSpace(teamId) : null;
+    if (team && team.status !== 'active') return false;
     if (job && ['paused', 'cancelled', 'completed', 'failed', 'blocked', 'budget-exceeded'].includes(job.status)) return false;
     const group = job && this.records.list('jobs').filter(item => item.groupId === job.groupId);
     if (group?.some(item => item.status === 'budget-exceeded' || item.budgetExceeded)) return false;
@@ -146,6 +149,9 @@ export class ControlPlane {
       const meta = this.records.get('task-meta', task.id) || {};
       if ((meta.nodeId || 'local') !== nodeId) return null;
       const currentJob = meta.jobId && this.records.get('jobs', meta.jobId);
+      const teamId = meta.teamId || meta.spaceId || currentJob?.teamId || currentJob?.spaceId;
+      const team = teamId ? this.store.teamSpace(teamId) : null;
+      if (team && team.status !== 'active') return null;
       if (currentJob && ['paused', 'cancelled', 'blocked', 'waiting_children', 'budget-exceeded'].includes(currentJob.status)) return null;
       if (currentJob && this.records.list('jobs').some(item => item.groupId === currentJob.groupId && (item.status === 'budget-exceeded' || item.budgetExceeded))) return null;
       if ((currentJob?.dependencies || []).some(id => this.records.get('jobs', id)?.status !== 'completed')) return null;
@@ -272,6 +278,20 @@ export class ControlPlane {
       return;
     }
     if (job.summaryTaskId) return;
+    const teamId = job.teamId || job.spaceId;
+    const team = teamId ? this.store.teamSpace(teamId) : null;
+    if (team && team.status !== 'active') {
+      this.records.save('jobs', { ...job, status: 'paused', blockedReason: 'team-paused' }, job.id);
+      this.attention({
+        taskId: job.taskId,
+        groupId: job.groupId,
+        teamId: team.id,
+        kind: 'team-paused',
+        title: '团队自治已暂停',
+        detail: '子任务已经完成，恢复团队自治后才会继续生成汇总执行。',
+      }, `team-paused:${job.id}`);
+      return;
+    }
     const blocked = this.records.get('attention', `children:${job.id}`);
     if (blocked) this.records.save('attention', { ...blocked, status: 'resolved' }, blocked.id);
     const contextExtra = JSON.stringify({ goal: job.goal, acceptance: job.acceptance,
@@ -329,11 +349,15 @@ export class ControlPlane {
     const parentTeam = parent && (parent.teamId || parent.spaceId)
       ? this.store.teamSpace(parent.teamId || parent.spaceId)
       : null;
+    if (parentTeam && parentTeam.status !== 'active')
+      throw fail('团队自治已暂停，请先恢复团队后再分派任务。', 409);
     if (parentTeam && parentTeam.recruitment.phase !== 'confirmed')
       throw fail('团队招募方案尚未确认，请先完成澄清并等待用户确认创建。', 409);
     const requestedTeam = !parent && (body.teamId || body.spaceId)
       ? this.store.teamSpace(body.teamId || body.spaceId)
       : null;
+    if (requestedTeam && requestedTeam.status !== 'active')
+      throw fail('团队自治已暂停，请先恢复团队后再创建任务。', 409);
     if (requestedTeam && requestedTeam.recruitment.phase !== 'confirmed')
       throw fail('团队招募方案尚未确认，请先完成澄清并等待用户确认创建。', 409);
     if (parentTeam && !parentTeam.memberRoleIds.includes(role))
@@ -374,6 +398,23 @@ export class ControlPlane {
         parentTaskId: principal.type === 'instance' ? principal.taskId : undefined }, task.id);
       return this.records.save('jobs', { ...job, taskId: task.id }, job.id);
     } catch (error) { this.records.save('jobs', { ...job, status: 'failed', error: error.message }, job.id); throw error; }
+  }
+  setTeamStatus(teamId, status) {
+    const team = this.store.teamSpace(teamId);
+    if (!team) throw fail('团队空间不存在。', 404);
+    if (!['active', 'paused'].includes(status)) throw fail('团队自治状态无效。', 400);
+    if (team.status === 'archived') throw fail('归档团队不能恢复自治。', 409);
+    const saved = this.store.saveTeamSpace({ ...team, status }, team.id);
+    if (status === 'active') {
+      for (const job of this.records.list('jobs').filter(item =>
+        (item.teamId || item.spaceId) === team.id &&
+        item.status === 'paused' && item.blockedReason === 'team-paused')) {
+        const attention = this.records.get('attention', `team-paused:${job.id}`);
+        if (attention) this.records.save('attention', { ...attention, status: 'resolved', resolvedAt: this.now() }, attention.id);
+        this.summarizeWhenReady(job);
+      }
+    }
+    return saved;
   }
   currentTeam(principal) {
     if (principal?.type !== 'instance') throw fail('只有运行中的团队智能体可以发起跨团队协作。', 403);

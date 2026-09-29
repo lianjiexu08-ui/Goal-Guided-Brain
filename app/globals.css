@@ -1844,6 +1844,10 @@ h1 {
 .team-heading-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .team-heading-actions .choice { min-width: 150px; width: auto; }
 .team-health, .pm-status { display: inline-flex; align-items: center; gap: 8px; color: #4d7b6f; font-size: 12px; white-space: nowrap; }
+.team-health.is-paused { color: #9a6b43; }
+.team-health.is-paused .live-dot { background: #d08a52; }
+.team-autonomy-toggle { min-height: 38px; }
+.team-autonomy-toggle.is-paused { border-color: #e1c59c; color: #936438; background: #fffaf1; }
 .team-grid { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 18px; max-width: 1220px; margin: 0 auto; }
 .team-chat-panel, .team-roster-panel { border: 1px solid #dce8e4; border-radius: 22px; background: #fff; box-shadow: 0 14px 34px #183e3510; overflow: hidden; }
 .team-chat-head { display: flex; align-items: center; gap: 12px; padding: 20px 24px; border-bottom: 1px solid #e7efec; background: linear-gradient(115deg, #fbfefc, #f1faf6); }

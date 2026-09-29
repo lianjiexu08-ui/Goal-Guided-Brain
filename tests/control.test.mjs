@@ -125,6 +125,34 @@ test('child budgets inherit group limits and exhausted groups cannot claim new w
   assert.equal(control.claimLocal(store.task(child.taskId)), null);
 });
 
+test('paused team blocks new jobs and local claims until autonomy resumes', t => {
+  const { store, control } = setup(t);
+  const team = store.saveTeamSpace({
+    name: '自治暂停回归团队',
+    goal: '验证团队暂停会阻止新任务。',
+    workspace: store.config.workspace,
+    pmRoleId: 'developer',
+    memberRoleIds: ['developer'],
+    recruitment: { phase: 'confirmed' },
+  });
+  const job = control.createJob({ role: team.pmRoleId, prompt: '团队自治暂停回归', teamId: team.id });
+  const task = store.task(job.taskId);
+  assert.equal(control.eligible(task, 'local'), true);
+
+  const paused = control.setTeamStatus(team.id, 'paused');
+  assert.equal(paused.status, 'paused');
+  assert.equal(control.eligible(task, 'local'), false);
+  assert.equal(control.claimLocal(task), null);
+  assert.throws(
+    () => control.createJob({ role: team.pmRoleId, prompt: '暂停期间不应创建', teamId: team.id }),
+    /自治已暂停/,
+  );
+
+  const resumed = control.setTeamStatus(team.id, 'active');
+  assert.equal(resumed.status, 'active');
+  assert.equal(control.eligible(task, 'local'), true);
+});
+
 test('owner budget increase pauses an exhausted group until explicit resume and propagates limits', async t => {
   const { store, control, request } = setup(t);
   const parent = control.createJob({ role: 'product', prompt: 'Budgeted project', budgetTokens: 1000 });
@@ -272,6 +300,36 @@ test('parent waits for children and enqueues one summary attempt after all child
   control.finishLocal(summary.taskId, 1, { status: 'completed', result: 'Verified delivery' });
   assert.equal(store.records.get('jobs', parent.id).status, 'completed');
   assert.equal(store.tasks().length, 4);
+});
+
+test('paused team defers parent summary until autonomy resumes', t => {
+  const { store, control } = setup(t);
+  const team = store.saveTeamSpace({
+    name: '自治汇总暂停团队',
+    goal: '验证暂停期间不创建新的汇总执行。',
+    workspace: store.config.workspace,
+    pmRoleId: 'product',
+    memberRoleIds: ['product', 'developer', 'assistant'],
+    recruitment: { phase: 'confirmed' },
+  });
+  const parent = control.createJob({ role: 'product', prompt: '暂停期间等待汇总', teamId: team.id });
+  const parentClaim = control.claimLocal(store.task(parent.taskId));
+  const principal = control.validateInstanceToken(parentClaim.token);
+  const child = control.createJob({ role: 'developer', prompt: '完成子任务' }, principal);
+  control.claimLocal(store.task(child.taskId));
+  control.finishLocal(parent.taskId, 1, { status: 'completed', result: '已分派' });
+  assert.equal(store.records.get('jobs', parent.id).status, 'waiting_children');
+
+  control.setTeamStatus(team.id, 'paused');
+  control.finishLocal(child.taskId, 1, { status: 'completed', result: '子任务已完成' });
+  assert.equal(store.records.get('jobs', parent.id).status, 'paused');
+  assert.equal(store.records.get('jobs', parent.id).blockedReason, 'team-paused');
+  assert.equal(store.records.get('jobs', parent.id).summaryTaskId, undefined);
+
+  control.setTeamStatus(team.id, 'active');
+  const resumed = store.records.get('jobs', parent.id);
+  assert.equal(resumed.status, 'queued');
+  assert.equal(resumed.summaryTaskId, resumed.taskId);
 });
 
 test('pause revokes descendants and resume creates a new instance preserving checkpoint context', async t => {

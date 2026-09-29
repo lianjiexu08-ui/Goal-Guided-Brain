@@ -118,6 +118,45 @@ test('team space routes owner messages to the project manager and persists repli
   }
 });
 
+test('team autonomy pause and resume gate new team messages', async () => {
+  const fixture = sandbox();
+  const app = createWorkbench({ ...fixture, requireCredential: false, runtimeFactory: () => ({ start() {}, cancel() {} }) });
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  const request = async (route, body, method = 'GET') => {
+    const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  try {
+    const team = (await request('teams')).body[0];
+    const paused = await request(`teams/${team.id}/autonomy/pause`, {}, 'POST');
+    assert.equal(paused.status, 200);
+    assert.equal(paused.body.status, 'paused');
+    const rejected = await request(`teams/${team.id}/messages`, {
+      clientMessageId: 'paused-team-message',
+      content: '暂停期间不应启动新的项目经理执行。',
+    }, 'POST');
+    assert.equal(rejected.status, 400);
+    assert.match(rejected.body.error, /不可接收新消息/);
+
+    const resumed = await request(`teams/${team.id}/autonomy/resume`, {}, 'POST');
+    assert.equal(resumed.status, 200);
+    assert.equal(resumed.body.status, 'active');
+    const accepted = await request(`teams/${team.id}/messages`, {
+      clientMessageId: 'resumed-team-message',
+      content: '恢复后可以启动新的项目经理执行。',
+    }, 'POST');
+    assert.equal(accepted.status, 201);
+    assert.ok(accepted.body.taskId);
+  } finally {
+    await app.close();
+    fs.rmSync(fixture.dir, { recursive: true, force: true });
+  }
+});
+
 test('team templates save durable configuration and create an isolated team copy', async () => {
   const fixture = sandbox();
   const app = createWorkbench({ ...fixture, requireCredential: false, runtimeFactory: () => ({ start() {}, cancel() {} }) });

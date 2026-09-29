@@ -1191,6 +1191,28 @@ test.describe('团队招募核心流程', () => {
     await expect(sidebarLocator(page)).toBeHidden();
   });
 
+  test('团队动态可以暂停和恢复团队自治', async ({ page }) => {
+    const teams = seedConfirmedTeams();
+    await page.goto('/');
+    await openMobileSidebar(page);
+    await sidebarLocator(page).locator('button').filter({ hasText: teams.development.name }).first().click({ force: true });
+    await expect(page.getByRole('heading', { name: teams.development.name })).toBeVisible();
+    await clickNavigation(page, '团队动态');
+
+    const pause = page.getByRole('button', { name: '暂停团队自治', exact: true });
+    await expect(pause).toBeVisible();
+    await pause.click();
+    await expect(page.getByRole('button', { name: '恢复团队自治', exact: true })).toBeVisible();
+    await expect(page.getByText('自治已暂停 · 新任务不会派发', { exact: true })).toBeVisible();
+    const paused = await page.evaluate(async (id) => fetch(`/api/teams/${id}`).then((response) => response.json()), teams.development.id);
+    expect(paused.status).toBe('paused');
+
+    await page.getByRole('button', { name: '恢复团队自治', exact: true }).click();
+    await expect(page.getByRole('button', { name: '暂停团队自治', exact: true })).toBeVisible();
+    const resumed = await page.evaluate(async (id) => fetch(`/api/teams/${id}`).then((response) => response.json()), teams.development.id);
+    expect(resumed.status).toBe('active');
+  });
+
   test('执行节点配对向导生成跨平台启动命令且不泄露长期凭据', async ({ page }) => {
     await page.goto('/');
     await clickNavigation(page, '执行节点');
