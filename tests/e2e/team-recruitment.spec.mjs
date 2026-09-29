@@ -1177,6 +1177,31 @@ test.describe('团队招募核心流程', () => {
     await expect(sidebarLocator(page)).toBeHidden();
   });
 
+  test('执行节点配对向导生成跨平台启动命令且不泄露长期凭据', async ({ page }) => {
+    await page.goto('/');
+    await clickNavigation(page, '执行节点');
+    await expect(page.getByRole('heading', { name: '执行节点' })).toBeVisible();
+    await page.getByRole('button', { name: '配对节点', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('textbox', { name: '节点名称' }).fill('E2E 跨平台节点');
+    await dialog.getByRole('button', { name: '生成配对码', exact: true }).click();
+    await expect(dialog.getByText('macOS / Linux', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('Windows PowerShell', { exact: true })).toBeVisible();
+    const shell = dialog.locator('.manage-pairing');
+    await expect(shell).toHaveText(/^[a-f0-9]{32}$/);
+    const commands = dialog.locator('pre');
+    await expect(commands.nth(0)).toContainText('--control-url');
+    await expect(commands.nth(0)).toContainText('--workspace');
+    await expect(commands.nth(0)).toContainText('--pair');
+    await expect(commands.nth(1)).toContainText('$HOME');
+    await dialog.getByRole('textbox', { name: '节点本机工作目录' }).fill('/tmp/ggb-e2e-node');
+    await expect(commands.nth(0)).toContainText('/tmp/ggb-e2e-node');
+    const text = await dialog.innerText();
+    expect(text).not.toContain('tokenHash');
+    expect(text).not.toContain('node-identity.json');
+    await page.keyboard.press('Escape');
+  });
+
   test('确认 Team Charter 后进入我的团队并保留重命名后的团队身份', async ({ page }) => {
     const { teamName, teamId } = seedProposedRecruitment();
     const composer = await recruitmentPage(page);

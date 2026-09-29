@@ -25,7 +25,23 @@ The HTTP proxy must preserve the request Host and Origin. Do not trust arbitrary
 ## Execution Node
 
 1. Install the same application revision and dependencies on the node. Configure DSH using the installation process appropriate for that machine.
-2. Create a private node data directory and a JSON config based on `node.example.json`. The `workspaces` object maps logical names to absolute directories on this node. Use a separate data directory outside every source project.
+2. Create a private node data directory and a JSON config based on `node.example.json`. The `workspaces` object maps logical names to absolute directories on this node. Use a separate data directory outside every source project. For a one-command cross-platform bootstrap, flags can be used instead of a config file; `--print-config` emits a sanitized JSON config and never reads or prints the node identity:
+
+   ```sh
+   node scripts/node.mjs --control-url https://workbench.example.com \
+     --workspace project=/srv/dsh-projects/my-app --data-dir ~/.dsh-node \
+     --max-concurrent 3 --print-config > node.json
+   ```
+
+   PowerShell uses the same flags (quote paths containing spaces):
+
+   ```powershell
+   node scripts/node.mjs --control-url https://workbench.example.com `
+     --workspace 'project=C:\Projects\my-app' --data-dir "$HOME\.dsh-node" `
+     --max-concurrent 3 --print-config | Set-Content node.json
+   ```
+
+   The direct flags may also be passed to the worker itself. `--workspace` is repeatable, and `--max-concurrent` accepts 1–16.
 3. In the control plane, create a pairing code. Pair from the node using:
 
    ```sh

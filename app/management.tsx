@@ -3276,6 +3276,8 @@ export function Management({
   const [pairDialog, setPairDialog] = useState(false);
   const [pairName, setPairName] = useState('');
   const [pairResult, setPairResult] = useState<Entity | null>(null);
+  const [pairWorkspacePath, setPairWorkspacePath] = useState('/absolute/path/to/project');
+  const [pairControlUrl, setPairControlUrl] = useState('');
   const [importDialog, setImportDialog] = useState(false);
   const [sourceUrl, setSourceUrl] = useState('');
   const [importVersion, setImportVersion] = useState('');
@@ -3315,6 +3317,14 @@ export function Management({
       setLoading(false);
     }
   }, []);
+  const copyText = async (value: string, message: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setNotice(message);
+    } catch {
+      setError('无法访问剪贴板，请手动复制。');
+    }
+  };
   useEffect(() => {
     const initial = setTimeout(() => void refresh(), 0);
     const timer = setInterval(() => void refresh(), 8000);
@@ -3389,6 +3399,18 @@ export function Management({
       : data
         ? entityList(data[collection as keyof ManagementState])
         : [];
+  const pairingCode = pairResult ? txt(pairResult, 'code') : '';
+  const pairingControlUrl = pairControlUrl || (typeof window !== 'undefined' ? window.location.origin : '');
+  const pairingWorkspace = pairWorkspacePath.trim() || '/absolute/path/to/project';
+  const shellQuote = (value: string) => `'${value.replaceAll("'", "'\"'\"'")}'`;
+  const powershellQuote = (value: string) => `'${value.replaceAll("'", "''")}'`;
+  const nodeName = pairName.trim() || 'my-node';
+  const shellBootstrapCommand = pairingCode
+    ? `node scripts/node.mjs --control-url ${shellQuote(pairingControlUrl)} --workspace ${shellQuote(`default=${pairingWorkspace}`)} --data-dir ~/.dsh-node --max-concurrent 3 --pair ${shellQuote(pairingCode)} --name ${shellQuote(nodeName)}`
+    : '';
+  const powershellBootstrapCommand = pairingCode
+    ? `node scripts/node.mjs --control-url ${powershellQuote(pairingControlUrl)} --workspace ${powershellQuote(`default=${pairingWorkspace}`)} --data-dir "$HOME\\.dsh-node" --max-concurrent 3 --pair ${powershellQuote(pairingCode)} --name ${powershellQuote(nodeName)}`
+    : '';
   const filtered = items.filter((item) =>
     `${title(item)} ${description(collection, item, data!)}`
       .toLowerCase()
@@ -3743,6 +3765,8 @@ export function Management({
                 setPairDialog(true);
                 setPairName('');
                 setPairResult(null);
+                setPairWorkspacePath('/absolute/path/to/project');
+                setPairControlUrl(typeof window !== 'undefined' ? window.location.origin : '');
               }}
             >
               <Plus size={16} />
@@ -4121,6 +4145,36 @@ export function Management({
             ) : (
               <div className="manage-detail">
                 <Badge value={status(detail.item)} />
+                {detail.collection === 'nodes' && (
+                  <section className="node-status-panel" aria-label="节点运行状态">
+                    <h3>节点运行状态</h3>
+                    <div className="node-status-summary">
+                      <span>最近心跳：{detail.item.lastSeenAt ? time(detail.item.lastSeenAt) : '尚未上报'}</span>
+                      <span>平台：{txt(detail.item, 'platform') || '未知'}</span>
+                    </div>
+                    <div className="node-workspace-list">
+                      <strong>工作目录映射</strong>
+                      {Array.isArray(detail.item.workspaces) && detail.item.workspaces.length ? detail.item.workspaces.map((workspace, index) => (
+                        <code key={index}>{String(workspace)}</code>
+                      )) : <span>节点尚未声明工作目录映射。</span>}
+                    </div>
+                    <div className="node-active-list">
+                      <strong>当前执行</strong>
+                      {entityList(detail.item.activeExecutions).length ? entityList(detail.item.activeExecutions).map((execution, index) => (
+                        <div className="node-active-item" key={txt(execution, 'taskId') || index}>
+                          <span>{txt(execution, 'title') || txt(execution, 'taskId')}</span>
+                          <Badge value={txt(execution, 'status') || 'running'} />
+                        </div>
+                      )) : <span>当前没有执行中的任务。</span>}
+                    </div>
+                    {status(detail.item) === 'offline' && (
+                      <p className="node-status-hint">节点已超过租约时间未发送心跳。请在节点上重新运行启动命令；已有执行会保持未知状态，需要从新实例恢复。</p>
+                    )}
+                    {status(detail.item) === 'revoked' && (
+                      <p className="node-status-hint">此节点凭据已撤销。请生成新的配对码，并使用独立的数据目录重新配对。</p>
+                    )}
+                  </section>
+                )}
                 <dl>
                   {Object.entries(detail.item)
                     .filter(
@@ -4644,32 +4698,56 @@ export function Management({
               生成节点配对码
             </DialogDescription>
             {pairResult ? (
-              <div className="manage-detail">
+              <div className="manage-detail node-pairing-result">
+                <div className="node-onboarding-step">
+                  <strong>1. 保存配对码</strong>
+                  <span>配对码只显示这一次，节点完成配对后立即失效。</span>
+                </div>
                 <code className="manage-pairing">
-                  {txt(pairResult, 'code') || txt(pairResult, 'token')}
+                  {pairingCode}
                 </code>
                 {Boolean(pairResult.expiresAt) && (
                   <p>有效期至 {time(pairResult.expiresAt)}</p>
                 )}
-                <button
-                  className="text-button"
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(
-                        txt(pairResult, 'code') || txt(pairResult, 'token'),
-                      );
-                      setNotice('配对码已复制');
-                    } catch {
-                      setError('无法访问剪贴板');
-                    }
-                  }}
-                >
-                  <Copy size={16} />
-                  复制配对码
+                <button className="secondary-button" type="button" onClick={() => void copyText(pairingCode, '配对码已复制')}>
+                  <Copy size={16} /> 复制配对码
                 </button>
-                {Boolean(pairResult.command) && (
-                  <pre>{txt(pairResult, 'command')}</pre>
-                )}
+                <div className="node-onboarding-step">
+                  <strong>2. 填写节点本机工作目录</strong>
+                  <span>这是执行节点上的绝对路径，控制端不会读取或验证它。</span>
+                </div>
+                <label>
+                  工作目录
+                  <input
+                    aria-label="节点本机工作目录"
+                    value={pairWorkspacePath}
+                    onChange={(event) => setPairWorkspacePath(event.target.value)}
+                    placeholder="例如 /srv/projects/my-app 或 C:\\Projects\\my-app"
+                  />
+                </label>
+                <div className="node-onboarding-step">
+                  <strong>3. 在节点终端运行启动命令</strong>
+                  <span>先在节点安装当前版本依赖，再复制对应系统的命令。</span>
+                </div>
+                <div className="node-bootstrap-block">
+                  <div className="node-bootstrap-heading">
+                    <strong>macOS / Linux</strong>
+                    <button type="button" className="text-button" onClick={() => void copyText(shellBootstrapCommand, 'macOS / Linux 启动命令已复制')}>
+                      <Copy size={14} /> 复制命令
+                    </button>
+                  </div>
+                  <pre aria-label="macOS Linux 节点启动命令">{shellBootstrapCommand}</pre>
+                </div>
+                <div className="node-bootstrap-block">
+                  <div className="node-bootstrap-heading">
+                    <strong>Windows PowerShell</strong>
+                    <button type="button" className="text-button" onClick={() => void copyText(powershellBootstrapCommand, 'Windows 启动命令已复制')}>
+                      <Copy size={14} /> 复制命令
+                    </button>
+                  </div>
+                  <pre aria-label="Windows PowerShell 节点启动命令">{powershellBootstrapCommand}</pre>
+                </div>
+                <p className="field-help">命令只包含控制端地址、临时配对码和工作目录，不包含节点长期 token。配对成功后可在下方列表确认在线状态。</p>
               </div>
             ) : (
               <form
