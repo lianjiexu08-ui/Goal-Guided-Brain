@@ -1553,6 +1553,7 @@ function Workbench() {
     : isConversationView
       ? (teamSpace?.goal || '当前团队工作空间')
       : '工作空间';
+  const isMoreView = !isRecruitmentView && !['workspace', 'team', 'tasks'].includes(view);
   const teamSessionIds = teamSpace
     ? new Set(
         tasks
@@ -4308,6 +4309,8 @@ function Workbench() {
           </button>
           <button
             type="button"
+            className={isMoreView ? 'active' : ''}
+            aria-current={isMoreView ? 'page' : undefined}
             onClick={() => setOpenMobile(true)}
           >
             <Menu size={18} />

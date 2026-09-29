@@ -1173,6 +1173,12 @@ test.describe('团队招募核心流程', () => {
     await navigation.getByRole('button', { name: '更多', exact: true }).click({ force: true });
     await expect(sidebarLocator(page)).toBeVisible();
     await expect(sidebarLocator(page).getByRole('button', { name: '关闭导航', exact: true })).toBeVisible();
+    await sidebarLocator(page).getByRole('button', { name: '助手与模型', exact: true }).click({ force: true });
+    await expect(sidebarLocator(page)).toBeHidden();
+    await expect(navigation.getByRole('button', { name: '更多', exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('heading', { name: '我的助手' })).toBeVisible();
+    await navigation.getByRole('button', { name: '更多', exact: true }).click({ force: true });
+    await expect(sidebarLocator(page)).toBeVisible();
     await sidebarLocator(page).getByRole('button', { name: '关闭导航', exact: true }).click();
     await expect(sidebarLocator(page)).toBeHidden();
   });
