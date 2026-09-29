@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 159/159, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 160/160, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Cross-platform CI matrix runs lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
@@ -62,7 +62,7 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 159 passing tests. The repeatable
+The current deterministic suite contains 160 passing tests. The repeatable
 Playwright baseline contains fifty-eight passing desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
@@ -72,7 +72,8 @@ settings editing, two-team context switching, cross-team model selection,
 provider probe status feedback, sustained 20-switch isolation and failed-task
 recovery against the real API, including the mobile bottom navigation and
 explicit mobile drawer close action, plus execution-node pairing onboarding with
-cross-platform worker commands. Team tasks now default to isolated execution
+cross-platform worker commands and offline/restored node connection events. Team
+tasks now default to isolated execution
 directories, and task details expose the selected model, routing candidates and
 fallback events when they exist. A local API fixture also alternates between
 two teams for 20 messages and checks task, message, model and route ownership.

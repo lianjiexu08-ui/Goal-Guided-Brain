@@ -485,6 +485,37 @@ test('worker self-stops an expired lease even without a successful controller he
   assert.equal(client.db.prepare('SELECT COUNT(*) AS n FROM outbox').get().n, 1);
 });
 
+test('worker exposes offline and restored connection events while retrying the control plane', async t => {
+  const { directory, workspace } = setup(t);
+  let attempts = 0;
+  const events = [];
+  const client = new NodeClient({
+    controlUrl: 'http://localhost:3089',
+    dataDir: path.join(directory, 'node-reconnect'),
+    workspaces: { default: workspace },
+    runtimeFactory: () => ({}),
+    onEvent: event => events.push(event),
+    fetchImpl: async url => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('控制端暂时不可达');
+      const requestUrl = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url;
+      const endpoint = requestUrl.split('/').pop();
+      return new Response(JSON.stringify(endpoint === 'heartbeat'
+        ? { leases: [], serverTime: 10000 }
+        : { assignment: null }), { status: 200 });
+    },
+  });
+  client.identity = { nodeId: 'node-reconnect', token: 'fixture-token', controlUrl: client.controlUrl };
+  t.after(() => client.close());
+  await client.tick();
+  assert.equal(client.connectionState, 'offline');
+  assert.equal(client.connectionFailures, 1);
+  await client.tick();
+  assert.equal(client.connectionState, 'online');
+  assert.equal(client.connectionFailures, 0);
+  assert.deepEqual(events.map(event => event.kind), ['connection-offline', 'connection-error', 'connection-restored']);
+});
+
 test('HTTP and TCP monitors execute deterministically without a model', async t => {
   const server = http.createServer((_req, res) => res.end('ok'));
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));

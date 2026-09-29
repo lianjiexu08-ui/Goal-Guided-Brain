@@ -73,6 +73,9 @@ export class NodeClient {
     this.active = new Map();
     this.stopping = false;
     this.running = false;
+    this.connectionState = 'unknown';
+    this.lastConnectionError = '';
+    this.connectionFailures = 0;
     this.tokenFile = path.join(this.dataDir, 'node-identity.json');
     try {
       this.identity = JSON.parse(fs.readFileSync(this.tokenFile, 'utf8'));
@@ -86,15 +89,33 @@ export class NodeClient {
     this.workspaceManager = new WorkspaceManager({ store: { records: new Records(this.db) }, dataDir: this.dataDir });
     fs.chmodSync(path.join(this.dataDir, 'outbox.sqlite'), 0o600);
   }
+  setConnectionState(state, error = '') {
+    const previous = this.connectionState;
+    const previousError = this.lastConnectionError;
+    this.connectionState = state;
+    this.lastConnectionError = error || '';
+    if (state === 'offline') this.connectionFailures += 1;
+    else if (state === 'online') this.connectionFailures = 0;
+    if (state === previous && !(state === 'offline' && error && error !== previousError)) return;
+    if (state === 'offline') this.onEvent({ kind: 'connection-offline', error: error || '控制端暂时不可达。', failures: this.connectionFailures });
+    else if (state === 'online' && previous === 'offline') this.onEvent({ kind: 'connection-restored' });
+    else if (state === 'revoked') this.onEvent({ kind: 'connection-revoked', error: error || '节点凭据已撤销。' });
+  }
   async request(endpoint, body, anonymous = false) {
-    const response = await this.fetchImpl(`${this.controlUrl}/api/nodes/${endpoint}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json',
-        ...(!anonymous && this.identity?.token ? { Authorization: `Bearer ${this.identity.token}` } : {}) },
-      body: JSON.stringify(body), signal: AbortSignal.timeout(15000), redirect: 'error',
-    });
-    const data = await response.json();
-    if (!response.ok) throw Object.assign(new Error(data.error || `节点请求失败：${response.status}`), { status: response.status });
-    return data;
+    try {
+      const response = await this.fetchImpl(`${this.controlUrl}/api/nodes/${endpoint}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json',
+          ...(!anonymous && this.identity?.token ? { Authorization: `Bearer ${this.identity.token}` } : {}) },
+        body: JSON.stringify(body), signal: AbortSignal.timeout(15000), redirect: 'error',
+      });
+      const data = await response.json();
+      if (!response.ok) throw Object.assign(new Error(data.error || `节点请求失败：${response.status}`), { status: response.status });
+      this.setConnectionState('online');
+      return data;
+    } catch (error) {
+      if (!error.status || error.status >= 500) this.setConnectionState('offline', error.message);
+      throw error;
+    }
   }
   async pair({ code, name }) {
     if (this.active.size) throw new Error('请先停止执行再重新配对。');
@@ -336,6 +357,7 @@ export class NodeClient {
     } catch (error) {
       this.onEvent({ kind: 'connection-error', error: error.message });
       if (error.status === 401) {
+        this.setConnectionState('revoked', error.message);
         this.stopping = true;
         clearInterval(this.timer);
         clearInterval(this.leaseTimer);
