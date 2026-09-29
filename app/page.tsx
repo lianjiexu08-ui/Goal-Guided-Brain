@@ -1283,6 +1283,7 @@ function Workbench() {
   const [recruitmentApprovals, setRecruitmentApprovals] = useState<Record<string, CapabilityApproval>>({});
   const endRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
   const routeInitialized = useRef(false);
   const draftCacheHydrated = useRef(false);
   const [draftCacheReady, setDraftCacheReady] = useState(false);
@@ -1473,6 +1474,18 @@ function Workbench() {
   const currentMemberSettings = teamSpace?.memberSettings?.[role];
   const dataReady = !!data;
   const isTeamMember = !!teamSpace?.memberRoleIds.includes(role);
+  const mobileContextTitle = isRecruitmentView
+    ? '团队招募'
+    : isConversationView
+      ? teamSpace?.name || assistantName
+      : managementNavigation.find((item) => item.id === view)?.label || (
+        view === 'team' ? '团队动态' : view === 'tasks' ? '后台任务' : view === 'assistants' ? '助手与模型' : '知识库'
+      );
+  const mobileContextDetail = isRecruitmentView
+    ? '需求发布 · 先和项目经理澄清目标'
+    : isConversationView
+      ? (teamSpace?.goal || '当前团队工作空间')
+      : '工作空间';
   const teamSessionIds = teamSpace
     ? new Set(
         tasks
@@ -2859,6 +2872,23 @@ function Workbench() {
             </button>
           </div>
         </header>
+        {isMobile && (
+          <div className="mobile-context-bar" data-testid="mobile-context-bar">
+            <div className="mobile-context-copy">
+              <span>当前工作</span>
+              <strong title={mobileContextTitle}>{mobileContextTitle}</strong>
+              <small title={mobileContextDetail}>{mobileContextDetail}</small>
+            </div>
+            <button
+              type="button"
+              className="mobile-context-switch"
+              aria-label="切换团队和工作空间"
+              onClick={() => setOpenMobile(true)}
+            >
+              切换
+            </button>
+          </div>
+        )}
         {connectionError && (
           <div className="error-banner">
             无法连接工作台服务。请确认服务正在运行。
@@ -3438,8 +3468,20 @@ function Workbench() {
                       }
                     }}
                   />
+                  <input
+                    ref={attachmentInputRef}
+                    className="attachment-picker"
+                    type="file"
+                    multiple
+                    aria-label="选择要添加的文件"
+                    onChange={(event) => {
+                      const files = Array.from(event.target.files || []);
+                      event.target.value = '';
+                      if (files.length) void uploadAttachments(files);
+                    }}
+                  />
                   <div className={`composer-attachments${draggingFiles ? ' is-dragging' : ''}`}>
-                    {draggingFiles ? <span>松开即可添加文件</span> : <span><Paperclip size={13} />拖入或粘贴图片、文件，发送时会携带文件内容</span>}
+                    {draggingFiles ? <span>松开即可添加文件</span> : <span><Paperclip size={13} />{isMobile ? '选择或粘贴图片、文件，发送时会携带文件内容' : '拖入或粘贴图片、文件，发送时会携带文件内容'}</span>}
                     {!!draftAttachments[attachmentDraftKey]?.length && (
                       <div className="attachment-list draft-attachments">
                         {draftAttachments[attachmentDraftKey].map((attachment) => (
@@ -3471,6 +3513,16 @@ function Workbench() {
                     )}
                   </div>
                   <div className="composer-bottom">
+                    <button
+                      type="button"
+                      className="mobile-attachment-button secondary-button"
+                      aria-label="添加附件"
+                      onClick={() => attachmentInputRef.current?.click()}
+                      disabled={busy || !assistant.id || assistant.archived}
+                    >
+                      <Paperclip size={15} />
+                      添加文件
+                    </button>
                     <button className="workspace-path" onClick={openSettings}>
                       <FolderOpen size={15} />
                       <span>

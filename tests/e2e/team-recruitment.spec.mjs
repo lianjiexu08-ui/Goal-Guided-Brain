@@ -1106,6 +1106,46 @@ test.describe('团队招募核心流程', () => {
     expect([...stored]).toEqual(pngBytes);
   });
 
+  test('手机端保留当前工作上下文并提供触控文件入口，设置使用底部面板', async ({ page }) => {
+    const teams = seedConfirmedTeams();
+    await page.goto('/');
+    const mobile = (page.viewportSize()?.width || 1024) < 768;
+    const context = page.getByTestId('mobile-context-bar');
+    if (!mobile) {
+      await expect(context).toBeHidden();
+      await expect(page.getByRole('button', { name: '添加附件', exact: true })).toBeHidden();
+      return;
+    }
+
+    await expect(context).toBeVisible();
+    await expect(context.getByRole('button', { name: '切换团队和工作空间', exact: true })).toBeVisible();
+    await context.getByRole('button', { name: '切换团队和工作空间', exact: true }).click();
+    const sidebar = sidebarLocator(page);
+    await expect(sidebar).toBeVisible();
+    await sidebar.locator('button').filter({ hasText: teams.development.name }).first().click({ force: true });
+    await expect(sidebar).toBeHidden({ timeout: 2_000 });
+    await expect(context).toContainText(teams.development.name);
+
+    const attachmentButton = page.getByRole('button', { name: '添加附件', exact: true });
+    await expect(attachmentButton).toBeVisible();
+    await page.locator('input[type="file"][aria-label="选择要添加的文件"]').setInputFiles({
+      name: 'mobile-note.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('mobile attachment payload'),
+    });
+    await expect(page.getByRole('button', { name: /mobile-note\.txt/ })).toBeVisible();
+
+    await page.getByRole('button', { name: '团队设置', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await page.waitForTimeout(350);
+    const box = await dialog.boundingBox();
+    expect(box).not.toBeNull();
+    expect(Math.abs((box?.y || 0) + (box?.height || 0) - (page.viewportSize()?.height || 0))).toBeLessThan(4);
+    await expect(dialog.getByRole('button', { name: '保存团队设置', exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
+  });
+
   test('确认 Team Charter 后进入我的团队并保留重命名后的团队身份', async ({ page }) => {
     const { teamName, teamId } = seedProposedRecruitment();
     const composer = await recruitmentPage(page);

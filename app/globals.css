@@ -422,6 +422,15 @@ p {
 .mobile-menu {
   display: none;
 }
+.mobile-context-bar {
+  display: none;
+}
+.attachment-picker {
+  display: none;
+}
+.mobile-attachment-button {
+  display: none;
+}
 .setup-banner,
 .error-banner {
   min-height: 43px;
@@ -2399,15 +2408,84 @@ h1 {
 }
 @media (max-width: 767px) {
   .mobile-menu {
-    display: flex;
+    display: grid;
+    width: 42px;
+    height: 42px;
+    place-items: center;
+    border: 1px solid #dce9e4;
+    border-radius: 12px;
+    color: #47756b;
+    background: #f6fbf8;
   }
   .topbar {
     padding: 0 18px;
     height: 58px;
     min-height: 58px;
   }
+  .topbar > div:first-child {
+    min-width: 0;
+    gap: 10px;
+  }
+  .topbar strong {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mobile-context-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 50px;
+    padding: 7px 18px;
+    border-bottom: 1px solid #e4efeb;
+    background: #f7fbf9;
+  }
+  .mobile-context-copy {
+    display: grid;
+    min-width: 0;
+    gap: 1px;
+  }
+  .mobile-context-copy span {
+    color: #87a09b;
+    font-size: 10px;
+    letter-spacing: .6px;
+  }
+  .mobile-context-copy strong,
+  .mobile-context-copy small {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mobile-context-copy strong {
+    color: #274d4b;
+    font-size: 13px;
+    font-weight: 650;
+  }
+  .mobile-context-copy small {
+    max-width: 265px;
+    color: #76908b;
+    font-size: 10px;
+  }
+  .mobile-context-switch {
+    flex: 0 0 auto;
+    min-height: 38px;
+    padding: 0 13px;
+    border: 1px solid #cfe3db;
+    border-radius: 10px;
+    color: #327363;
+    background: #fff;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .mobile-context-switch:active {
+    transform: scale(.98);
+  }
   .working-grid {
     grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
   }
   .conversation-top {
     padding: 23px 20px 12px;
@@ -2423,7 +2501,66 @@ h1 {
     padding-right: 20px;
   }
   .composer-area {
-    padding: 12px 16px 15px;
+    padding: 12px 16px calc(15px + env(safe-area-inset-bottom));
+  }
+  .composer textarea {
+    min-height: 64px;
+    height: 76px;
+    padding: 16px;
+    font-size: 16px;
+  }
+  .composer-bottom {
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0 12px 12px;
+  }
+  .mobile-attachment-button {
+    display: inline-flex;
+    min-height: 40px;
+    padding: 8px 11px;
+    border-radius: 10px;
+    font-size: 12px;
+  }
+  .workspace-path {
+    min-width: 0;
+    flex: 1 1 120px;
+    max-width: none;
+    min-height: 40px;
+  }
+  .composer-bottom > div {
+    min-width: 0;
+    margin-left: auto;
+    gap: 8px;
+  }
+  .model-switcher {
+    min-width: 0;
+    max-width: 145px;
+  }
+  .model-switcher select {
+    display: block;
+    min-width: 0;
+    max-width: 125px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .model-switcher .model-id,
+  .model-switcher .model-health-warning,
+  .model-switcher .model-health-ok,
+  .model-switcher > small:not(.sr-only) {
+    display: none;
+  }
+  .send-button {
+    width: 44px;
+    height: 42px;
+    border-radius: 12px;
+  }
+  .composer-hint {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    margin: 5px 2px 0;
+    line-height: 1.5;
   }
   .welcome {
     margin: 25px auto;
@@ -2523,12 +2660,108 @@ h1 {
   .collection-empty {
     padding: 50px 10px;
   }
+  .work-dialog {
+    top: auto !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: min(92dvh, calc(100dvh - env(safe-area-inset-top))) !important;
+    margin: 0 !important;
+    padding: 20px 18px calc(20px + env(safe-area-inset-bottom)) !important;
+    border-radius: 22px 22px 0 0 !important;
+    transform: none !important;
+    translate: none !important;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .work-dialog [data-slot='dialog-title'] {
+    padding-right: 38px;
+    font-size: 19px;
+  }
+  .work-dialog form {
+    gap: 15px;
+  }
+  .work-dialog .primary-button,
+  .work-dialog .secondary-button,
+  .work-dialog .manage-actions button {
+    min-height: 44px;
+  }
+  .work-dialog .primary-button {
+    align-self: stretch;
+  }
+  .work-dialog input,
+  .work-dialog textarea,
+  .work-dialog select {
+    min-height: 44px;
+    font-size: 16px;
+  }
+  .work-dialog textarea {
+    min-height: 110px;
+  }
+  .work-dialog.assistant-editor {
+    width: 100% !important;
+    max-width: none !important;
+    padding: 20px 18px calc(20px + env(safe-area-inset-bottom)) !important;
+    border-radius: 22px 22px 0 0 !important;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   * {
     scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
     transition: none !important;
+  }
+}
+
+/* On a phone the conversation is the single scroll surface. Nested scrolling
+   inside a long Team Charter makes confirmation controls hard to reach with a
+   thumb and lets the composer cover the target after automated scroll. */
+@media (max-width: 767px) {
+  .recruitment-proposal-card {
+    max-height: none;
+    overflow: visible;
+  }
+  .recruitment-proposal-body {
+    overflow: visible;
+    padding-right: 0;
+  }
+  .recruitment-proposal-actions {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .recruitment-proposal-actions .primary-button {
+    width: 100%;
+    min-height: 44px;
+  }
+  .model-switcher .model-health-warning,
+  .model-switcher .model-health-ok {
+    display: block !important;
+    max-width: 170px;
+    overflow: hidden;
+    white-space: normal;
+    line-height: 1.35;
+    max-height: 2.7em;
+  }
+  .model-switcher {
+    position: relative;
+  }
+  .model-switcher .model-health-warning {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 6px);
+    width: min(260px, calc(100vw - 32px));
+    max-width: none;
+    max-height: none;
+    padding: 6px 8px;
+    border: 1px solid #efd9a7;
+    border-radius: 8px;
+    color: #8b6426;
+    background: #fffaf0;
+    box-shadow: 0 5px 14px #5f4a1a18;
+    z-index: 4;
   }
 }
 .field-label {

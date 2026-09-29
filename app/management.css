@@ -824,7 +824,30 @@
     grid-template-columns: minmax(0, 1fr);
   }
   .manage-dialog {
-    padding: 20px !important;
+    top: auto !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: min(92dvh, calc(100dvh - env(safe-area-inset-top))) !important;
+    margin: 0 !important;
+    padding: 20px 18px calc(20px + env(safe-area-inset-bottom)) !important;
+    border-radius: 22px 22px 0 0 !important;
+    transform: none !important;
+    translate: none !important;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+  }
+  .manage-dialog input,
+  .manage-dialog textarea,
+  .manage-dialog select {
+    min-height: 44px;
+    font-size: 16px;
+  }
+  .manage-dialog .primary-button,
+  .manage-dialog .secondary-button,
+  .manage-dialog .manage-actions button {
+    min-height: 44px;
   }
   .manage-toolbar {
     gap: 8px;
