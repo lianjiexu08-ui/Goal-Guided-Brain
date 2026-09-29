@@ -29,7 +29,6 @@ const text = (v, max = 32000) =>
     .trim()
     .slice(0, max);
 const statuses = new Set(['queued', 'running', 'waiting', 'state_unknown']);
-const publicNode = ({ tokenHash: _token, ...node }) => node;
 const shellQuote = (value) => `'${String(value).replace(/'/g, `'"'"'`)}'`;
 
 export function createPlatform({
@@ -1071,29 +1070,7 @@ export function createPlatform({
         'integrations',
       ].map((name) => [name, records.list(name).slice(0, 100)]),
     );
-    const nodes = records.list('nodes').map((node) => {
-      const activeExecutions = records.list('executions')
-        .filter((execution) => execution.nodeId === node.id && execution.status === 'running')
-        .map((execution) => {
-          const task = store.task(execution.taskId);
-          return {
-            taskId: execution.taskId,
-            title: task?.title || task?.prompt || execution.taskId,
-            status: task?.status || execution.status,
-            startedAt: execution.startedAt || null,
-            expiresAt: execution.expiresAt || null,
-          };
-        });
-      return {
-        ...publicNode(node),
-        status: node.revokedAt
-          ? 'revoked'
-          : Date.now() - Number(node.lastSeenAt || 0) > control.leaseMs
-            ? 'offline'
-            : 'online',
-        activeExecutions,
-      };
-    });
+    const nodes = records.list('nodes').map((node) => control.nodeView(node));
     return {
       ...output,
       attention,

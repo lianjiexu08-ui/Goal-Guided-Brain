@@ -118,6 +118,9 @@ test('real HTTP node pair claim mapped workspace MCP and durable report complete
   assert.equal(listedNode.status, 'online');
   assert.deepEqual(listedNode.workspaces, ['project']);
   assert.equal(JSON.stringify(listedNode).includes('tokenHash'), false);
+  const controlNodeAfterPair = await request(`nodes/${paired.id}`, undefined, 'GET');
+  assert.equal(controlNodeAfterPair.body.status, listedNode.status);
+  assert.deepEqual(controlNodeAfterPair.body.activeExecutions, listedNode.activeExecutions);
   const task = await request('tasks', { role: 'developer', prompt: 'Remote development', nodeId: paired.id, workspaceKey: 'project', workspaceMode: 'isolated' });
   assert.equal(task.status, 201);
   await node.tick();
@@ -125,6 +128,9 @@ test('real HTTP node pair claim mapped workspace MCP and durable report complete
   const listedWhileRunning = await request('manage', undefined, 'GET');
   const runningNode = listedWhileRunning.body.nodes.find(item => item.id === paired.id);
   assert.equal(runningNode.activeExecutions[0].taskId, task.body.id);
+  const controlNodeWhileRunning = await request(`nodes/${paired.id}`, undefined, 'GET');
+  assert.equal(controlNodeWhileRunning.body.status, runningNode.status);
+  assert.deepEqual(controlNodeWhileRunning.body.activeExecutions, runningNode.activeExecutions);
   assert.equal(app.store.records.get('task-meta', task.body.id).workspaceKey, 'project');
   assert.ok(remote[0].options.task.workspace.startsWith(path.join(directory, 'remote-node')));
   assert.notEqual(remote[0].options.task.workspace, workspace);
