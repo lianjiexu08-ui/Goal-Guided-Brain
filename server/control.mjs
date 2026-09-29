@@ -362,6 +362,15 @@ export class ControlPlane {
       throw fail('团队招募方案尚未确认，请先完成澄清并等待用户确认创建。', 409);
     if (parentTeam && !parentTeam.memberRoleIds.includes(role))
       throw fail('只能向当前团队已确认的成员分派任务，请使用 read_team_roster 查看成员 ID。', 403);
+    const executionTeam = parentTeam || requestedTeam;
+    if (executionTeam && parent && parent.depth >= (executionTeam.autonomy?.maxDepth || 4))
+      throw fail(`团队最多允许 ${executionTeam.autonomy?.maxDepth || 4} 层任务拆解。`, 409);
+    if (executionTeam) {
+      const activeTeamJobs = this.records.list('jobs').filter(item =>
+        (item.teamId || item.spaceId) === executionTeam.id && !terminal.has(item.status));
+      if (activeTeamJobs.length >= (executionTeam.autonomy?.maxJobs || 32))
+        throw fail('团队已达到自治任务上限，请先处理现有任务或调整团队限额。', 409);
+    }
     const groupId = parent?.groupId || randomUUID();
     const dependencies = Array.isArray(body.dependencies) ? [...new Set(body.dependencies)] : [];
     if (dependencies.length > 32 || dependencies.some(id => this.records.get('jobs', id)?.groupId !== groupId)) throw fail('依赖必须是当前任务组内已有任务。');

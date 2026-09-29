@@ -20,6 +20,7 @@ export function createWorkbench({
   workspace = repo,
   runtimeFactory = (options) => new DshRun(options),
   requireCredential = true,
+  usageMeter,
 } = {}) {
   fs.mkdirSync(workspace, { recursive: true });
   fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
@@ -41,6 +42,7 @@ export function createWorkbench({
     runtimeFactory,
     requireCredential,
     releaseControl,
+    usageMeter,
     address: () => `http://127.0.0.1:${server.address()?.port || 3089}`,
   });
   const schedule = platform.schedule;

@@ -153,6 +153,45 @@ test('paused team blocks new jobs and local claims until autonomy resumes', t =>
   assert.equal(control.eligible(task, 'local'), true);
 });
 
+test('team autonomy limits cap active jobs and nested task depth', t => {
+  const { store, control } = setup(t);
+  const jobsTeam = store.saveTeamSpace({
+    name: '任务上限回归团队',
+    goal: '验证团队活跃任务限额。',
+    workspace: store.config.workspace,
+    pmRoleId: 'developer',
+    memberRoleIds: ['developer'],
+    recruitment: { phase: 'confirmed' },
+    autonomy: { mode: 'auto', maxDepth: 4, maxJobs: 1, budgetTokens: 50000 },
+  });
+  const first = control.createJob({ role: 'developer', prompt: '第一个任务', teamId: jobsTeam.id });
+  assert.throws(
+    () => control.createJob({ role: 'developer', prompt: '超过上限的任务', teamId: jobsTeam.id }),
+    /自治任务上限/,
+  );
+  const execution = control.claimLocal(store.task(first.taskId));
+  control.finishLocal(first.taskId, execution.execution.epoch, { status: 'completed', result: 'done' });
+  assert.doesNotThrow(() => control.createJob({ role: 'developer', prompt: '释放限额后的任务', teamId: jobsTeam.id }));
+
+  const depthTeam = store.saveTeamSpace({
+    name: '拆解层级回归团队',
+    goal: '验证团队任务拆解层级。',
+    workspace: store.config.workspace,
+    pmRoleId: 'developer',
+    memberRoleIds: ['developer'],
+    recruitment: { phase: 'confirmed' },
+    autonomy: { mode: 'auto', maxDepth: 1, maxJobs: 8, budgetTokens: 50000 },
+  });
+  const root = control.createJob({ role: 'developer', prompt: '根任务', teamId: depthTeam.id });
+  const rootExecution = control.claimLocal(store.task(root.taskId));
+  const child = control.createJob({ role: 'developer', prompt: '允许的一层子任务' }, control.validateInstanceToken(rootExecution.token));
+  const childExecution = control.claimLocal(store.task(child.taskId));
+  assert.throws(
+    () => control.createJob({ role: 'developer', prompt: '超出团队层级的任务' }, control.validateInstanceToken(childExecution.token)),
+    /最多允许 1 层任务拆解/,
+  );
+});
+
 test('owner budget increase pauses an exhausted group until explicit resume and propagates limits', async t => {
   const { store, control, request } = setup(t);
   const parent = control.createJob({ role: 'product', prompt: 'Budgeted project', budgetTokens: 1000 });

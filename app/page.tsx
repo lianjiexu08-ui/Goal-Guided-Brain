@@ -391,6 +391,9 @@ type TeamForm = {
   teamType: 'custom' | 'development' | 'operations' | 'product' | 'project';
   allowCollaboration: boolean;
   autonomyMode: 'auto' | 'assist';
+  autonomyMaxDepth: string;
+  autonomyMaxJobs: string;
+  autonomyBudgetTokens: string;
   model: string;
   providerId: string;
 };
@@ -1290,6 +1293,9 @@ function Workbench() {
     teamType: 'custom',
     allowCollaboration: true,
     autonomyMode: 'auto',
+    autonomyMaxDepth: '4',
+    autonomyMaxJobs: '32',
+    autonomyBudgetTokens: '200000',
     model: '',
     providerId: '',
   });
@@ -2509,6 +2515,9 @@ function Workbench() {
       teamType: (teamSpace.teamType as TeamForm['teamType']) || 'custom',
       allowCollaboration: teamSpace.collaboration?.enabled !== false,
       autonomyMode: teamSpace.autonomy?.mode === 'assist' ? 'assist' : 'auto',
+      autonomyMaxDepth: String(teamSpace.autonomy?.maxDepth || 4),
+      autonomyMaxJobs: String(teamSpace.autonomy?.maxJobs || 32),
+      autonomyBudgetTokens: String(teamSpace.autonomy?.budgetTokens || 200000),
       model: teamSpace.model || '',
       providerId: teamSpace.providerId || '',
     });
@@ -2555,6 +2564,9 @@ function Workbench() {
       teamType: template?.teamType || 'custom',
       allowCollaboration: template?.collaboration?.enabled !== false,
       autonomyMode: template?.autonomy?.mode === 'assist' ? 'assist' : 'auto',
+      autonomyMaxDepth: String(template?.autonomy?.maxDepth || 4),
+      autonomyMaxJobs: String(template?.autonomy?.maxJobs || 32),
+      autonomyBudgetTokens: String(template?.autonomy?.budgetTokens || 200000),
       model: template?.model || '',
       providerId: template?.providerId || '',
     });
@@ -3090,6 +3102,14 @@ function Workbench() {
                 </div>
               </div>
             </div>
+            {teamSpace?.recruitment?.phase === 'confirmed' && (
+              <div className="team-autonomy-summary" aria-label="团队自治限额">
+                <span>自治模式 · {teamSpace.autonomy?.mode === 'assist' ? '关键步骤确认' : '自动推进'}</span>
+                <span>活跃任务上限 · {teamSpace.autonomy?.maxJobs || 32}</span>
+                <span>最大拆解 · {teamSpace.autonomy?.maxDepth || 4} 层</span>
+                <span>Token 预算 · {(teamSpace.autonomy?.budgetTokens || 200000).toLocaleString()}</span>
+              </div>
+            )}
             {confirmedSpaces.length > 0 && (
               <CrossTeamTimeline teams={confirmedSpaces} onOpenTeam={openRiskTeam} onOpenTask={openRiskTask} />
             )}
@@ -5092,7 +5112,12 @@ function Workbench() {
                     memberRoleIds: teamForm.memberRoleIds,
                     workspace: teamForm.workspace,
                     workspaceMode: teamForm.workspaceMode,
-                    autonomy: { mode: teamForm.autonomyMode },
+                    autonomy: {
+                      mode: teamForm.autonomyMode,
+                      maxDepth: Number(teamForm.autonomyMaxDepth),
+                      maxJobs: Number(teamForm.autonomyMaxJobs),
+                      budgetTokens: Number(teamForm.autonomyBudgetTokens),
+                    },
                     collaboration: {
                       ...(editingTeamId && teamSpace?.collaboration
                         ? teamSpace.collaboration
@@ -5118,6 +5143,7 @@ function Workbench() {
                           workspace: teamForm.workspace,
                           workspaceMode: teamForm.workspaceMode,
                           teamType: teamForm.teamType,
+                          autonomy: payload.autonomy,
                           model: teamForm.model || null,
                           providerId: teamForm.providerId || null,
                           collaboration: payload.collaboration,
@@ -5312,6 +5338,45 @@ function Workbench() {
                     { value: 'assist', label: '协作 · 关键步骤先确认' },
                   ]}
                 />
+              </div>
+              <div className="form-grid three team-autonomy-limits">
+                <label>
+                  最大拆解层级
+                  <input
+                    type="number"
+                    min={1}
+                    max={4}
+                    required
+                    value={teamForm.autonomyMaxDepth}
+                    onChange={(e) => setTeamForm((form) => ({ ...form, autonomyMaxDepth: e.target.value }))}
+                  />
+                  <small className="field-help">限制项目经理继续拆分子任务的层级。</small>
+                </label>
+                <label>
+                  活跃任务上限
+                  <input
+                    type="number"
+                    min={1}
+                    max={32}
+                    required
+                    value={teamForm.autonomyMaxJobs}
+                    onChange={(e) => setTeamForm((form) => ({ ...form, autonomyMaxJobs: e.target.value }))}
+                  />
+                  <small className="field-help">达到上限后，新任务会被拦截，处理完现有任务后再继续。</small>
+                </label>
+                <label>
+                  团队 Token 预算
+                  <input
+                    type="number"
+                    min={1000}
+                    max={100000000}
+                    step={1000}
+                    required
+                    value={teamForm.autonomyBudgetTokens}
+                    onChange={(e) => setTeamForm((form) => ({ ...form, autonomyBudgetTokens: e.target.value }))}
+                  />
+                  <small className="field-help">团队累计达到预算会自动暂停自治。</small>
+                </label>
               </div>
             </form>
           )}

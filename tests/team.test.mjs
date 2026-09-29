@@ -132,6 +132,14 @@ test('team autonomy pause and resume gate new team messages', async () => {
   };
   try {
     const team = (await request('teams')).body[0];
+    const configured = await request(`teams/${team.id}`, {
+      autonomy: { mode: 'assist', maxDepth: 2, maxJobs: 1, budgetTokens: 50000 },
+    }, 'PUT');
+    assert.equal(configured.status, 200);
+    assert.equal(configured.body.autonomy.mode, 'assist');
+    assert.equal(configured.body.autonomy.maxDepth, 2);
+    assert.equal(configured.body.autonomy.maxJobs, 1);
+    assert.equal(configured.body.autonomy.budgetTokens, 50000);
     const paused = await request(`teams/${team.id}/autonomy/pause`, {}, 'POST');
     assert.equal(paused.status, 200);
     assert.equal(paused.body.status, 'paused');
@@ -151,6 +159,75 @@ test('team autonomy pause and resume gate new team messages', async () => {
     }, 'POST');
     assert.equal(accepted.status, 201);
     assert.ok(accepted.body.taskId);
+    app.store.updateTask(accepted.body.taskId, { status: 'completed' });
+    const capped = await request(`teams/${team.id}/messages`, {
+      clientMessageId: 'capped-team-message',
+      content: '任务上限后不应再启动第二个项目经理执行。',
+    }, 'POST');
+    assert.equal(capped.status, 409);
+    assert.match(capped.body.error, /自治任务上限/);
+  } finally {
+    await app.close();
+    fs.rmSync(fixture.dir, { recursive: true, force: true });
+  }
+});
+
+test('team token budget pauses autonomous work and records actionable attention', async () => {
+  const fixture = sandbox();
+  const runs = [];
+  const app = createWorkbench({
+    ...fixture,
+    requireCredential: false,
+    usageMeter: () => ({ totalTokens: 2000, outputTokens: 500, uncachedInputTokens: 1500, cacheReadTokens: 0, cacheWriteTokens: 0 }),
+    runtimeFactory: (options) => {
+      const run = {
+        options,
+        start() { runs.push(run); },
+        cancel() { options.onDone('cancelled', ''); },
+      };
+      return run;
+    },
+  });
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  const request = async (route, body, method = 'GET') => {
+    const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  try {
+    const team = (await request('teams')).body[0];
+    const configured = await request(`teams/${team.id}`, {
+      autonomy: { mode: 'auto', maxDepth: 4, maxJobs: 8, budgetTokens: 1000 },
+    }, 'PUT');
+    assert.equal(configured.status, 200);
+    const message = await request(`teams/${team.id}/messages`, {
+      clientMessageId: 'budget-team-message',
+      content: '触发团队预算检查。',
+    }, 'POST');
+    assert.equal(message.status, 201);
+    await waitFor(() => runs.length === 1, '团队预算测试任务没有启动。');
+    const run = runs[0];
+    run.options.onEvent({ type: 'turn/start', data: { turn: 1 } });
+    run.options.onEvent({ type: 'step/start', data: { turn: 1, step: 1 } });
+    run.options.onEvent({
+      type: 'assistant/message',
+      data: {
+        turn: 1,
+        step: 1,
+        message: { source: { provider: 'fixture', model: 'fixture' }, content: [{ type: 'text', text: 'done' }] },
+        usage: { inputTokens: 1500, outputTokens: 500, totalTokens: 2000 },
+      },
+    });
+    run.options.onEvent({ type: 'step/end', data: { turn: 1, step: 1 } });
+    await tick();
+    const paused = await request(`teams/${team.id}`);
+    assert.equal(paused.body.status, 'paused');
+    const taskMeta = app.store.records.get('task-meta', message.body.taskId);
+    assert.equal(app.store.records.get('jobs', taskMeta.jobId).status, 'budget-exceeded');
+    assert.ok(app.store.records.list('attention').some((item) => item.kind === 'team-budget' && item.teamId === team.id));
   } finally {
     await app.close();
     fs.rmSync(fixture.dir, { recursive: true, force: true });

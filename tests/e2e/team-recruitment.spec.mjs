@@ -1213,6 +1213,28 @@ test.describe('团队招募核心流程', () => {
     expect(resumed.status).toBe('active');
   });
 
+  test('团队设置可以配置自治拆解层级、活跃任务和 Token 预算', async ({ page }) => {
+    const teams = seedConfirmedTeams();
+    await page.goto('/');
+    await openMobileSidebar(page);
+    await sidebarLocator(page).locator('button').filter({ hasText: teams.development.name }).first().click({ force: true });
+    await expect(page.getByRole('heading', { name: teams.development.name })).toBeVisible();
+    await clickNavigation(page, '团队动态');
+    await page.getByRole('button', { name: '团队设置', exact: true }).click();
+    const settings = page.getByRole('dialog');
+    await settings.getByRole('spinbutton', { name: /最大拆解层级/ }).fill('2');
+    await settings.getByRole('spinbutton', { name: /活跃任务上限/ }).fill('6');
+    await settings.getByRole('spinbutton', { name: /团队 Token 预算/ }).fill('50000');
+    await settings.getByRole('button', { name: '保存团队设置', exact: true }).click();
+    await expect(page.getByText(`团队“${teams.development.name}”设置已保存`, { exact: true })).toBeVisible();
+    const summary = page.locator('[aria-label="团队自治限额"]');
+    await expect(summary).toContainText('活跃任务上限 · 6');
+    await expect(summary).toContainText('最大拆解 · 2 层');
+    await expect(summary).toContainText('Token 预算 · 50,000');
+    const saved = await page.evaluate(async (id) => (await fetch(`/api/teams/${id}`).then((response) => response.json())).autonomy, teams.development.id);
+    expect(saved).toMatchObject({ maxDepth: 2, maxJobs: 6, budgetTokens: 50000 });
+  });
+
   test('执行节点配对向导生成跨平台启动命令且不泄露长期凭据', async ({ page }) => {
     await page.goto('/');
     await clickNavigation(page, '执行节点');

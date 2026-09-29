@@ -1848,6 +1848,24 @@ h1 {
 .team-health.is-paused .live-dot { background: #d08a52; }
 .team-autonomy-toggle { min-height: 38px; }
 .team-autonomy-toggle.is-paused { border-color: #e1c59c; color: #936438; background: #fffaf1; }
+.team-autonomy-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 18px;
+  max-width: 1220px;
+  margin: -9px auto 18px;
+  color: #718a83;
+  font-size: 11px;
+}
+.team-autonomy-summary span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 9px;
+  border: 1px solid #e2eee9;
+  border-radius: 999px;
+  background: #f8fcfa;
+}
 .team-grid { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 18px; max-width: 1220px; margin: 0 auto; }
 .team-chat-panel, .team-roster-panel { border: 1px solid #dce8e4; border-radius: 22px; background: #fff; box-shadow: 0 14px 34px #183e3510; overflow: hidden; }
 .team-chat-head { display: flex; align-items: center; gap: 12px; padding: 20px 24px; border-bottom: 1px solid #e7efec; background: linear-gradient(115deg, #fbfefc, #f1faf6); }
@@ -2222,6 +2240,8 @@ h1 {
   .team-heading h1 { font-size: 24px; }
   .team-heading-actions { width: 100%; justify-content: flex-start; }
   .team-heading-actions .choice { min-width: 0; flex: 1; }
+  .team-autonomy-summary { gap: 6px 9px; margin: -8px 12px 15px; }
+  .team-autonomy-summary span { min-height: 28px; padding: 4px 8px; }
   .team-chat-head, .team-chat-stream { padding-left: 16px; padding-right: 16px; }
   .team-readonly-note { align-items: flex-start; flex-wrap: wrap; margin-left: 12px; margin-right: 12px; }
   .team-readonly-note .text-button { margin-left: 41px; }
@@ -2265,6 +2285,9 @@ h1 {
 .work-dialog .form-grid.two {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
+.work-dialog .form-grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
 .work-dialog label {
   display: flex;
   flex-direction: column;
@@ -2284,7 +2307,8 @@ h1 {
   line-height: 1.7;
 }
 @media (max-width: 620px) {
-  .work-dialog .form-grid.two {
+  .work-dialog .form-grid.two,
+  .work-dialog .form-grid.three {
     grid-template-columns: 1fr;
   }
 }

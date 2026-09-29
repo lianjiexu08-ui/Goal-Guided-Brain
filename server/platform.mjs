@@ -40,6 +40,7 @@ export function createPlatform({
   requireCredential,
   address,
   releaseControl = () => {},
+  usageMeter: usageMeterOverride,
 }) {
   const records = store.records;
   const vault = new Vault(dataDir);
@@ -59,7 +60,7 @@ export function createPlatform({
   const launches = new Map();
   const ready = (async () => {
     await auth.init();
-    usageMeter = await loadUsageMeter();
+    usageMeter = typeof usageMeterOverride === 'function' ? usageMeterOverride : await loadUsageMeter();
     // A vault passphrase may be supplied for unattended local startup, but it
     // must never be persisted as a plaintext companion file. Older builds
     // created `.vault_pass`; remove that legacy artifact before serving.
@@ -84,6 +85,18 @@ export function createPlatform({
       const space = store.teamSpace(teamId);
       if (!space) throw new Error('团队空间不存在。');
       if (space.status !== 'active') throw new Error('团队空间当前不可接收新任务。');
+      const parentMeta = input.parentTaskId ? records.get('task-meta', input.parentTaskId) : null;
+      const parentJob = parentMeta?.jobId ? records.get('jobs', parentMeta.jobId) : null;
+      if (parentJob && parentJob.depth >= (space.autonomy?.maxDepth || 4))
+        throw Object.assign(new Error(`团队最多允许 ${space.autonomy?.maxDepth || 4} 层任务拆解。`), { status: 409 });
+      if (!input.jobId) {
+        const activeTeamJobs = records.list('jobs').filter((job) =>
+          (job.teamId || job.spaceId) === space.id &&
+          !['completed', 'failed', 'cancelled', 'interrupted', 'state_unknown'].includes(job.status),
+        );
+        if (activeTeamJobs.length >= (space.autonomy?.maxJobs || 32))
+          throw Object.assign(new Error('团队已达到自治任务上限，请先处理现有任务或调整团队限额。'), { status: 409 });
+      }
       const directTeamMemberTask =
         space.pmRoleId !== input.role && input.parentTaskId === undefined;
       if (directTeamMemberTask && input.ownerInitiated !== true)
@@ -464,6 +477,36 @@ export function createPlatform({
           },
           `budget:${root.id}`,
         );
+      }
+      const teamId = root?.teamId || root?.spaceId;
+      const team = teamId ? store.teamSpace(teamId) : null;
+      if (team?.autonomy?.budgetTokens) {
+        const teamJobIds = new Set(
+          records.list('jobs')
+            .filter((job) => (job.teamId || job.spaceId) === team.id)
+            .map((job) => job.id),
+        );
+        const teamSpent = records.list('usage')
+          .filter((item) => teamJobIds.has(item.jobId))
+          .reduce((sum, item) => sum + item.totalTokens, 0);
+        if (teamSpent >= team.autonomy.budgetTokens && team.status === 'active') {
+          for (const job of records.list('jobs').filter((item) =>
+            (item.teamId || item.spaceId) === team.id &&
+            !['completed', 'failed', 'cancelled', 'interrupted', 'state_unknown'].includes(item.status),
+          )) {
+            records.save('jobs', { ...job, status: 'budget-exceeded', budgetExceeded: true }, job.id);
+            const current = store.task(job.taskId);
+            if (current && ['queued', 'running'].includes(current.status))
+              queueMicrotask(() => void stopTask(current.id));
+          }
+          control.setTeamStatus(team.id, 'paused');
+          control.attention({
+            kind: 'team-budget',
+            teamId: team.id,
+            title: '团队自治预算已用尽',
+            detail: `团队已报告 ${teamSpent} tokens，预算 ${team.autonomy.budgetTokens}。请调整团队预算后恢复自治。`,
+          }, `team-budget:${team.id}`);
+        }
       }
     }
   }
