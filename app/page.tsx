@@ -1503,6 +1503,17 @@ function Workbench() {
   const recruitment = teamSpace?.recruitment;
   const recruitmentProposal = recruitment?.proposal;
   const isRecruiting = isTeamConversation && recruitment?.phase !== 'confirmed';
+  const recruitmentPhaseMeta = recruitment?.phase === 'proposed'
+    ? {
+        label: '方案待确认',
+        description: '项目经理已经整理 Team Charter，等待你确认成员和职责。',
+        next: '确认后才会创建成员并进入“我的团队”。',
+      }
+    : {
+        label: '正在澄清',
+        description: '项目经理正在收集目标、交付物、约束和权限。',
+        next: '信息充分后会生成团队名称、成员和职责方案。',
+      };
   const charterKey = `${teamSpace?.id}:${recruitmentProposal?.version}:${recruitment?.phase}`;
   const recruitmentCapabilityRequirements = (recruitmentProposal?.members || []).flatMap((member) =>
     (member.capabilityIds || []).flatMap((capabilityId) => {
@@ -3133,6 +3144,27 @@ function Workbench() {
                             ? '暂时无法同步，会话内容会在恢复后继续同步'
                             : ''}
                     </small>
+                  )}
+                  {isRecruitmentView && (
+                    <div
+                      className={`recruitment-status-card recruitment-status-${recruitment?.phase || 'discovery'}`}
+                      data-testid="recruitment-status-card"
+                    >
+                      <div>
+                        <span>当前对象</span>
+                        <strong>需求草稿</strong>
+                        <small>{teamSpace?.name || '未命名需求'}</small>
+                      </div>
+                      <div>
+                        <span>当前阶段</span>
+                        <strong>{recruitmentPhaseMeta.label}</strong>
+                        <small>{recruitmentPhaseMeta.description}</small>
+                      </div>
+                      <div>
+                        <span>下一步</span>
+                        <small>{recruitmentPhaseMeta.next}</small>
+                      </div>
+                    </div>
                   )}
                 </div>
                 <div className="conversation-controls">

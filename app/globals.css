@@ -2051,6 +2051,7 @@ h1 {
 /* Team recruitment: keep the proposed charter visible beside the conversation
    so the user can review responsibilities before the team is materialized. */
 .recruitment-proposal-card {
+  flex: 0 0 auto;
   margin: 16px 28px 0;
   padding: 19px 20px 17px;
   border: 1px solid #b9dfcf;
@@ -3424,6 +3425,65 @@ h1 {
 
 .recruitment-sync-status.offline {
   color: #b36f28;
+}
+
+.recruitment-status-card {
+  display: grid;
+  grid-template-columns: minmax(110px, .8fr) minmax(180px, 1.25fr) minmax(180px, 1.4fr);
+  gap: 10px;
+  margin-top: 13px;
+  padding: 11px 12px;
+  border: 1px solid #d5e8df;
+  border-radius: 13px;
+  background: #f5fbf8;
+}
+.recruitment-status-card > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  align-content: start;
+}
+.recruitment-status-card > div + div {
+  padding-left: 11px;
+  border-left: 1px solid #dbece5;
+}
+.recruitment-status-card span {
+  color: #7b9890;
+  font-size: 10px;
+  letter-spacing: .04em;
+}
+.recruitment-status-card strong {
+  color: #2c5f52;
+  font-size: 12px;
+}
+.recruitment-status-card small {
+  color: #66837b;
+  font-size: 10px;
+  line-height: 1.45;
+}
+.recruitment-status-proposed {
+  border-color: #e7d9ae;
+  background: #fffaf0;
+}
+.recruitment-status-proposed strong { color: #8a6427; }
+.recruitment-status-proposed > div + div { border-color: #f0e4c1; }
+
+@media (max-width: 650px) {
+  .recruitment-status-card {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 11px;
+    padding: 10px;
+  }
+  .recruitment-status-card > div + div { padding-left: 10px; }
+  .recruitment-status-card > div:last-child {
+    grid-column: 1 / -1;
+    padding-top: 8px;
+    padding-left: 0;
+    border-top: 1px solid #dbece5;
+    border-left: 0;
+  }
+  .recruitment-status-proposed > div:last-child { border-color: #f0e4c1; }
 }
 
 .context-panel {

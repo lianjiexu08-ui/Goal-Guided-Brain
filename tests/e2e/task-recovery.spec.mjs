@@ -127,6 +127,7 @@ function seedAcceptanceJob({ rejected = false } = {}) {
   const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
   try {
     const groupId = randomUUID();
+    const notificationTitle = `交付被退回复核 · ${groupId.slice(0, 8)}`;
     const task = store.createTask({
       role: 'developer',
       prompt: 'E2E 验收决定可以通过交付或退回复核',
@@ -210,12 +211,12 @@ function seedAcceptanceJob({ rejected = false } = {}) {
         jobId: job.id,
         status: 'open',
         kind: 'acceptance',
-        title: '交付被退回复核',
+        title: notificationTitle,
         detail: '请补充边界场景验证后重新提交。',
         requirementVersion: 1,
       }, attentionId);
       store.records.save('notifications', {
-        name: '交付被退回复核',
+        name: notificationTitle,
         kind: 'acceptance',
         message: '请补充边界场景验证后重新提交。',
         attentionId,
@@ -226,7 +227,7 @@ function seedAcceptanceJob({ rejected = false } = {}) {
         occurredAt: new Date().toISOString(),
       }, `attention:${attentionId}`);
     }
-    return { taskId: task.id };
+    return { taskId: task.id, notificationTitle };
   } finally {
     store.close();
   }
@@ -394,7 +395,7 @@ test('后台任务支持批量通过有验证证据的交付', async ({ page }) 
 });
 
 test('需要你处理可以直接打开关联执行和交付状态', async ({ page }) => {
-  seedAcceptanceJob({ rejected: true });
+  const fixture = seedAcceptanceJob({ rejected: true });
   await page.goto('/');
   const mobile = (page.viewportSize()?.width || 1024) < 768;
   const openNavigation = async (label) => {
@@ -415,12 +416,13 @@ test('需要你处理可以直接打开关联执行和交付状态', async ({ pa
   await openNavigation('需要你处理');
   await expect(page.getByRole('heading', { name: '需要你处理' })).toBeVisible();
   await page.getByRole('tab', { name: '通知', exact: true }).click();
-  await expect(page.getByRole('button', { name: '交付被退回复核', exact: true }).first()).toBeVisible();
-  await page.getByRole('button', { name: '标记已读', exact: true }).first().click();
-  await expect(page.getByRole('button', { name: '标记已读', exact: true })).toHaveCount(0);
+  const notificationRow = page.locator('.manage-row').filter({ hasText: fixture.notificationTitle }).first();
+  await expect(notificationRow.getByRole('button', { name: fixture.notificationTitle, exact: true })).toBeVisible();
+  await notificationRow.getByRole('button', { name: '标记已读', exact: true }).click();
+  await expect(notificationRow.getByRole('button', { name: '标记已读', exact: true })).toHaveCount(0);
   await page.getByRole('tab', { name: '待处理事项', exact: true }).click();
-  await page.getByRole('button', { name: '交付被退回复核', exact: true }).first().click();
-  const detail = page.getByRole('dialog', { name: '交付被退回复核' });
+  await page.getByRole('button', { name: fixture.notificationTitle, exact: true }).first().click();
+  const detail = page.getByRole('dialog', { name: fixture.notificationTitle });
   await expect(detail.getByText('关联执行', { exact: true })).toBeVisible();
   await expect(detail.getByText('交付验收闭环任务', { exact: true })).toBeVisible();
   await detail.getByRole('button', { name: '查看执行与交付', exact: true }).click();

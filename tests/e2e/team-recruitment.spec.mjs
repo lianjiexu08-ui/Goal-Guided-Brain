@@ -1168,6 +1168,13 @@ test.describe('团队招募核心流程', () => {
 
     await navigation.getByRole('button', { name: '招募', exact: true }).click({ force: true });
     await expect(page.getByRole('heading', { name: '发布需求，招募团队' })).toBeVisible();
+    const recruitmentStatus = page.getByTestId('recruitment-status-card');
+    await expect(recruitmentStatus).toContainText('需求草稿');
+    await expect(recruitmentStatus).toContainText(/正在澄清|方案待确认/);
+    await expect(recruitmentStatus).toContainText(/确认后才会(?:进入|创建成员并进入)“我的团队”|信息充分后会生成团队名称/);
+    if ((page.viewportSize()?.width || 1024) < 768) {
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()?.width || 1024);
+    }
     await expect(navigation.getByRole('button', { name: '招募', exact: true })).toHaveAttribute('aria-current', 'page');
 
     await navigation.getByRole('button', { name: '更多', exact: true }).click({ force: true });
@@ -1216,6 +1223,8 @@ test.describe('团队招募核心流程', () => {
     await draftPicker.click();
     await page.getByRole('option', { name: `需求草稿 · 待确认需求`, exact: true }).click();
     await expect(page.getByRole('heading', { name: teamName })).toBeVisible();
+    await expect(page.getByTestId('recruitment-status-card')).toContainText('方案待确认');
+    await expect(page.getByTestId('recruitment-status-card')).toContainText('确认后才会创建成员并进入“我的团队”');
     await expect(page.getByRole('button', { name: '确认创建团队', exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: '确认创建团队', exact: true }).click();
