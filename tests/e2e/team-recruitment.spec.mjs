@@ -1231,6 +1231,9 @@ test.describe('团队招募核心流程', () => {
     await expect(summary).toContainText('活跃任务上限 · 6');
     await expect(summary).toContainText('最大拆解 · 2 层');
     await expect(summary).toContainText('Token 预算 · 50,000');
+    const usage = page.locator('[aria-label="团队自治用量"]');
+    await expect(usage).toContainText('0 / 50,000 tokens');
+    await expect(usage).toContainText('剩余 50,000 tokens');
     const saved = await page.evaluate(async (id) => (await fetch(`/api/teams/${id}`).then((response) => response.json())).autonomy, teams.development.id);
     expect(saved).toMatchObject({ maxDepth: 2, maxJobs: 6, budgetTokens: 50000 });
   });

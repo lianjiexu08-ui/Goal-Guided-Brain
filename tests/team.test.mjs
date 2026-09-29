@@ -175,10 +175,11 @@ test('team autonomy pause and resume gate new team messages', async () => {
 test('team token budget pauses autonomous work and records actionable attention', async () => {
   const fixture = sandbox();
   const runs = [];
+  let reportedTokens = 2000;
   const app = createWorkbench({
     ...fixture,
     requireCredential: false,
-    usageMeter: () => ({ totalTokens: 2000, outputTokens: 500, uncachedInputTokens: 1500, cacheReadTokens: 0, cacheWriteTokens: 0 }),
+    usageMeter: () => ({ totalTokens: reportedTokens, outputTokens: 500, uncachedInputTokens: reportedTokens - 500, cacheReadTokens: 0, cacheWriteTokens: 0 }),
     runtimeFactory: (options) => {
       const run = {
         options,
@@ -200,7 +201,7 @@ test('team token budget pauses autonomous work and records actionable attention'
   try {
     const team = (await request('teams')).body[0];
     const configured = await request(`teams/${team.id}`, {
-      autonomy: { mode: 'auto', maxDepth: 4, maxJobs: 8, budgetTokens: 1000 },
+      autonomy: { mode: 'auto', maxDepth: 4, maxJobs: 8, budgetTokens: 2500 },
     }, 'PUT');
     assert.equal(configured.status, 200);
     const message = await request(`teams/${team.id}/messages`, {
@@ -223,8 +224,29 @@ test('team token budget pauses autonomous work and records actionable attention'
     });
     run.options.onEvent({ type: 'step/end', data: { turn: 1, step: 1 } });
     await tick();
+    const warningState = await request(`teams/${team.id}`);
+    assert.equal(warningState.body.status, 'active');
+    assert.equal(warningState.body.autonomyUsage.warning, true);
+    assert.equal(warningState.body.autonomyUsage.usedTokens, 2000);
+    assert.ok(app.store.records.list('attention').some((item) => item.kind === 'team-budget-warning' && item.teamId === team.id));
+
+    reportedTokens = 3000;
+    run.options.onEvent({ type: 'turn/start', data: { turn: 2 } });
+    run.options.onEvent({ type: 'step/start', data: { turn: 2, step: 1 } });
+    run.options.onEvent({
+      type: 'assistant/message',
+      data: {
+        turn: 2,
+        step: 1,
+        message: { source: { provider: 'fixture', model: 'fixture' }, content: [{ type: 'text', text: 'done' }] },
+        usage: { inputTokens: 2500, outputTokens: 500, totalTokens: 3000 },
+      },
+    });
+    run.options.onEvent({ type: 'step/end', data: { turn: 2, step: 1 } });
+    await tick();
     const paused = await request(`teams/${team.id}`);
     assert.equal(paused.body.status, 'paused');
+    assert.equal(paused.body.autonomyUsage.exceeded, true);
     const taskMeta = app.store.records.get('task-meta', message.body.taskId);
     assert.equal(app.store.records.get('jobs', taskMeta.jobId).status, 'budget-exceeded');
     assert.ok(app.store.records.list('attention').some((item) => item.kind === 'team-budget' && item.teamId === team.id));

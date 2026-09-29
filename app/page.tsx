@@ -333,6 +333,14 @@ type TeamSpace = {
   providerId?: string | null;
   workspaceMode?: 'shared' | 'isolated' | 'worktree' | 'snapshot';
   autonomy: { mode: string; maxDepth: number; maxJobs: number; budgetTokens: number };
+  autonomyUsage?: {
+    usedTokens: number;
+    budgetTokens: number;
+    remainingTokens: number;
+    percent: number;
+    warning: boolean;
+    exceeded: boolean;
+  };
   teamType?: string;
   purpose?: string;
   collaboration?: { enabled?: boolean; autoHandoff?: boolean; sharedBoard?: boolean; allowedTeamIds?: string[] };
@@ -3103,12 +3111,36 @@ function Workbench() {
               </div>
             </div>
             {teamSpace?.recruitment?.phase === 'confirmed' && (
-              <div className="team-autonomy-summary" aria-label="团队自治限额">
-                <span>自治模式 · {teamSpace.autonomy?.mode === 'assist' ? '关键步骤确认' : '自动推进'}</span>
-                <span>活跃任务上限 · {teamSpace.autonomy?.maxJobs || 32}</span>
-                <span>最大拆解 · {teamSpace.autonomy?.maxDepth || 4} 层</span>
-                <span>Token 预算 · {(teamSpace.autonomy?.budgetTokens || 200000).toLocaleString()}</span>
-              </div>
+              <>
+                <div className="team-autonomy-summary" aria-label="团队自治限额">
+                  <span>自治模式 · {teamSpace.autonomy?.mode === 'assist' ? '关键步骤确认' : '自动推进'}</span>
+                  <span>活跃任务上限 · {teamSpace.autonomy?.maxJobs || 32}</span>
+                  <span>最大拆解 · {teamSpace.autonomy?.maxDepth || 4} 层</span>
+                  <span>Token 预算 · {(teamSpace.autonomy?.budgetTokens || 200000).toLocaleString()}</span>
+                </div>
+                {teamSpace.autonomyUsage && (
+                  <div
+                    className={`team-autonomy-usage${teamSpace.autonomyUsage.exceeded ? ' is-exceeded' : teamSpace.autonomyUsage.warning ? ' is-warning' : ''}`}
+                    aria-label="团队自治用量"
+                  >
+                    <div className="team-autonomy-usage-heading">
+                      <span>累计用量</span>
+                      <strong>{teamSpace.autonomyUsage.usedTokens.toLocaleString()} / {teamSpace.autonomyUsage.budgetTokens.toLocaleString()} tokens</strong>
+                      <b>{teamSpace.autonomyUsage.percent}%</b>
+                    </div>
+                    <div className="team-autonomy-usage-track" aria-hidden="true">
+                      <span style={{ width: `${teamSpace.autonomyUsage.percent}%` }} />
+                    </div>
+                    <small>
+                      {teamSpace.autonomyUsage.exceeded
+                        ? '预算已用尽，自治已暂停。请调整预算后恢复。'
+                        : teamSpace.autonomyUsage.warning
+                          ? '预算即将用尽，建议先处理或暂停低优先级任务。'
+                          : `剩余 ${teamSpace.autonomyUsage.remainingTokens.toLocaleString()} tokens`}
+                    </small>
+                  </div>
+                )}
+              </>
             )}
             {confirmedSpaces.length > 0 && (
               <CrossTeamTimeline teams={confirmedSpaces} onOpenTeam={openRiskTeam} onOpenTask={openRiskTask} />

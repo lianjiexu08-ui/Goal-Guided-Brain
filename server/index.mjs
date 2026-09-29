@@ -58,6 +58,23 @@ export function createWorkbench({
           attachments: platform.attachments.list(item.attachmentIds),
         }
       : item);
+  const teamUsageSummary = (space) => {
+    const jobs = store.records.list('jobs').filter((job) => (job.teamId || job.spaceId) === space.id);
+    const jobIds = new Set(jobs.map((job) => job.id));
+    const usedTokens = store.records.list('usage')
+      .filter((usage) => jobIds.has(usage.jobId))
+      .reduce((sum, usage) => sum + (Number(usage.totalTokens) || 0), 0);
+    const budgetTokens = Number(space.autonomy?.budgetTokens) || 0;
+    const percent = budgetTokens > 0 ? Math.min(100, Math.round((usedTokens / budgetTokens) * 100)) : 0;
+    return {
+      usedTokens,
+      budgetTokens,
+      remainingTokens: Math.max(0, budgetTokens - usedTokens),
+      percent,
+      warning: budgetTokens > 0 && usedTokens >= budgetTokens * 0.8 && usedTokens < budgetTokens,
+      exceeded: budgetTokens > 0 && usedTokens >= budgetTokens,
+    };
+  };
   const publicCrossTeamTimeline = ({ teamId = '', kind = 'all', limit = 60, before = null } = {}) => {
     const teams = store.teamSpaces()
       .filter((space) => space.status !== 'archived' && space.recruitment?.phase === 'confirmed')
@@ -283,6 +300,7 @@ export function createWorkbench({
     knowledge: store.knowledge(),
     spaces: store.teamSpaces().map((space) => ({
       ...space,
+      autonomyUsage: teamUsageSummary(space),
       messages: store.teamMessages(space.id).map((message) => ({
         ...message,
         attachmentIds: Array.isArray(message.attachmentIds) ? message.attachmentIds : [],
@@ -566,6 +584,7 @@ export function createWorkbench({
               });
             return send(200, {
               ...space,
+              autonomyUsage: teamUsageSummary(space),
               messages: store.teamMessages(space.id).map((message) => ({
                 ...message,
                 attachmentIds: Array.isArray(message.attachmentIds) ? message.attachmentIds : [],

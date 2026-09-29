@@ -1866,6 +1866,30 @@ h1 {
   border-radius: 999px;
   background: #f8fcfa;
 }
+.team-autonomy-usage {
+  display: grid;
+  gap: 6px;
+  max-width: 1220px;
+  margin: -7px auto 18px;
+  padding: 10px 13px;
+  border: 1px solid #dcece4;
+  border-radius: 12px;
+  color: #648178;
+  background: #f8fcfa;
+  font-size: 11px;
+}
+.team-autonomy-usage.is-warning { border-color: #ead7aa; color: #916f32; background: #fffaf0; }
+.team-autonomy-usage.is-exceeded { border-color: #e6c4bc; color: #9a5d51; background: #fff6f4; }
+.team-autonomy-usage-heading { display: flex; align-items: center; gap: 8px; }
+.team-autonomy-usage-heading strong { color: #466960; font-weight: 650; }
+.team-autonomy-usage.is-warning .team-autonomy-usage-heading strong { color: #86652f; }
+.team-autonomy-usage.is-exceeded .team-autonomy-usage-heading strong { color: #8f554a; }
+.team-autonomy-usage-heading b { margin-left: auto; font-size: 12px; font-weight: 700; }
+.team-autonomy-usage-track { height: 5px; overflow: hidden; border-radius: 999px; background: #e3eee9; }
+.team-autonomy-usage-track span { display: block; height: 100%; border-radius: inherit; background: #5aa58b; transition: width .25s ease; }
+.team-autonomy-usage.is-warning .team-autonomy-usage-track span { background: #c18c3e; }
+.team-autonomy-usage.is-exceeded .team-autonomy-usage-track span { background: #bd6b5d; }
+.team-autonomy-usage small { color: inherit; font-size: 10px; line-height: 1.45; }
 .team-grid { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 18px; max-width: 1220px; margin: 0 auto; }
 .team-chat-panel, .team-roster-panel { border: 1px solid #dce8e4; border-radius: 22px; background: #fff; box-shadow: 0 14px 34px #183e3510; overflow: hidden; }
 .team-chat-head { display: flex; align-items: center; gap: 12px; padding: 20px 24px; border-bottom: 1px solid #e7efec; background: linear-gradient(115deg, #fbfefc, #f1faf6); }
@@ -2242,6 +2266,9 @@ h1 {
   .team-heading-actions .choice { min-width: 0; flex: 1; }
   .team-autonomy-summary { gap: 6px 9px; margin: -8px 12px 15px; }
   .team-autonomy-summary span { min-height: 28px; padding: 4px 8px; }
+  .team-autonomy-usage { margin: -5px 12px 15px; padding: 10px 11px; }
+  .team-autonomy-usage-heading { flex-wrap: wrap; }
+  .team-autonomy-usage-heading b { margin-left: auto; }
   .team-chat-head, .team-chat-stream { padding-left: 16px; padding-right: 16px; }
   .team-readonly-note { align-items: flex-start; flex-wrap: wrap; margin-left: 12px; margin-right: 12px; }
   .team-readonly-note .text-button { margin-left: 41px; }

@@ -489,7 +489,18 @@ export function createPlatform({
         const teamSpent = records.list('usage')
           .filter((item) => teamJobIds.has(item.jobId))
           .reduce((sum, item) => sum + item.totalTokens, 0);
+        const warningId = `team-budget-warning:${team.id}`;
+        if (teamSpent >= team.autonomy.budgetTokens * 0.8 && teamSpent < team.autonomy.budgetTokens && team.status === 'active') {
+          control.attention({
+            kind: 'team-budget-warning',
+            teamId: team.id,
+            title: '团队自治预算即将用尽',
+            detail: `团队已使用 ${teamSpent} / ${team.autonomy.budgetTokens} tokens（${Math.round((teamSpent / team.autonomy.budgetTokens) * 100)}%）。请调整预算或暂停低优先级任务。`,
+          }, warningId);
+        }
         if (teamSpent >= team.autonomy.budgetTokens && team.status === 'active') {
+          const warning = records.get('attention', warningId);
+          if (warning?.status === 'open') records.save('attention', { ...warning, status: 'resolved', resolvedAt: nowIso() }, warning.id);
           for (const job of records.list('jobs').filter((item) =>
             (item.teamId || item.spaceId) === team.id &&
             !['completed', 'failed', 'cancelled', 'interrupted', 'state_unknown'].includes(item.status),
