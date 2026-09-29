@@ -1916,10 +1916,21 @@ h1 {
 .team-collaboration-target { display: grid; align-content: center; min-width: 0; padding: 8px 11px; border: 1px solid #dfeee7; border-radius: 9px; background: #f5fbf7; }
 .team-collaboration-target strong { overflow: hidden; color: #4d7066; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .team-collaboration-target span { display: -webkit-box; margin-top: 3px; overflow: hidden; color: #87a099; font-size: 10px; line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.team-collaboration-target small { display: block; margin-top: 6px; color: #6d8e83; font-size: 10px; line-height: 1.45; }
 .team-collaboration-content { grid-column: 1 / -1; }
+.team-collaboration-acceptance { grid-column: 1 / -1; }
 .team-collaboration-form-footer { display: flex; grid-column: 1 / -1; align-items: center; justify-content: space-between; gap: 12px; }
 .team-collaboration-form-footer small { color: #91a39e; font-size: 10px; line-height: 1.5; }
-.team-collaboration-form-footer .primary-button { flex: 0 0 auto; min-height: 34px; padding: 8px 13px; font-size: 11px; }
+.team-collaboration-form-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: 0 0 auto; }
+.team-collaboration-form-footer .primary-button,
+.team-collaboration-form-footer .secondary-button { min-height: 34px; padding: 8px 13px; font-size: 11px; }
+.team-collaboration-review { grid-column: 1 / -1; padding: 12px 13px; border: 1px solid #d9e9df; border-radius: 11px; background: #f5fbf7; color: #5c766e; }
+.team-collaboration-review > div { display: grid; gap: 3px; }
+.team-collaboration-review strong { color: #3e6d5e; font-size: 12px; }
+.team-collaboration-review span { color: #77918a; font-size: 10px; line-height: 1.5; }
+.team-collaboration-review dl { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 6px 10px; margin: 11px 0 0; font-size: 10px; line-height: 1.5; }
+.team-collaboration-review dt { color: #759087; font-weight: 650; }
+.team-collaboration-review dd { margin: 0; color: #4f6c64; white-space: pre-wrap; overflow-wrap: anywhere; }
 .team-collaboration-disabled,
 .team-collaboration-empty { display: flex; align-items: center; gap: 8px; margin-top: 15px; padding: 12px; border: 1px dashed #cfe2d9; border-radius: 11px; color: #77918a; background: #f7fcf9; font-size: 11px; line-height: 1.55; }
 .team-collaboration-error { margin-top: 10px; color: #a45e4c; font-size: 11px; }
@@ -2014,6 +2025,7 @@ h1 {
 .team-picker-help { margin: -2px 0 10px; color: #8a9ba2; font-size: 10px; line-height: 1.5; }
 .team-picker-empty { display: block; padding: 7px 2px; color: #8a9ba2; font-size: 10px; line-height: 1.5; }
 .team-template-boundary { margin: -2px 0 12px; padding: 9px 11px; border: 1px solid #dfeee7; border-radius: 9px; color: #6f8881; background: #f6fbf8; font-size: 10px; line-height: 1.55; }
+.team-template-actions { display: flex; justify-content: flex-end; margin-top: 2px; }
 .team-member-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
 .team-member-option { flex-direction: row !important; align-items: flex-start; gap: 9px !important; padding: 8px; border-radius: 7px; background: #f8fbfc; }
 .team-member-option:hover { background: #f0f8f5; }
@@ -2203,7 +2215,9 @@ h1 {
   .team-collaboration-head { flex-direction: column; gap: 8px; }
   .team-collaboration-state { align-self: flex-start; }
   .team-collaboration-form-footer { align-items: flex-start; flex-direction: column; }
-  .team-collaboration-form-footer .primary-button { width: 100%; justify-content: center; }
+  .team-collaboration-form-actions { width: 100%; align-items: stretch; flex-direction: column-reverse; }
+  .team-collaboration-form-actions .primary-button,
+  .team-collaboration-form-actions .secondary-button { width: 100%; justify-content: center; min-height: 44px; }
   .team-collaboration-item-main em { display: none; }
 }
 @media (max-width: 620px) {
@@ -2690,6 +2704,32 @@ h1 {
   }
   .work-dialog .primary-button {
     align-self: stretch;
+  }
+  /* Keep the long template form and its submit action independently
+     reachable in the bottom sheet. The title/description stay stable while
+     only the fields scroll, so a thumb never lands on an obscured control. */
+  .work-dialog.team-template-dialog {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom)) !important;
+  }
+  .work-dialog.team-template-dialog form {
+    order: 2;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding-bottom: 4px;
+  }
+  .work-dialog.team-template-dialog .team-template-actions {
+    order: 1;
+    flex: 0 0 auto;
+    z-index: 2;
+    margin-top: 0;
+  }
+  .work-dialog.team-template-dialog .team-template-actions .primary-button {
+    width: 100%;
+    margin: 0;
   }
   .work-dialog input,
   .work-dialog textarea,

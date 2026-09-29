@@ -1574,13 +1574,17 @@ test.describe('团队招募核心流程', () => {
     await expect(console.locator('.team-collaboration-target').getByText(teams.target.name, { exact: true })).toBeVisible();
 
     const goal = `请回传 ${Date.now()} 的发布检查清单。`;
+    const acceptance = '回传检查清单、风险等级和可执行的回滚步骤。';
     await console.getByRole('textbox', { name: '协作目标', exact: true }).fill(goal);
-    await console.getByRole('button', { name: '发起跨团队协作', exact: true }).click();
+    await console.getByRole('textbox', { name: '协作验收标准', exact: true }).fill(acceptance);
+    await console.getByRole('button', { name: '预览并发起协作', exact: true }).click();
+    await expect(console.getByRole('region', { name: '协作发送前审阅', exact: true })).toContainText(acceptance);
+    await console.getByRole('button', { name: '确认并发起协作', exact: true }).click();
     await expect(console.getByText(/协作请求已发送给/)).toBeVisible();
     await expect(console.getByRole('button', { name: '查看任务', exact: true })).toBeVisible();
     await expect.poll(() => collaborationRequests.length).toBe(1);
     expect(collaborationRequests[0].url).toContain(`/api/teams/${teams.source.id}/collaborate`);
-    expect(collaborationRequests[0].body).toMatchObject({ targetTeamId: teams.target.id, content: goal });
+    expect(collaborationRequests[0].body).toMatchObject({ targetTeamId: teams.target.id, content: goal, acceptance });
 
     await openMobileSidebar(page);
     await sidebarLocator(page).locator('button').filter({ hasText: teams.target.name }).first().click({ force: true });

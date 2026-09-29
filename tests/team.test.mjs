@@ -662,15 +662,18 @@ test('multiple Chat teams keep independent ownership and can hand work to anothe
     assert.match(blockedSource.body.error, /尚未完成招募/);
     assert.deepEqual((await request(`teams/${waiting.body.id}/collaborators`)).body, []);
 
+    const collaborationAcceptance = '回传发布检查项、风险等级和回滚步骤。';
     const delegated = await request(`teams/${source.id}/collaborate`, {
       targetTeamId: created.body.id,
       clientMessageId: 'ops-1',
       content: '请建立本项目的发布检查和运行监控清单。',
+      acceptance: collaborationAcceptance,
     }, 'POST');
     assert.equal(delegated.status, 201);
     assert.equal(delegated.body.sourceTeamId, source.id);
     assert.equal(delegated.body.targetTeamId, created.body.id);
     assert.ok(delegated.body.taskId);
+    assert.equal(app.store.taskDelivery(app.store.task(delegated.body.taskId)).acceptanceCriteria, collaborationAcceptance);
     await waitFor(() => runs.length === 1, '跨团队编排消息对应的项目经理任务没有在测试窗口内启动。');
     assert.match(runs[0].prompt, /运行监控清单/);
     const detail = await request(`teams/${created.body.id}`);

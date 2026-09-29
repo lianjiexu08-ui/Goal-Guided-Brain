@@ -161,12 +161,14 @@ export function createPlatform({
     if (nodeId !== 'local' && !records.get('nodes', nodeId))
       throw new Error('执行节点不存在。');
     const task = store.createTask({ ...input, workspace });
+    const acceptance = typeof input.acceptance === 'string' ? input.acceptance.slice(0, 20000) : '';
     if (!input.jobId)
       records.save(
         'jobs',
         {
           title: task.title,
           goal: task.prompt,
+          acceptance,
           role: task.role,
           groupId,
           batchId,
@@ -209,6 +211,7 @@ export function createPlatform({
         check: input.check || null,
         requirementVersion: input.requirementVersion || 1,
         contextExtra: input.contextExtra || '',
+        acceptance,
         attachmentIds,
         spaceId: teamId,
         teamId,

@@ -372,6 +372,10 @@ type TeamCollaborator = {
   purpose?: string;
   pmRoleId?: string;
   status?: string;
+  memberCount?: number;
+  budgetTokens?: number | null;
+  maxJobs?: number | null;
+  workspaceMode?: string | null;
 };
 type TeamForm = {
   name: string;
@@ -980,6 +984,8 @@ function TeamCollaborationConsole({
   const [collaborators, setCollaborators] = useState<TeamCollaborator[]>([]);
   const [targetTeamId, setTargetTeamId] = useState('');
   const [content, setContent] = useState('');
+  const [acceptance, setAcceptance] = useState('');
+  const [reviewing, setReviewing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -1054,6 +1060,11 @@ function TeamCollaborationConsole({
       setError('请说明希望目标团队完成的协作目标。');
       return;
     }
+    if (!reviewing) {
+      setError('');
+      setReviewing(true);
+      return;
+    }
     setSubmitting(true);
     setError('');
     try {
@@ -1067,9 +1078,12 @@ function TeamCollaborationConsole({
       }>(`teams/${team.id}/collaborate`, 'POST', {
         targetTeamId,
         content: trimmed,
+        ...(acceptance.trim() ? { acceptance: acceptance.trim() } : {}),
         clientMessageId,
       });
       setContent('');
+      setAcceptance('');
+      setReviewing(false);
       setLastCreated(created);
       await onChanged?.();
     } catch (rawError) {
@@ -1104,7 +1118,10 @@ function TeamCollaborationConsole({
             <select
               aria-label="选择协作目标团队"
               value={targetTeamId}
-              onChange={(event) => setTargetTeamId(event.target.value)}
+              onChange={(event) => {
+                setTargetTeamId(event.target.value);
+                setReviewing(false);
+              }}
               disabled={loading || submitting || collaborators.length === 0}
             >
               {!collaborators.length && <option value="">暂无可协作团队</option>}
@@ -1115,6 +1132,11 @@ function TeamCollaborationConsole({
             <div className="team-collaboration-target">
               <strong>{target.name}</strong>
               <span>{target.purpose || '目标团队将由自己的项目经理判断是否接受并安排执行。'}</span>
+              <small>
+                {target.memberCount ? `${target.memberCount} 位成员` : '成员配置'} ·{' '}
+                {target.budgetTokens ? `任务预算上限 ${target.budgetTokens.toLocaleString()} tokens` : '预算沿用目标团队设置'} ·{' '}
+                目标团队使用自己的模型、能力和执行目录
+              </small>
             </div>
           )}
           <label className="team-collaboration-content">
@@ -1129,11 +1151,49 @@ function TeamCollaborationConsole({
               disabled={submitting || collaborators.length === 0}
             />
           </label>
+          <label className="team-collaboration-acceptance">
+            <span>验收标准（可选）</span>
+            <textarea
+              aria-label="协作验收标准"
+              value={acceptance}
+              onChange={(event) => {
+                setAcceptance(event.target.value);
+                setReviewing(false);
+              }}
+              placeholder="例如：回传检查清单、风险等级和可执行的回滚步骤。"
+              rows={2}
+              maxLength={20000}
+              disabled={submitting || collaborators.length === 0}
+            />
+          </label>
+          {reviewing && target && (
+            <section className="team-collaboration-review" aria-label="协作发送前审阅">
+              <div>
+                <strong>发送前审阅</strong>
+                <span>将以下内容交给 {target.name} 的项目经理，由对方团队按自己的权限执行。</span>
+              </div>
+              <dl>
+                <dt>协作目标</dt>
+                <dd>{content.trim()}</dd>
+                <dt>验收标准</dt>
+                <dd>{acceptance.trim() || '未填写，目标团队将根据协作目标判断交付标准。'}</dd>
+                <dt>权限边界</dt>
+                <dd>目标团队的成员、模型、能力和执行目录保持独立，当前团队不会获得额外权限。</dd>
+              </dl>
+            </section>
+          )}
           <div className="team-collaboration-form-footer">
-            <small>目标团队会在自己的任务队列中看到这条请求；你可以在下面跟踪任务和回传。</small>
-            <button className="primary-button" type="submit" disabled={submitting || loading || collaborators.length === 0}>
-              {submitting ? '发送中…' : '发起跨团队协作'} <ArrowRight size={14} />
-            </button>
+            <small>目标团队会在自己的任务队列中看到这条请求；发送前可以审阅输入和验收标准。</small>
+            <div className="team-collaboration-form-actions">
+              {reviewing && (
+                <button type="button" className="secondary-button" onClick={() => setReviewing(false)} disabled={submitting}>
+                  返回修改
+                </button>
+              )}
+              <button className="primary-button" type="submit" disabled={submitting || loading || collaborators.length === 0}>
+                {submitting ? '发送中…' : reviewing ? '确认并发起协作' : '预览并发起协作'} <ArrowRight size={14} />
+              </button>
+            </div>
           </div>
         </form>
       )}
@@ -4230,7 +4290,9 @@ function Workbench() {
         open={modal !== null}
         onOpenChange={(open) => !open && setModal(null)}
       >
-        <DialogContent className="work-dialog">
+        <DialogContent
+          className={`work-dialog${modal === 'team-template' ? ' team-template-dialog' : ''}`}
+        >
           <DialogTitle>
             {modal === 'settings'
               ? '工作空间设置'
@@ -4683,6 +4745,7 @@ function Workbench() {
           )}
           {modal === 'team-template' && (
             <form
+              id="team-template-form"
               onSubmit={(e) => {
                 e.preventDefault();
                 if (!teamSpace) return;
@@ -4719,10 +4782,19 @@ function Workbench() {
                 />
               </label>
               <p className="team-template-boundary">会保存成员职责、成员模型/能力、团队模型、自治模式和执行目录模式；不会复制历史消息、任务、招募会话、草稿、附件或原团队协作白名单。</p>
-              <button className="primary-button" type="submit" disabled={busy || !teamSpace}>
+            </form>
+          )}
+          {modal === 'team-template' && (
+            <div className="team-template-actions">
+              <button
+                className="primary-button"
+                type="submit"
+                form="team-template-form"
+                disabled={busy || !teamSpace}
+              >
                 <Copy size={15} /> 保存模板
               </button>
-            </form>
+            </div>
           )}
           {modal === 'rename-team' && (
             <form

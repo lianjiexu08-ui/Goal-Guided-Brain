@@ -625,7 +625,7 @@ export function createWorkbench({
             const collaborators = store.teamSpaces()
               .filter((candidate) => candidate.id !== space.id && candidate.status === 'active' && candidate.recruitment?.phase === 'confirmed')
               .filter((candidate) => !allowed.length || allowed.includes(candidate.id))
-              .map(({ id: candidateId, name: candidateName, teamType: candidateTeamType, purpose: candidatePurpose, pmRoleId: candidatePmRoleId, status: candidateStatus }) => ({
+            .map(({ id: candidateId, name: candidateName, teamType: candidateTeamType, purpose: candidatePurpose, pmRoleId: candidatePmRoleId, status: candidateStatus, memberRoleIds: candidateMemberRoleIds, autonomy: candidateAutonomy, workspaceMode: candidateWorkspaceMode }) => ({
                 id: candidateId,
                 chatId: store.teamSpace(candidateId)?.chatId || candidateId,
                 name: candidateName,
@@ -633,6 +633,10 @@ export function createWorkbench({
                 purpose: candidatePurpose || '',
                 pmRoleId: candidatePmRoleId,
                 status: candidateStatus,
+                memberCount: Array.isArray(candidateMemberRoleIds) ? candidateMemberRoleIds.length : 0,
+                budgetTokens: Number.isSafeInteger(candidateAutonomy?.budgetTokens) ? candidateAutonomy.budgetTokens : null,
+                maxJobs: Number.isSafeInteger(candidateAutonomy?.maxJobs) ? candidateAutonomy.maxJobs : null,
+                workspaceMode: candidateWorkspaceMode || null,
               }));
             return send(200, collaborators);
           }
@@ -651,7 +655,11 @@ export function createWorkbench({
               ? space.collaboration.allowedTeamIds
               : [];
             if (allowed.length && !allowed.includes(target.id) && !allowed.includes(target.chatId)) throw new Error('当前团队未允许与目标团队协作。');
-            const content = required(body.content, '协作目标', 32000);
+            const prompt = required(body.content, '协作目标', 32000);
+            const acceptance = typeof body.acceptance === 'string' ? body.acceptance.trim() : '';
+            if (acceptance.length > 20000) throw new Error('验收标准不能超过 20000 个字符。');
+            const content = acceptance ? `${prompt}\n\n验收标准：\n${acceptance}` : prompt;
+            if (content.length > 32000) throw new Error('协作目标和验收标准合计不能超过 32000 个字符。');
             const clientMessageId = required(body.clientMessageId || randomUUID(), '消息 ID', 200);
             const handoffId = `handoff:${space.id}:${target.id}:${clientMessageId}`;
             const previous = store.records.get('space-messages', handoffId);
@@ -694,6 +702,7 @@ export function createWorkbench({
               teamId: target.id,
               spaceId: target.id,
               sourceMessageId: message.id,
+              acceptance,
             });
             const linked = store.saveTeamMessage({ ...message, taskId: task.id }, message.id);
             const sourceLinked = store.saveTeamMessage(

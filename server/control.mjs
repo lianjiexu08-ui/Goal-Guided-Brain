@@ -747,7 +747,8 @@ export class ControlPlane {
     const targetJobs = this.records.list('jobs').filter(job => (job.teamId || job.spaceId) === target.id);
     const maxJobs = target.autonomy?.maxJobs || 32;
     if (targetJobs.length >= maxJobs) throw fail('目标团队已达到任务上限。', 409);
-    const content = `${prompt}${body.acceptance ? `\n\n验收标准：\n${required(body.acceptance, '验收标准', 20000)}` : ''}`;
+    const acceptance = body.acceptance ? required(body.acceptance, '验收标准', 20000) : '';
+    const content = `${prompt}${acceptance ? `\n\n验收标准：\n${acceptance}` : ''}`;
     const message = this.store.saveTeamMessage({
       spaceId: target.id,
       teamId: target.id,
@@ -774,6 +775,7 @@ export class ControlPlane {
         spaceId: target.id,
         sourceMessageId: message.id,
         contextExtra: JSON.stringify({ sourceTeamId: source.id, sourceTaskId: sourceTask.id, sourceJobId: sourceMeta.jobId || null }),
+        acceptance,
       });
       const linked = this.store.saveTeamMessage({ ...message, taskId: child.id }, message.id);
       const sourceLinked = this.store.saveTeamMessage({
