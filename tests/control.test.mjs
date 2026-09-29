@@ -73,6 +73,33 @@ test('pair codes are single use, node tokens are hashed and revoked nodes cannot
   assert.equal((await request('nodes/claim', {}, paired.token)).status, 401);
 });
 
+test('node list and detail expose the same live status and active executions', async t => {
+  const { control, request, advance } = setup(t);
+  const paired = await pair(request);
+  const job = control.createJob({ role: 'developer', prompt: 'Inspect node lifecycle', nodeId: paired.node.id });
+  await request('nodes/claim', {}, paired.token);
+
+  const listed = await request('nodes', {}, undefined, 'GET');
+  const listedNode = listed.body.items.find(node => node.id === paired.node.id);
+  assert.equal(listedNode.status, 'online');
+  assert.equal(listedNode.activeExecutions[0].taskId, job.taskId);
+  assert.equal(Object.hasOwn(listedNode, 'tokenHash'), false);
+
+  const detail = await request(`nodes/${paired.node.id}`, {}, undefined, 'GET');
+  assert.equal(detail.body.status, listedNode.status);
+  assert.deepEqual(detail.body.activeExecutions, listedNode.activeExecutions);
+
+  advance(61000);
+  const offline = await request(`nodes/${paired.node.id}`, {}, undefined, 'GET');
+  assert.equal(offline.body.status, 'offline');
+  assert.equal(offline.body.activeExecutions[0].taskId, job.taskId);
+
+  await request(`nodes/${paired.node.id}/revoke`);
+  const revoked = await request(`nodes/${paired.node.id}`, {}, undefined, 'GET');
+  assert.equal(revoked.body.status, 'revoked');
+  assert.equal(Object.hasOwn(revoked.body, 'tokenHash'), false);
+});
+
 test('remote leases claim once, reject wrong nodes, accept a result exactly once and reject late results', async t => {
   const { store, request, control, advance } = setup(t);
   const first = await pair(request), other = await pair(request);

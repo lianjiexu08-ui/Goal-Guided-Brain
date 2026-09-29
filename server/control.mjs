@@ -59,6 +59,30 @@ export class ControlPlane {
     if (!node || node.revokedAt) throw fail('节点凭据无效或已撤销。', 401);
     return node;
   }
+  nodeView(node) {
+    if (!node) return node;
+    const activeExecutions = this.records.list('executions')
+      .filter(execution => execution.nodeId === node.id && execution.status === 'running')
+      .map(execution => {
+        const task = this.store.task(execution.taskId);
+        return {
+          taskId: execution.taskId,
+          title: task?.title || task?.prompt || execution.taskId,
+          status: task?.status || execution.status,
+          startedAt: execution.startedAt || null,
+          expiresAt: execution.expiresAt || null,
+        };
+      });
+    return {
+      ...publicRecord(node),
+      status: node.revokedAt
+        ? 'revoked'
+        : this.now() - Number(node.lastSeenAt || 0) > this.leaseMs
+          ? 'offline'
+          : 'online',
+      activeExecutions,
+    };
+  }
   validateInstanceToken(token) {
     if (!token) throw fail('缺少执行实例认证。', 401);
     const execution = this.records.list('executions').find(item => item.tokenHash === hashToken(token));
@@ -1246,10 +1270,9 @@ export class ControlPlane {
       if (id) {
         const node = this.records.get('nodes', id);
         if (!node) throw fail('节点不存在。', 404);
-        return { status: 200, body: publicRecord(node) };
+        return { status: 200, body: this.nodeView(node) };
       }
-      return { status: 200, body: bounded(this.records.list('nodes').map(node => ({ ...publicRecord(node),
-        status: node.revokedAt ? 'revoked' : this.now() - node.lastSeenAt > this.leaseMs ? 'offline' : 'online' })), query) };
+      return { status: 200, body: bounded(this.records.list('nodes').map(node => this.nodeView(node)), query) };
     }
     if (method === 'POST' && id === 'pairing') {
       const code = randomBytes(16).toString('hex');
