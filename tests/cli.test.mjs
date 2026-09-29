@@ -56,6 +56,20 @@ function runDoctor(args = [], extraEnv = {}) {
   });
 }
 
+function runNode(args, extraEnv = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cli, 'node', ...args], {
+      env: { ...process.env, PATH: process.env.PATH, ...extraEnv },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '', stderr = '';
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.on('error', reject);
+    child.on('close', code => resolve({ code, stdout, stderr }));
+  });
+}
+
 test('CLI doctor reports cross-platform runtime and service checks without exposing credentials', async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cli-doctor-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
@@ -100,6 +114,36 @@ test('CLI doctor identifies a WSL2 environment from standard process variables',
   const report = JSON.parse(result.stdout);
   assert.equal(report.platform.wsl, true);
   assert.match(report.checks.find(check => check.id === 'platform').detail, /WSL2/);
+});
+
+test('CLI exposes the execution node worker through the ggb command', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-ggb-node-'));
+  const workspace = path.join(directory, 'project');
+  fs.mkdirSync(workspace);
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const result = await runNode([
+    '--control-url', 'https://workbench.example.test',
+    '--workspace', `project=${workspace}`,
+    '--data-dir', path.join(directory, 'node-data'),
+    '--max-concurrent', '4',
+    '--print-config',
+  ]);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.stderr, '');
+  const config = JSON.parse(result.stdout);
+  assert.equal(config.controlUrl, 'https://workbench.example.test');
+  assert.deepEqual(config.workspaces, { project: workspace });
+  assert.equal(config.maxConcurrent, 4);
+  assert.equal(result.stdout.includes('token'), false);
+  assert.equal(result.stdout.includes('identity'), false);
+});
+
+test('CLI prints a focused execution node help page', async () => {
+  const result = await runNode(['--help']);
+  assert.equal(result.code, 0);
+  assert.equal(result.stderr, '');
+  assert.match(result.stdout, /--control-url/);
+  assert.match(result.stdout, /--workspace/);
 });
 
 test('CLI sends a unified prompt to an OpenAI-compatible provider', async (t) => {

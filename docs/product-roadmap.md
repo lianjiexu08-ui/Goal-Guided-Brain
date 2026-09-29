@@ -138,7 +138,7 @@ GGB 不承诺模型始终正确，也不把“模型回复完成”当作交付�
 - Skill、MCP 和 Plugin 经过安装、固定、健康检查和角色绑定；运行实例只能看到已绑定能力。
 - 知识库支持个人、项目、角色和团队作用域；团队知识通过 `teamId` 隔离，同一工作目录下的开发与运维团队不会互相注入专属约定。
 - 团队委派有源/目标记录、目标团队独立权限和幂等键；附件有二进制存储、大小限制和执行目录暂存。
-- 网页、CLI、HTTP API 和编排 MCP 共用控制平面数据；CLI 支持 `ggb run`、`ggb chat`、`ggb providers`、`ggb doctor` 和可选的 `ggb decide`。
+- 网页、CLI、HTTP API 和编排 MCP 共用控制平面数据；CLI 支持 `ggb run`、`ggb chat`、`ggb providers`、`ggb doctor`、`ggb node` 和可选的 `ggb decide`。
 - 测试覆盖招募、模型切换、路由、团队协作、能力网关、工作区、备份恢复、定时任务、附件和 CLI 等后端行为。
 
 ### 4.2 当前产品断点

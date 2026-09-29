@@ -5,7 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import { randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const PRESETS = {
   deepseek: {
@@ -41,11 +42,25 @@ const usage = `用法：
   ggb run --continue "继续上一个任务"
   ggb run --session refactor --continue "继续重构"
   ggb chat --provider claude --session personal
+  ggb node --control-url https://workbench.example.com --workspace project=/absolute/path
   ggb decide --state '{"goal":"..."}' --questions '{"urgent":{"type":"noul","instructions":"Is this urgent?"}}'
 
 支持预设：${Object.keys(PRESETS).join('、')}（gpt/openai 是 Codex/OpenAI 别名）；TypeSafe 通过 decide 命令作为可选结构化决策后端。
 密钥从对应环境变量读取，也可用 --api-key 临时传入（不会写入磁盘）。
 会话以 JSONL 保存在 ~/.dsh/sessions（可用 DSH_SESSION_DIR 覆盖）；--json 输出一行稳定的 turn_end 事件。`;
+
+const nodeUsage = `执行节点：
+  ggb node --control-url <控制面地址> --workspace <名称=本机绝对路径> [选项]
+
+选项：
+  --workspace <名称=路径>   可重复，用于映射多个本地项目目录
+  --pair <一次性配对码>      首次启动时向控制面配对
+  --name <节点名称>          配对时使用的显示名称
+  --data-dir <目录>          保存节点身份和结果 outbox 的目录
+  --max-concurrent <1-16>    节点并发执行数，默认 3
+  --print-config             只输出安全配置 JSON，不启动 worker
+
+节点 worker 会保持前台运行并自动心跳；Linux、macOS、Windows 和 WSL2 使用同一条命令。`;
 
 function fail(message, code = 1) {
   console.error(`${CLI_NAME}: ${message}`);
@@ -533,6 +548,37 @@ async function interactiveChat(input) {
   }
 }
 
+function runNode(args) {
+  if (has(args, '--help') || has(args, '-h')) {
+    console.log(nodeUsage);
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [fileURLToPath(new URL('./node.mjs', import.meta.url)), ...args], {
+      stdio: 'inherit',
+      windowsHide: false,
+    });
+    const forwardSignal = signal => {
+      if (!child.killed) child.kill(signal);
+    };
+    const onSigint = () => forwardSignal('SIGINT');
+    const onSigterm = () => forwardSignal('SIGTERM');
+    process.once('SIGINT', onSigint);
+    process.once('SIGTERM', onSigterm);
+    child.once('error', error => {
+      process.removeListener('SIGINT', onSigint);
+      process.removeListener('SIGTERM', onSigterm);
+      reject(error);
+    });
+    child.once('close', (code, signal) => {
+      process.removeListener('SIGINT', onSigint);
+      process.removeListener('SIGTERM', onSigterm);
+      process.exitCode = code ?? (signal ? 1 : 0);
+      resolve();
+    });
+  });
+}
+
 async function main() {
   const [command = 'help', ...args] = process.argv.slice(2);
   if (command === 'help' || command === '--help' || command === '-h') return console.log(usage);
@@ -544,6 +590,7 @@ async function main() {
   }
   if (command === 'doctor') return doctor(args);
   if (command === 'decide') return decide(args);
+  if (command === 'node') return runNode(args);
   if (command !== 'run' && command !== 'chat') throw new Error(`未知命令“${command}”。\n\n${usage}`);
   const input = parseInput(args);
   if (command === 'chat') return interactiveChat(input);

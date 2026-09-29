@@ -28,7 +28,7 @@ The HTTP proxy must preserve the request Host and Origin. Do not trust arbitrary
 2. Create a private node data directory and a JSON config based on `node.example.json`. The `workspaces` object maps logical names to absolute directories on this node. Use a separate data directory outside every source project. For a one-command cross-platform bootstrap, flags can be used instead of a config file; `--print-config` emits a sanitized JSON config and never reads or prints the node identity:
 
    ```sh
-   node scripts/node.mjs --control-url https://workbench.example.com \
+   ggb node --control-url https://workbench.example.com \
      --workspace project=/srv/dsh-projects/my-app --data-dir ~/.dsh-node \
      --max-concurrent 3 --print-config > node.json
    ```
@@ -36,7 +36,7 @@ The HTTP proxy must preserve the request Host and Origin. Do not trust arbitrary
    PowerShell uses the same flags (quote paths containing spaces):
 
    ```powershell
-   node scripts/node.mjs --control-url https://workbench.example.com `
+   ggb node --control-url https://workbench.example.com `
      --workspace 'project=C:\Projects\my-app' --data-dir "$HOME\.dsh-node" `
      --max-concurrent 3 --print-config | Set-Content node.json
    ```
@@ -45,7 +45,7 @@ The HTTP proxy must preserve the request Host and Origin. Do not trust arbitrary
 3. In the control plane, create a pairing code. Pair from the node using:
 
    ```sh
-   node scripts/node.mjs --config /etc/dsh-node.json --pair YOUR_ONE_TIME_CODE --name my-node
+   ggb node --config /etc/dsh-node.json --pair YOUR_ONE_TIME_CODE --name my-node
    ```
 
 4. Pairing codes expire after ten minutes and can be used once. Pairing starts the node worker. Stop this foreground process before starting the installed service. The node saves its identity in `node-identity.json` with mode `0600`; do not share this file or include it in public diagnostics.
@@ -81,7 +81,7 @@ on Windows. The worker accepts `C:\...` workspace mappings and npm-generated
 runtime tree. Use PowerShell to pair the node, for example:
 
 ```powershell
-node scripts/node.mjs --config C:\dsh\node.json --pair YOUR_ONE_TIME_CODE --name windows-node
+ggb node --config C:\dsh\node.json --pair YOUR_ONE_TIME_CODE --name windows-node
 ```
 
 Keep the node data directory and workspace outside temporary or network-mounted

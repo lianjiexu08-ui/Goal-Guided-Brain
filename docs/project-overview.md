@@ -100,7 +100,7 @@ flowchart TD
 | 能力服务 | `server/capabilities.mjs`、`server/capability-gateway.mjs` | 安装、固定、探测和授权 Skill、MCP、Plugin。 |
 | 数据层 | `server/store.mjs`、`server/records.mjs`、`server/vault.mjs` | 业务实体、记录、迁移、备份和加密凭据。 |
 | 网页 | `app/page.tsx`、`app/management.tsx` | 团队招募、团队动态、任务、助手、模型和能力管理。 |
-| CLI | `scripts/cli.mjs` | `ggb run`、`ggb chat`、`ggb providers`、`ggb doctor` 和 `ggb decide`。 |
+| CLI | `scripts/cli.mjs` | `ggb run`、`ggb chat`、`ggb providers`、`ggb doctor`、`ggb decide` 和 `ggb node`。 |
 
 ## 从需求到交付
 
@@ -267,6 +267,7 @@ ggb run --provider deepseek --model deepseek-chat "分析当前项目的风险"
 echo "设计一个缓存方案" | ggb run --provider claude
 ggb run --provider gemini --no-stream --json "总结这段代码"
 ggb doctor --json
+ggb node --control-url https://workbench.example.com --workspace project=/absolute/path --print-config
 ```
 
 ### 持续对话
@@ -290,6 +291,8 @@ ggb decide \
 `ggb decide` 只返回结构化 JSON，不会生成聊天回复。TypeSafe 密钥是可选配置，不设置时不影响 `ggb run` 和 `ggb chat`。
 
 `ggb doctor` 是跨平台自检命令：它验证 Node.js 版本、运行平台、会话目录写权限、Git、已配置的模型凭据，以及可选的本地 API 和网页地址。API 或网页没有启动时报告为提醒，不会阻止 CLI 直接访问模型；`--json` 输出不包含任何凭据值。
+
+`ggb node` 是远程执行节点的统一入口，会把参数转发给节点 worker。它支持重复的 `--workspace 名称=本机绝对路径`、`--pair`、`--name`、`--data-dir` 和 `--max-concurrent`；`--print-config` 用于生成可保存的安全配置，绝不会读取或打印节点身份和 token。Linux、macOS、Windows 与 WSL2 使用同一条命令。
 
 ### 供应商环境变量
 
@@ -411,7 +414,7 @@ API 默认监听 `127.0.0.1:3089`，网页默认监听 `127.0.0.1:3088`。除健
 
 ### 可调用方式
 
-GGB 目前提供网页、CLI、HTTP API 和 MCP 四个入口。网页、HTTP API 和 MCP 共享服务端 SQLite、凭据库、模型配置和控制平面；CLI 的 `run/chat` 直接调用供应商并用本地 JSONL 保存会话，`decide` 也直接调用 TypeSafe。
+GGB 目前提供网页、CLI、HTTP API 和 MCP 四个入口。网页、HTTP API 和 MCP 共享服务端 SQLite、凭据库、模型配置和控制平面；CLI 的 `run/chat` 直接调用供应商并用本地 JSONL 保存会话，`decide` 直接调用 TypeSafe，`node` 作为跨平台 worker 接入控制平面。
 
 ## 部署和跨平台
 

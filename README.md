@@ -126,6 +126,7 @@ echo "设计一个缓存方案" | ggb run --provider claude
 ggb chat --provider gemini --session personal
 ggb providers
 ggb doctor --json
+ggb node --control-url https://workbench.example.com --workspace project=/absolute/path --print-config
 ```
 
 CLI 支持：
@@ -135,6 +136,7 @@ CLI 支持：
 - `ggb providers`：查看普通模型预设和可选 TypeSafe 后端。
 - `ggb doctor`：检查 Node.js、平台、会话目录、Git、模型凭据和本地工作台服务；服务未启动只会给出提醒，不影响直接调用模型。`--json` 输出适合脚本和 CI 读取的报告，绝不会打印密钥。
 - `ggb decide`：向 TypeSafe 发送结构化 `state` 和 `questions`，只返回 JSON 判断结果。
+- `ggb node`：启动跨平台远程执行节点 worker。通过 `--control-url` 和可重复的 `--workspace 名称=本机绝对路径` 接入控制面；`--pair` 用于首次配对，`--print-config` 只输出不含身份和 token 的安全配置。
 
 网页中的普通模型选择器不会把 TypeSafe 当作聊天模型；TypeSafe 只通过 `ggb decide`、管理页探测和编排 MCP 的 `evaluate_decision` 使用。
 
