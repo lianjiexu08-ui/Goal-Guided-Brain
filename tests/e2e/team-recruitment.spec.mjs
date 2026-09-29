@@ -1146,6 +1146,37 @@ test.describe('团队招募核心流程', () => {
     await page.keyboard.press('Escape');
   });
 
+  test('手机端主导航可以在招募、团队、任务和更多之间切换', async ({ page }) => {
+    seedConfirmedTeams();
+    await page.addInitScript(() => window.localStorage.clear());
+    await page.goto('/');
+    const navigation = page.getByRole('navigation', { name: '移动端主导航', exact: true });
+    const mobile = (page.viewportSize()?.width || 1024) < 768;
+    if (!mobile) {
+      await expect(navigation).toBeHidden();
+      return;
+    }
+
+    await expect(navigation).toBeVisible();
+    await navigation.getByRole('button', { name: '团队', exact: true }).click({ force: true });
+    await expect(page.getByRole('heading').filter({ hasText: /团队/ }).first()).toBeVisible();
+    await expect(navigation.getByRole('button', { name: '团队', exact: true })).toHaveAttribute('aria-current', 'page');
+
+    await navigation.getByRole('button', { name: '任务', exact: true }).click({ force: true });
+    await expect(page.getByRole('heading', { name: '让工作持续推进。' })).toBeVisible();
+    await expect(navigation.getByRole('button', { name: '任务', exact: true })).toHaveAttribute('aria-current', 'page');
+
+    await navigation.getByRole('button', { name: '招募', exact: true }).click({ force: true });
+    await expect(page.getByRole('heading', { name: '发布需求，招募团队' })).toBeVisible();
+    await expect(navigation.getByRole('button', { name: '招募', exact: true })).toHaveAttribute('aria-current', 'page');
+
+    await navigation.getByRole('button', { name: '更多', exact: true }).click({ force: true });
+    await expect(sidebarLocator(page)).toBeVisible();
+    await expect(sidebarLocator(page).getByRole('button', { name: '关闭导航', exact: true })).toBeVisible();
+    await sidebarLocator(page).getByRole('button', { name: '关闭导航', exact: true }).click();
+    await expect(sidebarLocator(page)).toBeHidden();
+  });
+
   test('确认 Team Charter 后进入我的团队并保留重命名后的团队身份', async ({ page }) => {
     const { teamName, teamId } = seedProposedRecruitment();
     const composer = await recruitmentPage(page);

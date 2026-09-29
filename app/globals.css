@@ -422,6 +422,9 @@ p {
 .mobile-menu {
   display: none;
 }
+.mobile-sidebar-close {
+  display: none;
+}
 .mobile-context-bar {
   display: none;
 }
@@ -429,6 +432,9 @@ p {
   display: none;
 }
 .mobile-attachment-button {
+  display: none;
+}
+.mobile-bottom-nav {
   display: none;
 }
 .setup-banner,
@@ -2026,6 +2032,7 @@ h1 {
 .team-picker-empty { display: block; padding: 7px 2px; color: #8a9ba2; font-size: 10px; line-height: 1.5; }
 .team-template-boundary { margin: -2px 0 12px; padding: 9px 11px; border: 1px solid #dfeee7; border-radius: 9px; color: #6f8881; background: #f6fbf8; font-size: 10px; line-height: 1.55; }
 .team-template-actions { display: flex; justify-content: flex-end; margin-top: 2px; }
+.team-form-actions { display: flex; justify-content: flex-end; margin-top: 2px; }
 .team-member-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
 .team-member-option { flex-direction: row !important; align-items: flex-start; gap: 9px !important; padding: 8px; border-radius: 7px; background: #f8fbfc; }
 .team-member-option:hover { background: #f0f8f5; }
@@ -2423,8 +2430,8 @@ h1 {
 @media (max-width: 767px) {
   .mobile-menu {
     display: grid;
-    width: 42px;
-    height: 42px;
+    width: 44px;
+    height: 44px;
     place-items: center;
     border: 1px solid #dce9e4;
     border-radius: 12px;
@@ -2485,7 +2492,7 @@ h1 {
   }
   .mobile-context-switch {
     flex: 0 0 auto;
-    min-height: 38px;
+    min-height: 44px;
     padding: 0 13px;
     border: 1px solid #cfe3db;
     border-radius: 10px;
@@ -2497,15 +2504,111 @@ h1 {
   .mobile-context-switch:active {
     transform: scale(.98);
   }
+  .mobile-bottom-nav {
+    position: relative;
+    flex: 0 0 calc(64px + env(safe-area-inset-bottom));
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    height: calc(64px + env(safe-area-inset-bottom));
+    min-height: 64px;
+    padding: 7px 8px calc(7px + env(safe-area-inset-bottom));
+    border-top: 1px solid #dceae5;
+    background: rgba(250, 253, 251, .96);
+    box-shadow: 0 -8px 22px #1b59470b;
+    backdrop-filter: blur(14px);
+    z-index: 2;
+  }
+  [data-slot='sidebar-wrapper'] {
+    flex-direction: column;
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+  .workspace-shell {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    min-height: 0;
+    padding-bottom: 0;
+    overflow: hidden;
+  }
+  .mobile-bottom-nav button {
+    position: relative;
+    display: inline-flex;
+    min-width: 0;
+    min-height: 48px;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 3px;
+    border-radius: 12px;
+    color: #7a928e;
+    font-size: 10px;
+    font-weight: 600;
+    touch-action: manipulation;
+  }
+  .mobile-bottom-nav button.active {
+    color: #237764;
+    background: #e7f5ee;
+  }
+  .mobile-bottom-nav button:active {
+    transform: scale(.97);
+  }
+  .mobile-bottom-nav button b {
+    position: absolute;
+    top: 3px;
+    right: calc(50% - 20px);
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border: 2px solid #fafdfb;
+    border-radius: 999px;
+    color: #fff;
+    background: #c27745;
+    font-size: 9px;
+    line-height: 12px;
+  }
+  .mobile-sidebar-close {
+    position: absolute;
+    top: 18px;
+    right: 13px;
+    z-index: 2;
+    display: grid;
+    width: 44px;
+    height: 44px;
+    place-items: center;
+    border: 1px solid #3c5a61;
+    border-radius: 12px;
+    color: #c6dbd8;
+    background: #1b343b;
+  }
+  .mobile-sidebar-close:active {
+    transform: scale(.97);
+  }
+  .team-nav-head button {
+    width: 44px;
+    height: 44px;
+  }
   .working-grid {
     grid-template-columns: minmax(0, 1fr);
     min-height: 0;
+  }
+  .team-page {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
   }
   .conversation-top {
     padding: 23px 20px 12px;
   }
   .conversation-controls { width: 100%; flex-wrap: wrap; }
   .conversation-controls .choice { flex: 1; width: auto; }
+  .conversation-controls .choice,
+  .conversation-controls .secondary-button {
+    min-height: 44px;
+  }
   h1 {
     font-size: 23px;
   }
@@ -2515,7 +2618,11 @@ h1 {
     padding-right: 20px;
   }
   .composer-area {
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
     padding: 12px 16px calc(15px + env(safe-area-inset-bottom));
+    background: linear-gradient(180deg, transparent, #fff 28%);
   }
   .composer textarea {
     min-height: 64px;
@@ -2531,7 +2638,7 @@ h1 {
   }
   .mobile-attachment-button {
     display: inline-flex;
-    min-height: 40px;
+    min-height: 44px;
     padding: 8px 11px;
     border-radius: 10px;
     font-size: 12px;
@@ -2540,7 +2647,7 @@ h1 {
     min-width: 0;
     flex: 1 1 120px;
     max-width: none;
-    min-height: 40px;
+    min-height: 44px;
   }
   .composer-bottom > div {
     min-width: 0;
@@ -2566,8 +2673,12 @@ h1 {
   }
   .send-button {
     width: 44px;
-    height: 42px;
+    height: 44px;
     border-radius: 12px;
+  }
+  .topbar .icon-button {
+    width: 44px;
+    height: 44px;
   }
   .composer-hint {
     display: flex;
@@ -2608,6 +2719,14 @@ h1 {
   .page-heading {
     align-items: flex-start;
     flex-direction: column;
+  }
+  .team-heading-actions .choice,
+  .team-heading-actions .secondary-button,
+  .team-heading-actions .text-button {
+    min-height: 44px;
+  }
+  .team-heading-actions .text-button {
+    padding: 8px 4px;
   }
   .collection-page {
     padding: 26px 20px;
@@ -2731,6 +2850,29 @@ h1 {
     width: 100%;
     margin: 0;
   }
+  .work-dialog.team-settings-dialog {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom)) !important;
+  }
+  .work-dialog.team-settings-dialog form {
+    order: 2;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding-bottom: 4px;
+  }
+  .work-dialog.team-settings-dialog .team-form-actions {
+    order: 1;
+    flex: 0 0 auto;
+    z-index: 2;
+    margin-top: 0;
+  }
+  .work-dialog.team-settings-dialog .team-form-actions .primary-button {
+    width: 100%;
+    margin: 0;
+  }
   .work-dialog input,
   .work-dialog textarea,
   .work-dialog select {
@@ -2739,6 +2881,18 @@ h1 {
   }
   .work-dialog textarea {
     min-height: 110px;
+  }
+  .work-dialog form > button[type='submit'].primary-button:last-child {
+    position: sticky;
+    bottom: -20px;
+    z-index: 6;
+    width: 100%;
+    min-height: 48px;
+    margin-top: 5px;
+    margin-bottom: -20px;
+    padding-bottom: calc(9px + env(safe-area-inset-bottom));
+    border-radius: 12px;
+    box-shadow: 0 -10px 18px #ffffffd9;
   }
   .work-dialog.assistant-editor {
     width: 100% !important;
@@ -3408,5 +3562,35 @@ h1 {
   }
   .draft-conflict-actions {
     justify-content: flex-start;
+  }
+  /* These declarations live after the visual refresh so the desktop spacing
+     cannot override the phone composer. Keep the composer wide enough on
+     narrow screens and anchored above the virtual keyboard. */
+  .composer-area {
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    padding: 12px 16px calc(15px + env(safe-area-inset-bottom));
+    background: linear-gradient(180deg, transparent, #fff 28%);
+  }
+  .composer textarea {
+    min-height: 64px;
+    height: 76px;
+    padding: 16px;
+    font-size: 16px;
+  }
+  .composer-bottom {
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0 12px 12px;
+  }
+  .send-button {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+  }
+  .work-dialog {
+    -webkit-overflow-scrolling: touch;
   }
 }

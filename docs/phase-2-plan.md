@@ -63,14 +63,15 @@ and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
 The current deterministic suite contains 157 passing tests. The repeatable
-Playwright baseline contains fifty-two passing desktop/mobile runs covering team
+Playwright baseline contains fifty-six passing desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
 binary drag-and-drop attachments, Team Charter confirmation and high-risk
 capability binding review, team renaming, team
 settings editing, two-team context switching, cross-team model selection,
 provider probe status feedback, sustained 20-switch isolation and failed-task
-recovery against the real API. Team tasks now default to isolated execution
+recovery against the real API, including the mobile bottom navigation and
+explicit mobile drawer close action. Team tasks now default to isolated execution
 directories, and task details expose the selected model, routing candidates and
 fallback events when they exist. A local API fixture also alternates between
 two teams for 20 messages and checks task, message, model and route ownership.

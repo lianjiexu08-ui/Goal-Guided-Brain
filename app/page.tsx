@@ -32,6 +32,7 @@ import {
   History,
   Layers3,
   LoaderCircle,
+  Menu,
   MessageSquare,
   Pencil,
   Paperclip,
@@ -2781,6 +2782,14 @@ function Workbench() {
     <>
       <Sidebar className="work-sidebar">
         <SidebarHeader className="brand-header">
+          <button
+            type="button"
+            className="mobile-sidebar-close"
+            aria-label="关闭导航"
+            onClick={() => setOpenMobile(false)}
+          >
+            <X size={18} />
+          </button>
           <div className="brand">
             <div className="brand-symbol">
               <Layers3 size={20} />
@@ -4258,6 +4267,45 @@ function Workbench() {
           </main>
         )}
       </div>
+      {isMobile && !modal && !editingAssistant && !taskDetail && !quickRenameKnowledge && !knowledgeToDelete && (
+        <nav className="mobile-bottom-nav" aria-label="移动端主导航">
+          <button
+            type="button"
+            className={isRecruitmentView ? 'active' : ''}
+            aria-current={isRecruitmentView ? 'page' : undefined}
+            onClick={openTeamConversation}
+          >
+            <MessageSquare size={18} />
+            <span>招募</span>
+          </button>
+          <button
+            type="button"
+            className={view === 'team' ? 'active' : ''}
+            aria-current={view === 'team' ? 'page' : undefined}
+            onClick={openTeamOverview}
+          >
+            <Users size={18} />
+            <span>团队</span>
+          </button>
+          <button
+            type="button"
+            className={view === 'tasks' ? 'active' : ''}
+            aria-current={view === 'tasks' ? 'page' : undefined}
+            onClick={() => setView('tasks')}
+          >
+            <Workflow size={18} />
+            <span>任务</span>
+            {running.length > 0 && <b>{running.length > 9 ? '9+' : running.length}</b>}
+          </button>
+          <button
+            type="button"
+            onClick={() => setOpenMobile(true)}
+          >
+            <Menu size={18} />
+            <span>更多</span>
+          </button>
+        </nav>
+      )}
       {notice && !editingAssistant && (
         <output className="toast">
           {notice}
@@ -4291,7 +4339,7 @@ function Workbench() {
         onOpenChange={(open) => !open && setModal(null)}
       >
         <DialogContent
-          className={`work-dialog${modal === 'team-template' ? ' team-template-dialog' : ''}`}
+          className={`work-dialog${modal === 'team-template' ? ' team-template-dialog' : ''}${modal === 'team' ? ' team-settings-dialog' : ''}`}
         >
           <DialogTitle>
             {modal === 'settings'
@@ -4834,6 +4882,7 @@ function Workbench() {
           )}
           {modal === 'team' && (
             <form
+              id="team-settings-form"
               onSubmit={(e) => {
                 e.preventDefault();
                 void action(async () => {
@@ -5067,10 +5116,19 @@ function Workbench() {
                   ]}
                 />
               </div>
-              <button className="primary-button" type="submit" disabled={busy || !activeRoles.length}>
+            </form>
+          )}
+          {modal === 'team' && (
+            <div className="team-form-actions">
+              <button
+                className="primary-button"
+                type="submit"
+                form="team-settings-form"
+                disabled={busy || !activeRoles.length}
+              >
                 <Plus size={16} /> {editingTeamId ? '保存团队设置' : '创建团队'}
               </button>
-            </form>
+            </div>
           )}
         </DialogContent>
       </Dialog>
