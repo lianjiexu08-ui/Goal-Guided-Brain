@@ -274,6 +274,15 @@ test('batch delivery review accepts atomically and records rejection attention',
     assert.equal(rejected.status, 200);
     assert.equal(rejected.body.items[0].decision, 'rejected');
     assert.equal(app.store.taskDelivery(app.store.task(valid.id)).deliveryStatus, 'rejected');
+    const managedAfterReject = await request('manage', undefined, 'GET');
+    const rejectionNotification = managedAfterReject.body.notifications.find(
+      (item) => item.attentionId === `acceptance:${valid.id}:1`,
+    );
+    assert.equal(rejectionNotification.name, '交付被退回复核');
+    assert.equal(rejectionNotification.read, false);
+    const markedRead = await request(`notifications/${rejectionNotification.id}/read`);
+    assert.equal(markedRead.status, 200);
+    assert.ok(markedRead.body.readAt);
     const attention = await request('attention', undefined, 'GET');
     assert.ok(
       attention.body.items.some(

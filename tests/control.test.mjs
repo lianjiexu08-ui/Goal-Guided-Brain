@@ -32,6 +32,36 @@ async function pair(request) {
   return { ...result.body, code: pairing.body.code };
 }
 
+test('open attention creates one durable notification without resurrecting a read item', t => {
+  const { control, store } = setup(t);
+  const first = control.attention({
+    taskId: 'task-1',
+    kind: 'execution',
+    title: '任务需要检查',
+    detail: '执行节点失联。',
+  }, 'task-1-offline');
+  assert.equal(first.status, 'open');
+  const notificationId = 'attention:task-1-offline';
+  const notification = store.records.get('notifications', notificationId);
+  assert.equal(notification.name, '任务需要检查');
+  assert.equal(notification.message, '执行节点失联。');
+  assert.equal(notification.attentionId, 'task-1-offline');
+  assert.equal(notification.read, false);
+
+  store.records.save('notifications', { ...notification, read: true, readAt: '2026-09-30T00:00:00.000Z' }, notificationId);
+  control.attention({
+    taskId: 'task-1',
+    kind: 'execution',
+    title: '任务需要检查',
+    detail: '节点仍未恢复。',
+  }, 'task-1-offline');
+  assert.equal(store.records.list('notifications').length, 1);
+  const updated = store.records.get('notifications', notificationId);
+  assert.equal(updated.message, '节点仍未恢复。');
+  assert.equal(updated.read, true);
+  assert.equal(updated.readAt, '2026-09-30T00:00:00.000Z');
+});
+
 test('pair codes are single use, node tokens are hashed and revoked nodes cannot claim', async t => {
   const { store, request } = setup(t);
   const paired = await pair(request);

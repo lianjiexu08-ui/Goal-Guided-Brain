@@ -91,7 +91,25 @@ export class ControlPlane {
     }
   }
   attention(input, id) {
-    return this.records.save('attention', { status: 'open', ...input }, id);
+    const attention = this.records.save('attention', { status: 'open', ...input }, id);
+    if (attention.status === 'open') {
+      const notificationId = `attention:${attention.id}`;
+      const previous = this.records.get('notifications', notificationId);
+      this.records.save('notifications', {
+        ...previous,
+        name: attention.title || attention.name || '需要你处理',
+        kind: attention.kind || 'attention',
+        message: attention.detail || attention.message || '团队有一项需要确认的事项。',
+        attentionId: attention.id,
+        taskId: attention.taskId || null,
+        jobId: attention.jobId || null,
+        groupId: attention.groupId || null,
+        spaceId: attention.spaceId || attention.teamId || null,
+        read: previous?.read === true,
+        occurredAt: previous?.occurredAt || new Date(this.now()).toISOString(),
+      }, notificationId);
+    }
+    return attention;
   }
   reconcile() {
     const expired = [];

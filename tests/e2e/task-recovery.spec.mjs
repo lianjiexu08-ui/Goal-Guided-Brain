@@ -203,6 +203,7 @@ function seedAcceptanceJob({ rejected = false } = {}) {
         decidedBy: 'owner',
         decidedAt: new Date().toISOString(),
       }, task.id);
+      const attentionId = `acceptance:${task.id}:1`;
       store.records.save('attention', {
         taskId: task.id,
         groupId,
@@ -212,7 +213,18 @@ function seedAcceptanceJob({ rejected = false } = {}) {
         title: '交付被退回复核',
         detail: '请补充边界场景验证后重新提交。',
         requirementVersion: 1,
-      }, `acceptance:${task.id}:1`);
+      }, attentionId);
+      store.records.save('notifications', {
+        name: '交付被退回复核',
+        kind: 'acceptance',
+        message: '请补充边界场景验证后重新提交。',
+        attentionId,
+        taskId: task.id,
+        jobId: job.id,
+        groupId,
+        read: false,
+        occurredAt: new Date().toISOString(),
+      }, `attention:${attentionId}`);
     }
     return { taskId: task.id };
   } finally {
@@ -402,6 +414,11 @@ test('需要你处理可以直接打开关联执行和交付状态', async ({ pa
   await expect(reviewPanel.getByRole('button', { name: /E2E 验收决定可以通过交付或退回复核/ }).first()).toBeVisible();
   await openNavigation('需要你处理');
   await expect(page.getByRole('heading', { name: '需要你处理' })).toBeVisible();
+  await page.getByRole('tab', { name: '通知', exact: true }).click();
+  await expect(page.getByRole('button', { name: '交付被退回复核', exact: true }).first()).toBeVisible();
+  await page.getByRole('button', { name: '标记已读', exact: true }).first().click();
+  await expect(page.getByRole('button', { name: '标记已读', exact: true })).toHaveCount(0);
+  await page.getByRole('tab', { name: '待处理事项', exact: true }).click();
   await page.getByRole('button', { name: '交付被退回复核', exact: true }).first().click();
   const detail = page.getByRole('dialog', { name: '交付被退回复核' });
   await expect(detail.getByText('关联执行', { exact: true })).toBeVisible();

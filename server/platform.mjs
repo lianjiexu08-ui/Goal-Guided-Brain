@@ -1138,12 +1138,11 @@ export function createPlatform({
     const attentionId = `acceptance:${task.id}:${delivery.currentRequirementVersion}`;
     const existingAttention = records.get('attention', attentionId);
     if (decision === 'rejected') {
-      records.save('attention', {
+      control.attention({
         taskId: task.id,
         groupId: meta.groupId || job?.groupId || null,
         jobId: meta.jobId || null,
         spaceId: meta.spaceId || job?.spaceId || null,
-        status: 'open',
         kind: 'acceptance',
         title: '交付被退回复核',
         detail: note,
@@ -1650,7 +1649,7 @@ export function createPlatform({
     ) {
       const row = records.get(collection, id);
       if (!row) throw new Error('通知不存在。');
-      return ok(records.save(collection, { ...row, read: true }, id));
+      return ok(records.save(collection, { ...row, read: true, readAt: nowIso() }, id));
     }
     if (collection === 'backups') {
       if (method === 'GET') return ok(backups());
