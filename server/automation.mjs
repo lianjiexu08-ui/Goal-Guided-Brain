@@ -51,7 +51,17 @@ export async function runCheck(spec) {
 }
 
 export class AutomationService {
-  constructor({ store, createTask, providers, checkMcp, now = () => Date.now() }) { Object.assign(this, { store, createTask, providers, checkMcp, now }); this.busy = false; }
+  constructor({ store, createTask, providers, checkMcp, attention, now = () => Date.now() }) {
+    Object.assign(this, {
+      store,
+      createTask,
+      providers,
+      checkMcp,
+      now,
+      attention: attention || ((input, id) => this.store.records.save('attention', { status: 'open', ...input }, id)),
+    });
+    this.busy = false;
+  }
   currentTask(id) {
     const meta = this.store.records.get('task-meta', id);
     const job = meta?.jobId && this.store.records.get('jobs', meta.jobId);
@@ -135,7 +145,7 @@ export class AutomationService {
           this.store.records.save('schedules', { ...current, nextRunAt: scheduleNextTimes(rule, new Date(now), 1)[0], error: '' }, rule.id);
         } catch (error) {
           this.store.records.save('schedules', { ...rule, enabled: false, error: error.message }, rule.id);
-          this.store.records.save('attention', { name: `定时任务无法执行：${rule.name}`, kind: 'schedule', message: error.message, status: 'open', scheduleId: rule.id });
+          this.attention({ name: `定时任务无法执行：${rule.name}`, kind: 'schedule', message: error.message, scheduleId: rule.id }, `schedule:${rule.id}`);
         }
       }
       for (const run of this.store.records.list('schedule-runs').filter(r => r.status === 'queued')) {

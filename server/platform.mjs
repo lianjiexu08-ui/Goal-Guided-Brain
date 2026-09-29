@@ -920,6 +920,7 @@ export function createPlatform({
     createTask: newTask,
     providers,
     checkMcp,
+    attention: (input, id) => control.attention(input, id),
   });
   let timer;
   function start() {

@@ -290,6 +290,31 @@ test('misfires skip or catch up once and failed workflow creation rolls back', a
   }
 });
 
+test('schedule failures use the shared attention callback with a stable id', async () => {
+  const f = fixture();
+  const events = [];
+  f.service.attention = (input, id) => {
+    events.push({ input, id });
+    return f.records.save('attention', { status: 'open', ...input }, id);
+  };
+  try {
+    const workflow = f.records.save('workflows', {
+      steps: [{ role: 'planner', prompt: 'Plan' }, { role: 'missing-role', prompt: 'Fail' }],
+    });
+    const schedule = f.service.saveSchedule({ name: 'Invalid workflow', workflowId: workflow.id, enabled: true, cron: '* * * * *' });
+    f.advance(60000);
+    await f.service.tick();
+    assert.equal(events.length, 1);
+    assert.equal(events[0].id, `schedule:${schedule.id}`);
+    assert.equal(events[0].input.kind, 'schedule');
+    assert.equal(f.records.get('schedules', schedule.id).enabled, false);
+    await f.service.tick();
+    assert.equal(events.length, 1);
+  } finally {
+    f.close();
+  }
+});
+
 test('HTTP and TCP checks return actual connection outcomes', async () => {
   const server = http.createServer((_req, res) => {
     res.writeHead(200);
