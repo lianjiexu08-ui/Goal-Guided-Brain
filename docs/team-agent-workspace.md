@@ -38,7 +38,7 @@ Goal-Guided Brain 是一个让个人通过项目经理使用多支智能体团�
 
 ## 能力绑定
 
-Skill、MCP 和 Plugin 在能力中心安装、启用和固定版本，再绑定到具体助手。任务启动时，运行时只注入该助手已绑定且启用的能力：Skill 以 Skill 文件提供，MCP 以受控工具连接提供，写操作仍按工具授权策略处理。智能体可以调用只读的 `list_capabilities` 查看本次执行的能力目录；对于已绑定且允许调用的 Plugin 命令，可以使用 `run_capability_command` 排队创建受控子任务。招募阶段的 `list_capability_catalog` 还会列出安全的命令、助手模板和插件 MCP 组件摘要。目录会同时返回 `source`、`compatibility`、完整 `diagnostics` 和可解释的 `risk` 摘要（`low / medium / high`、`requiresReview`、原因与只读/凭据/命令/Hook/网络信号），让项目经理在生成 Team Charter 时能判断能力边界。风险摘要只提供判断依据，不会授予新权限；它不能从任务中自行启用未绑定的能力，也不能通过命令扩大父任务授权。
+Skill、MCP 和 Plugin 在能力中心安装、启用和固定版本，再绑定到具体助手。任务启动时，运行时只注入该助手已绑定且启用的能力：Skill 以 Skill 文件提供，MCP 以受控工具连接提供，写操作仍按工具授权策略处理。智能体可以调用只读的 `list_capabilities` 查看本次执行的能力目录；对于已绑定且允许调用的 Plugin 命令，可以使用 `run_capability_command` 排队创建受控子任务。招募阶段的 `list_capability_catalog` 还会列出安全的命令、助手模板和插件 MCP 组件摘要。目录会同时返回 `source`、`compatibility`、完整 `diagnostics` 和可解释的 `risk` 摘要（`low / medium / high`、`requiresReview`、原因与只读/凭据/命令/Hook/网络信号），让项目经理在生成 Team Charter 时能判断能力边界。中/高风险能力在启用和绑定前需要负责人逐项确认，确认会绑定当前能力指纹；能力启用、停用、回退和绑定都会写入审计记录，管理界面可查看确认人、风险摘要和最近记录。风险摘要与审计只提供判断依据，不会授予新权限；它不能从任务中自行启用未绑定的能力，也不能通过命令扩大父任务授权。
 
 ## 当前约束
 

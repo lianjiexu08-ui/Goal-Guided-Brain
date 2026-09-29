@@ -10,6 +10,7 @@ import { DshRun, findDsh, redact } from './runtime.mjs';
 import { c as createTar } from 'tar';
 import { lockControl } from './persistence.mjs';
 import { createPlatform } from './platform.mjs';
+import { assessCapabilityRisk, capabilityFingerprint } from './capabilities.mjs';
 import { createOrchestrationHandler } from './orchestration-mcp.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -211,9 +212,12 @@ export function createWorkbench({
       name: capability.name,
       kind: capability.kind,
       version: capability.version || null,
+      revision: capability.revision || null,
+      digest: capability.digest || null,
       enabled: capability.enabled !== false,
       description: capability.description || '',
       tools: Array.isArray(capability.tools) ? capability.tools : [],
+      risk: assessCapabilityRisk(capability),
       health: capability.health ? {
         ok: capability.health.ok === true,
         checkedAt: capability.health.checkedAt || null,
@@ -608,7 +612,10 @@ export function createWorkbench({
             return send(200, store.saveTeamSpace(body, space.id));
           }
           if (req.method === 'POST' && parts[3] === 'recruitment' && parts[4] === 'confirm') {
-            return send(200, platform.control.confirmTeamRecruitment(space.id, { version: body.version }, authorization.principal));
+            return send(200, platform.control.confirmTeamRecruitment(space.id, {
+              version: body.version,
+              capabilityApprovals: body.capabilityApprovals,
+            }, authorization.principal));
           }
           if (req.method === 'GET' && parts[3] === 'collaborators') {
             if (space.recruitment?.phase !== 'confirmed' || space.collaboration?.enabled === false) return send(200, []);
@@ -781,10 +788,54 @@ export function createWorkbench({
         }
       }
       if (parts[1] === 'roles') {
-        if (req.method === 'POST' && !parts[2])
-          return send(201, store.saveRole(body));
-        if (req.method === 'PUT' && parts[2] && !parts[3])
-          return send(200, store.saveRole(body, parts[2]));
+        if ((req.method === 'POST' && !parts[2]) || (req.method === 'PUT' && parts[2] && !parts[3])) {
+          const existingRole = parts[2] ? store.role(parts[2]) : null;
+          const capabilityIds = Array.isArray(body.capabilityIds)
+            ? body.capabilityIds
+            : existingRole?.capabilityIds || [];
+          const previousIds = new Set(existingRole?.capabilityIds || []);
+          const approvals = body.capabilityApprovals && typeof body.capabilityApprovals === 'object' && !Array.isArray(body.capabilityApprovals)
+            ? body.capabilityApprovals
+            : existingRole?.capabilityApprovals || {};
+          const auditRows = [];
+          for (const capabilityId of capabilityIds) {
+            const capability = platform.capabilities.list().find((item) => item.id === capabilityId);
+            if (!capability) continue;
+            if (capability.enabled === false) throw new Error(`绑定能力「${capability.name || capabilityId}」前请先启用能力。`);
+            const risk = assessCapabilityRisk(capability);
+            if (!risk.requiresReview) continue;
+            const capabilityDigest = capabilityFingerprint(capability);
+            const approval = approvals?.[capabilityId];
+            const validApproval = approval?.confirmed === true &&
+              typeof approval.digest === 'string' && approval.digest === capabilityDigest;
+            if (!validApproval) {
+              const error = new Error(`绑定能力「${capability.name || capabilityId}」前需要逐项确认：${risk.reasons.join('；')}`);
+              error.status = 409;
+              error.code = 'CAPABILITY_BINDING_REVIEW_REQUIRED';
+              throw error;
+            }
+            const previousApproval = existingRole?.capabilityApprovals?.[capabilityId];
+            if (!previousIds.has(capabilityId) || previousApproval?.digest !== capabilityDigest)
+              auditRows.push({ capability, risk, approval, digest: capabilityDigest });
+          }
+          const saved = store.saveRole({ ...body, capabilityApprovals: approvals }, parts[2]);
+          for (const { capability, risk, approval, digest } of auditRows) {
+            store.records.save('capability-audits', {
+              capabilityId: capability.id,
+              action: 'bind',
+              roleId: saved.id,
+              actor: 'owner',
+              confirmed: true,
+              riskLevel: risk.level,
+              requiresReview: true,
+              digest,
+              reasons: risk.reasons.slice(0, 12),
+              confirmedAt: approval.confirmedAt || new Date().toISOString(),
+              createdAt: new Date().toISOString(),
+            });
+          }
+          return send(req.method === 'POST' ? 201 : 200, saved);
+        }
         if (req.method === 'POST' && ['archive', 'restore'].includes(parts[3]))
           return send(200, store.archiveRole(parts[2], parts[3] === 'archive'));
       }

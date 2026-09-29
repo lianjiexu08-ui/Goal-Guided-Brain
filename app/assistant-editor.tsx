@@ -44,6 +44,7 @@ export type Assistant = {
   requiresVision?: boolean;
   requiredContextWindow?: number;
   capabilityIds?: string[];
+  capabilityApprovals?: Record<string, { confirmed: boolean; digest: string; riskLevel: string; confirmedAt: string }>;
   nodeId?: string;
   workspaceMode?: 'shared' | 'isolated';
 };
@@ -73,6 +74,7 @@ export const blankAssistant: Assistant = {
   requiresVision: false,
   requiredContextWindow: 1,
   capabilityIds: [],
+  capabilityApprovals: {},
   nodeId: '',
   workspaceMode: 'isolated',
 };
@@ -578,6 +580,12 @@ export function AssistantEditor({
                   <legend>已安装能力与 MCP</legend>
                   {(bindings?.capabilities || []).map((capability) => {
                     const checked = (form.capabilityIds || []).includes(capability.id);
+                    const approval = form.capabilityApprovals?.[capability.id];
+                    const capabilityDigest = typeof capability.digest === 'string'
+                      ? capability.digest
+                      : typeof capability.revision === 'string' || typeof capability.revision === 'number'
+                        ? String(capability.revision)
+                        : '';
                     const compatibility = typeof capability.compatibility === 'string' ? capability.compatibility : '';
                     const diagnostics = Array.isArray(capability.diagnostics)
                       ? capability.diagnostics.filter((item): item is string => typeof item === 'string')
@@ -610,6 +618,25 @@ export function AssistantEditor({
                             )
                           }
                         />
+                        {risk?.requiresReview && (
+                          <input
+                            type="checkbox"
+                            aria-label={`确认能力风险：${capability.name || capability.id}`}
+                            checked={Boolean(approval?.confirmed && approval.digest === capabilityDigest)}
+                            disabled={!checked || unavailable}
+                            onChange={(event) => {
+                              const next = { ...form.capabilityApprovals };
+                              if (event.target.checked) next[capability.id] = {
+                                confirmed: true,
+                                digest: capabilityDigest,
+                                riskLevel: risk.level || 'unknown',
+                                confirmedAt: new Date().toISOString(),
+                              };
+                              else delete next[capability.id];
+                              field('capabilityApprovals', next);
+                            }}
+                          />
+                        )}
                         <span className="assistant-capability-label">
                           <strong>{capability.name || capability.id}</strong>
                           <small>
@@ -622,6 +649,7 @@ export function AssistantEditor({
                               {firstRiskReason ? ` · ${firstRiskReason}` : ''}
                             </small>
                           )}
+                          {risk?.requiresReview && <small>勾选右侧复选框，确认该能力的外部访问或执行风险</small>}
                         </span>
                       </label>
                     );

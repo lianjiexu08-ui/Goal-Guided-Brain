@@ -966,9 +966,15 @@ export function createPlatform({
     }
     const capabilitiesWithBindings = capabilities.list().map((capability) => {
       const binding = capabilityBindings.get(capability.id) || { assistants: [], teams: [] };
+      const audits = records.list('capability-audits')
+        .filter((item) => item.capabilityId === capability.id)
+        .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+        .slice(0, 20);
       return {
         ...capability,
         risk: assessCapabilityRisk(capability),
+        audits,
+        latestAudit: audits[0] || null,
         bindings: binding,
         boundAssistantCount: binding.assistants.length,
         boundTeamCount: binding.teams.length,
@@ -1472,9 +1478,20 @@ export function createPlatform({
         method === 'POST' &&
         ['enable', 'disable', 'rollback'].includes(action)
       )
-        return ok(capabilities.action(id, action));
+        return ok(capabilities.action(id, action, {
+          confirmed: body.confirmed === true && principal.type === 'owner',
+          enforceReview: true,
+          actor: principal.type === 'owner' ? 'owner' : principal.agentId || principal.type,
+        }));
       if (method === 'GET') {
         const row = id ? records.get(collection, id) : capabilities.list();
+        if (id && row) {
+          const audits = records.list('capability-audits')
+            .filter((item) => item.capabilityId === id)
+            .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+            .slice(0, 20);
+          return ok({ ...row, risk: assessCapabilityRisk(row), audits, latestAudit: audits[0] || null });
+        }
         return row ? ok(row) : ok({ error: '能力不存在。' }, 404);
       }
       if (method === 'DELETE')
@@ -1499,12 +1516,18 @@ export function createPlatform({
           fs.writeFileSync(path.join(directory, 'SKILL.md'), skillText, {
             mode: 0o600,
           });
+          const inspection = inspectBundle(directory);
+          if (body.enabled !== false && assessCapabilityRisk(inspection).requiresReview && !(body.confirmed === true && principal.type === 'owner')) {
+            fs.rmSync(directory, { recursive: true, force: true });
+            const error = new Error('保存并启用中/高风险能力前需要逐项确认。');
+            error.status = 409;
+            throw error;
+          }
           const old = records.get(collection, capabilityId);
-          return ok(
-            records.save(
+          const savedCustom = records.save(
               collection,
               {
-                ...inspectBundle(directory),
+                ...inspection,
                 name: text(body.name, 120),
                 content,
                 path: directory,
@@ -1524,10 +1547,20 @@ export function createPlatform({
                   : [],
               },
               capabilityId,
-            ),
-          );
+            );
+          const customRisk = assessCapabilityRisk(savedCustom);
+          if (savedCustom.enabled && customRisk.requiresReview && body.confirmed === true && principal.type === 'owner')
+            capabilities.audit(savedCustom.id, 'enable', { actor: 'owner', risk: customRisk, digest: savedCustom.digest || String(savedCustom.revision || ''), confirmed: true });
+          return ok(savedCustom);
         }
-        return ok(capabilities.save(body, id));
+        const savedCapability = capabilities.save(body, id, {
+          confirmed: body.confirmed === true && principal.type === 'owner',
+          enforceReview: true,
+        });
+        const savedRisk = assessCapabilityRisk(savedCapability);
+        if (savedCapability.enabled && savedRisk.requiresReview && body.confirmed === true && principal.type === 'owner')
+          capabilities.audit(savedCapability.id, 'enable', { actor: 'owner', risk: savedRisk, digest: savedCapability.digest || String(savedCapability.revision || ''), confirmed: true });
+        return ok(savedCapability);
       }
     }
     if (collection === 'schedules') {

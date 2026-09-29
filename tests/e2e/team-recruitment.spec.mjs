@@ -321,6 +321,113 @@ function seedCapabilityBinding() {
   }
 }
 
+function seedHighRiskCapability() {
+  const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
+  try {
+    const capabilityId = `e2e-high-risk-${Date.now()}`;
+    const name = `E2E 高风险能力 ${Date.now()}`;
+    store.records.save('capabilities', {
+      id: capabilityId,
+      name,
+      kind: 'mcp',
+      transport: 'stdio',
+      command: process.execPath,
+      args: ['-e', 'process.exit(0)'],
+      enabled: false,
+      source: 'e2e',
+      diagnostics: [],
+      tools: [],
+    }, capabilityId);
+    return { capabilityId, name };
+  } finally {
+    store.close();
+  }
+}
+
+function seedHighRiskRecruitment() {
+  const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
+  try {
+    const capabilityId = `e2e-recruit-high-risk-${Date.now()}`;
+    const capabilityName = `E2E 招募高风险能力 ${Date.now()}`;
+    store.records.save('capabilities', {
+      id: capabilityId,
+      name: capabilityName,
+      kind: 'mcp',
+      transport: 'stdio',
+      command: process.execPath,
+      args: ['-e', 'process.exit(0)'],
+      enabled: true,
+      source: 'e2e',
+      diagnostics: [],
+      tools: [],
+    }, capabilityId);
+    const team = store.teamSpaces().find((space) => space.recruitment?.phase === 'confirmed');
+    if (!team) throw new Error('E2E fixture requires a seeded team.');
+    const teamName = `待确认高风险团队 ${Date.now()}`;
+    const proposal = {
+      version: 1,
+      teamName,
+      goal: '验证团队招募会在绑定高风险能力前要求逐项确认。',
+      purpose: '用真实 Team Charter 流程验证能力风险确认和绑定审计。',
+      size: 2,
+      members: [
+        {
+          memberId: 'manager',
+          roleId: 'project_manager',
+          name: '项目经理',
+          responsibility: '澄清目标、安排任务并汇总交付。',
+          deliverables: ['团队计划', '交付总结'],
+          skills: [],
+          skillIds: [],
+          capabilityIds: [],
+          providerIds: [],
+          tools: [],
+          toolAccess: null,
+          modelHint: '',
+          dependencies: [],
+        },
+        {
+          memberId: 'developer',
+          roleId: 'developer',
+          name: '高风险能力开发助手',
+          responsibility: '使用已确认的执行能力实现功能并运行测试。',
+          deliverables: ['可运行代码', '测试结果'],
+          skills: [],
+          skillIds: [],
+          capabilityIds: [capabilityId],
+          providerIds: [],
+          tools: [],
+          toolAccess: null,
+          modelHint: '',
+          dependencies: ['manager'],
+        },
+      ],
+      openQuestions: [],
+      ready: true,
+      createdAt: new Date().toISOString(),
+    };
+    store.saveTeamSpace({
+      ...team,
+      name: `待确认高风险需求 ${Date.now()}`,
+      goal: proposal.goal,
+      purpose: proposal.purpose,
+      memberRoleIds: ['project_manager'],
+      recruitment: {
+        ...team.recruitment,
+        phase: 'proposed',
+        sessionId: null,
+        turns: 1,
+        brief: proposal.goal,
+        proposal,
+        confirmedAt: null,
+      },
+    }, team.id);
+    return { teamId: team.id, teamName, capabilityId, capabilityName };
+  } finally {
+    store.close();
+  }
+}
+
 function seedConfirmedTeams() {
   const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
   try {
@@ -1290,9 +1397,54 @@ test.describe('团队招募核心流程', () => {
     await expect(capability).toBeChecked();
     await expect(dialog.getByText(/部分兼容/)).toBeVisible();
     await expect(dialog.getByText(/中风险/)).toBeVisible();
-    await expect(dialog.getByText(/1 个助手/)).toBeVisible();
+    await expect(capability.locator('xpath=..').getByText(/1 个助手/)).toBeVisible();
     await expect(dialog.getByText('需要先检查执行节点。')).toBeVisible();
     expect(fixture.capabilityId).toBeTruthy();
+  });
+
+  test('能力中心启用中高风险能力必须确认并留下审计记录', async ({ page }) => {
+    const fixture = seedHighRiskCapability();
+    await page.goto('/');
+    await clickNavigation(page, '能力中心');
+    const row = page.locator('.manage-row').filter({ hasText: fixture.name }).first();
+    await expect(row).toBeVisible();
+    await row.getByRole('button', { name: fixture.name, exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    const risk = dialog.getByRole('region', { name: '能力风险评估', exact: true });
+    await expect(risk).toBeVisible();
+    await expect(risk.getByText('高风险', { exact: true })).toBeVisible();
+    const confirm = risk.getByRole('button', { name: '确认风险并启用能力', exact: true });
+    await expect(confirm).toBeVisible();
+    await confirm.click();
+    await expect(dialog).toBeHidden();
+    const detail = await page.evaluate(async (id) => fetch(`/api/capabilities/${id}`).then((response) => response.json()), fixture.capabilityId);
+    expect(detail.enabled).toBe(true);
+    expect(detail.audits.some((audit) => audit.action === 'enable' && audit.confirmed === true)).toBe(true);
+  });
+
+  test('Team Charter 绑定中高风险能力前必须逐项确认并留下绑定审计', async ({ page }) => {
+    const fixture = seedHighRiskRecruitment();
+    const composer = await recruitmentPage(page);
+    const draftPicker = page.getByRole('combobox', { name: '选择需求草稿', exact: true });
+    await draftPicker.click();
+    await page.getByRole('option', { name: new RegExp('需求草稿 · 待确认高风险需求') }).click();
+    await expect(page.getByRole('heading', { name: fixture.teamName })).toBeVisible();
+    const review = page.locator('.recruitment-capability-review').filter({ hasText: fixture.capabilityName });
+    await expect(review).toBeVisible();
+    const confirm = page.getByRole('button', { name: '确认创建团队', exact: true });
+    await expect(confirm).toBeDisabled();
+    await review.getByRole('checkbox').check();
+    await expect(confirm).toBeEnabled();
+    await confirm.click();
+    await expect(page.getByText(/已确认，项目经理可以开始安排任务/)).toBeVisible();
+    const detail = await page.evaluate(async (id) => {
+      const response = await fetch(`/api/capabilities/${id}`, { cache: 'no-store' });
+      return { status: response.status, body: await response.json() };
+    }, fixture.capabilityId);
+    expect(detail.status).toBe(200);
+    expect(detail.body.audits.some((audit) => audit.action === 'bind' && audit.confirmed === true && audit.teamId === fixture.teamId)).toBe(true);
+    await expect(composer).toHaveValue('');
   });
 
   test('团队时间线可以加载更早动态并保持筛选入口', async ({ page }) => {

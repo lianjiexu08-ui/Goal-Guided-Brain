@@ -205,6 +205,53 @@ test('management capability records expose assistant and team bindings', async (
   assert.equal(capability.boundTeamCount, 1);
 });
 
+test('high-risk capability binding and enablement require explicit owner confirmation and leave an audit trail', async (t) => {
+  const { app, request } = await fixture(t);
+  const created = await request('capabilities', {
+    kind: 'mcp',
+    name: '高风险外部系统',
+    transport: 'streamable-http',
+    url: 'https://example.test/mcp',
+    credentialId: 'external-credential',
+    enabled: false,
+  });
+  assert.equal(created.status, 200);
+  const rejectedEnable = await request(`capabilities/${created.body.id}/enable`, {}, 'POST');
+  assert.equal(rejectedEnable.status, 409);
+  const enabled = await request(`capabilities/${created.body.id}/enable`, { confirmed: true }, 'POST');
+  assert.equal(enabled.status, 200);
+  const capability = enabled.body;
+  const rejectedBinding = await request('roles/product', {
+    capabilityIds: [capability.id],
+    capabilityApprovals: {},
+  }, 'PUT');
+  assert.equal(rejectedBinding.status, 409);
+  assert.match(rejectedBinding.body.error, /逐项确认/);
+  const approval = {
+    [capability.id]: {
+      confirmed: true,
+      digest: capability.digest || String(capability.revision),
+      riskLevel: 'high',
+      confirmedAt: new Date().toISOString(),
+    },
+  };
+  const bound = await request('roles/product', {
+    capabilityIds: [capability.id],
+    capabilityApprovals: approval,
+  }, 'PUT');
+  assert.equal(bound.status, 200, JSON.stringify(bound));
+  const managed = await request('manage');
+  const managedCapability = managed.body.capabilities.find((item) => item.id === capability.id);
+  assert.equal(managedCapability.latestAudit.action, 'bind');
+  assert.equal(managedCapability.latestAudit.confirmed, true);
+  assert.ok(managedCapability.audits.some((item) => item.action === 'bind' && item.roleId === 'product'));
+  assert.ok(managedCapability.audits.some((item) => item.action === 'enable' && item.confirmed === true));
+  const detail = await request(`capabilities/${capability.id}`);
+  assert.equal(detail.body.risk.level, 'high');
+  assert.ok(detail.body.audits.length >= 2);
+  assert.equal(app.store.records.list('capability-audits').filter((item) => item.capabilityId === capability.id).length, 2);
+});
+
 test('knowledge changes and deletion retain versioned source snapshots', async (t) => {
   const { request, dataDir } = await fixture(t);
   const original = {

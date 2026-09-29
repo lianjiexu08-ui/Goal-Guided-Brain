@@ -190,10 +190,23 @@ test('project manager proposes a Team Charter and owner confirmation materialize
     assert.deepEqual(frontendProposal.skillIds, ['development-workflow', 'team-recruitment', 'product-planning']);
     assert.deepEqual(frontendProposal.capabilityIds, [capability.id]);
     assert.deepEqual(frontendProposal.toolAccess, { files: true, web: false, terminal: true });
-    const confirmed = await request(`teams/${team.id}/recruitment/confirm`, {}, 'POST');
+    const rejectedConfirmation = await request(`teams/${team.id}/recruitment/confirm`, {
+      capabilityApprovals: {},
+    }, 'POST');
+    assert.equal(rejectedConfirmation.status, 409);
+    const capabilityDigest = capability.digest || String(capability.revision || `${capability.kind}:${capability.id}`);
+    const confirmed = await request(`teams/${team.id}/recruitment/confirm`, {
+      capabilityApprovals: {
+        [`manager:${capability.id}`]: { confirmed: true, digest: capabilityDigest, riskLevel: 'medium', confirmedAt: new Date().toISOString() },
+        [`frontend:${capability.id}`]: { confirmed: true, digest: capabilityDigest, riskLevel: 'medium', confirmedAt: new Date().toISOString() },
+      },
+    }, 'POST');
     assert.equal(confirmed.status, 200);
     assert.equal(confirmed.body.recruitment.phase, 'confirmed');
     assert.equal(confirmed.body.memberRoleIds.length, 4);
+    const capabilityAudits = app.platform.control.records.list('capability-audits').filter((item) => item.teamId === team.id && item.capabilityId === capability.id);
+    assert.equal(capabilityAudits.length, 2);
+    assert.ok(capabilityAudits.every((item) => item.confirmed === true && item.action === 'bind'));
     const developerIds = Object.entries(confirmed.body.responsibilities).filter(([, duty]) => duty.includes('并运行测试')).map(([id]) => id);
     assert.equal(developerIds.length, 2);
     assert.notEqual(developerIds[0], developerIds[1]);

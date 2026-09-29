@@ -93,6 +93,10 @@ export function assessCapabilityRisk(capability = {}) {
     },
   };
 }
+export const capabilityFingerprint = (capability = {}) =>
+  typeof capability.digest === 'string' && capability.digest
+    ? capability.digest
+    : String(capability.revision || `${capability.kind || 'capability'}:${capability.id || ''}`);
 function inside(root, relative) {
   const destination = path.resolve(root, relative);
   if (destination !== root && !destination.startsWith(`${root}${path.sep}`)) throw new Error('能力文件路径越界。');
@@ -347,13 +351,19 @@ export class CapabilityService {
         (selected.requiredHeaders.length > 0 && !overrides.credentialId),
       diagnostics: selected.diagnostics, enabled: false }, connectionId);
   }
-  save(input, id) {
+  save(input, id, options = {}) {
     const old = id ? this.store.records.get('capabilities', id) : null;
     if (id && !old) throw new Error('能力不存在。');
     const kind = input.kind || old?.kind || 'mcp';
     if (!['mcp', 'skill', 'plugin'].includes(kind)) throw new Error('能力类型无效。');
     const row = { ...old, name: bounded(input.name || old?.name, 120), kind, enabled: input.enabled ?? old?.enabled ?? false, allowHooks: input.allowHooks ?? old?.allowHooks ?? false };
     if (!row.name) throw new Error('请填写能力名称。');
+    if (row.enabled && options.enforceReview === true && assessCapabilityRisk({ ...row, ...input }).requiresReview && options.confirmed !== true) {
+      const error = new Error('保存并启用中/高风险能力前需要逐项确认。');
+      error.status = 409;
+      error.code = 'CAPABILITY_REVIEW_REQUIRED';
+      throw error;
+    }
     if (kind === 'mcp') {
       row.transport = input.transport || old?.transport || 'streamable-http';
       if (!['stdio', 'streamable-http'].includes(row.transport)) throw new Error('不支持此 MCP 传输协议。');
@@ -449,21 +459,62 @@ export class CapabilityService {
       return this.store.records.save('capabilities', value, id);
     } finally { fs.rmSync(staging, { recursive: true, force: true }); }
   }
-  action(id, action) {
+  action(id, action, options = {}) {
     const row = this.store.records.get('capabilities', id);
     if (!row) throw new Error('能力不存在。');
+    const risk = assessCapabilityRisk(row);
+    const fingerprint = capabilityFingerprint(row);
+    const actor = typeof options.actor === 'string' && options.actor.trim()
+      ? options.actor.trim().slice(0, 120)
+      : 'owner';
+    const confirmed = options.confirmed === true;
+    // High-risk capabilities are the one place where an enable operation
+    // changes the trust boundary of every future execution.  Keep the
+    // service usable for internal migrations/tests, while requiring the
+    // external management route to pass an explicit owner confirmation.
+    if (action === 'enable' && risk.requiresReview && options.enforceReview === true && !confirmed) {
+      const error = new Error(`启用高风险能力前需要逐项确认：${risk.reasons.join('；')}`);
+      error.status = 409;
+      error.code = 'CAPABILITY_REVIEW_REQUIRED';
+      throw error;
+    }
     if (action === 'rollback') {
       const previous = row.history?.at(-1); if (!previous) throw new Error('没有可以回退的版本。');
       const inspection = inspectBundle(previous.path);
-      return this.store.records.save('capabilities', { ...row, ...inspection, path: previous.path,
+      const saved = this.store.records.save('capabilities', { ...row, ...inspection, path: previous.path,
         ...(previous.content !== undefined ? { content: previous.content } : {}),
         enabled: false, history: row.history.slice(0, -1) }, id);
+      this.audit(id, 'rollback', { actor, risk, digest: capabilityFingerprint(saved), confirmed });
+      return saved;
     }
     if (!['enable', 'disable'].includes(action)) throw new Error('不支持此操作。');
     if (action === 'enable' && row.kind === 'mcp' && ((row.requiredEnv || []).some(name => !row.envRefs?.[name]) ||
       (row.requiredHeaders || []).some(name => name.toLowerCase() !== 'authorization') ||
       ((row.requiredHeaders || []).length && !row.credentialId))) throw new Error('插件连接的凭据尚未配置完整。');
-    return this.store.records.save('capabilities', { ...row, enabled: action === 'enable' }, id);
+    const saved = this.store.records.save('capabilities', {
+      ...row,
+      enabled: action === 'enable',
+      ...(action === 'enable' && risk.requiresReview
+        ? { review: { status: 'approved', actor, confirmedAt: new Date().toISOString(), riskLevel: risk.level, digest: fingerprint } }
+        : action === 'disable'
+          ? { review: row.review ? { ...row.review, status: 'revoked', revokedAt: new Date().toISOString() } : row.review }
+          : {}),
+    }, id);
+    this.audit(id, action, { actor, risk, digest: capabilityFingerprint(saved), confirmed });
+    return saved;
+  }
+  audit(capabilityId, action, { actor = 'owner', risk, digest = null, confirmed = false } = {}) {
+    return this.store.records.save('capability-audits', {
+      capabilityId,
+      action,
+      actor,
+      confirmed,
+      riskLevel: risk?.level || 'unknown',
+      requiresReview: risk?.requiresReview === true,
+      digest,
+      reasons: Array.isArray(risk?.reasons) ? risk.reasons.slice(0, 12) : [],
+      createdAt: new Date().toISOString(),
+    });
   }
   patch(assistant) {
     const patches = [], selected = [];

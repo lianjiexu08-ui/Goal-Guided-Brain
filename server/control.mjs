@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { bearer, hashToken } from './auth.mjs';
 import { SKILLS } from './roles.mjs';
+import { assessCapabilityRisk, capabilityFingerprint } from './capabilities.mjs';
 
 const terminal = new Set(['completed', 'failed', 'cancelled', 'interrupted', 'state_unknown']);
 const messageKinds = new Set(['task', 'question', 'reply', 'progress', 'blocked', 'handoff', 'notice']);
@@ -402,7 +403,7 @@ export class ControlPlane {
       const skillIds = idList(member.skillIds, 3);
       if (skillIds.some(id => !SKILLS.some(skill => skill.id === id)))
         throw fail(`成员 ${memberId} 包含未知 Skill：${skillIds.filter(id => !SKILLS.some(skill => skill.id === id)).join('、')}`);
-      const capabilityIds = idList(member.capabilityIds);
+      const capabilityIds = idList([...(role.capabilityIds || []), ...(Array.isArray(member.capabilityIds) ? member.capabilityIds : [])]);
       if (capabilityIds.some(id => !capabilityRows.some(capability => capability.id === id)))
         throw fail(`成员 ${memberId} 包含未知能力：${capabilityIds.filter(id => !capabilityRows.some(capability => capability.id === id)).join('、')}`);
       const providerIds = idList(member.providerIds);
@@ -474,7 +475,7 @@ export class ControlPlane {
     }, team.id);
     return { teamId: saved.id, phase: saved.recruitment.phase, proposal: saved.recruitment.proposal };
   }
-  confirmTeamRecruitment(spaceId, { version } = {}, principal = { type: 'owner' }) {
+  confirmTeamRecruitment(spaceId, { version, capabilityApprovals = {} } = {}, principal = { type: 'owner' }) {
     if (principal.type !== 'owner') throw fail('团队方案需要由用户确认。', 403);
     const team = this.store.teamSpace(spaceId);
     if (!team) throw fail('团队空间不存在。', 404);
@@ -486,7 +487,10 @@ export class ControlPlane {
       throw fail('团队还没有可确认的招募方案。');
     if (version !== undefined && version !== proposal.version) throw fail('招募方案已更新，请刷新并确认最新版本。', 409);
     if (proposal.openQuestions?.length) throw fail('请先回答 Team Charter 中的待确认问题。');
+    if (!capabilityApprovals || typeof capabilityApprovals !== 'object' || Array.isArray(capabilityApprovals))
+      throw fail('能力确认记录格式无效。');
     const capabilityRows = this.records.list('capabilities');
+    const capabilityById = new Map(capabilityRows.map(capability => [capability.id, capability]));
     const providerRows = this.records.list('providers');
     const decisionOnlyProviders = proposal.members.flatMap(member => {
       const ids = member.providerIds?.length
@@ -503,6 +507,34 @@ export class ControlPlane {
       .map(id => `${member.memberId || member.roleId}:${id}`));
     if (unavailableCapabilities.length)
       throw fail(`招募方案包含未启用的能力：${unavailableCapabilities.join('、')}。请先启用能力或移除该绑定。`, 409);
+    const reviewedCapabilities = [];
+    const memberApprovals = new Map();
+    for (const member of proposal.members) {
+      const template = this.store.role(member.roleId);
+      const ids = [...new Set([...(template?.capabilityIds || []), ...(member.capabilityIds || [])])];
+      const approvals = { ...template?.capabilityApprovals };
+      for (const capabilityId of ids) {
+        const capability = capabilityById.get(capabilityId);
+        if (!capability) continue;
+        const risk = assessCapabilityRisk(capability);
+        if (!risk.requiresReview) continue;
+        const key = `${member.memberId || member.roleId}:${capabilityId}`;
+        const approval = capabilityApprovals[key] || capabilityApprovals[capabilityId] || approvals[capabilityId];
+        const digest = capabilityFingerprint(capability);
+        if (!approval || approval.confirmed !== true || approval.digest !== digest) {
+          throw fail(`确认能力「${capability.name || capabilityId}」前需要逐项确认：${risk.reasons.join('；')}`, 409);
+        }
+        const normalizedApproval = {
+          confirmed: true,
+          digest,
+          riskLevel: risk.level,
+          confirmedAt: typeof approval.confirmedAt === 'string' && approval.confirmedAt ? approval.confirmedAt : new Date().toISOString(),
+        };
+        approvals[capabilityId] = normalizedApproval;
+        reviewedCapabilities.push({ capability, risk, memberId: member.memberId || member.roleId, approval: normalizedApproval });
+      }
+      memberApprovals.set(member.memberId || member.roleId, approvals);
+    }
     const unavailableProviders = proposal.members.flatMap(member => (member.providerIds || [])
       .filter(id => !providerRows.some(provider => provider.id === id && provider.enabled !== false))
       .map(id => `${member.memberId || member.roleId}:${id}`));
@@ -563,6 +595,7 @@ export class ControlPlane {
           desc: member.responsibility.slice(0, 240),
           skillIds: [...new Set([...(template.skillIds || []), ...requestedSkillIds])].slice(0, 3),
           capabilityIds: [...new Set([...(template.capabilityIds || []), ...requestedCapabilityIds])],
+          capabilityApprovals: memberApprovals.get(member.memberId || member.roleId) || template.capabilityApprovals,
           providerIds: member.providerIds?.length ? member.providerIds : template.providerIds,
           tools,
           ...(member.modelHint ? { model: member.modelHint } : {}),
@@ -586,7 +619,7 @@ export class ControlPlane {
         toolAccess: member.toolAccess,
         dependencies: member.dependencies,
       }]));
-      return this.store.saveTeamSpace({
+      const savedTeam = this.store.saveTeamSpace({
       ...fresh,
       name: proposal.teamName,
       goal: proposal.goal,
@@ -596,6 +629,25 @@ export class ControlPlane {
       memberSettings,
       recruitment: { ...fresh.recruitment, proposal: { ...proposal, members }, phase: 'confirmed', confirmedAt: new Date().toISOString() },
       }, team.id);
+      for (const { capability, risk, memberId, approval } of reviewedCapabilities) {
+        const member = members.find(candidate => candidate.memberId === memberId);
+        this.records.save('capability-audits', {
+          capabilityId: capability.id,
+          action: 'bind',
+          roleId: member?.agentId || member?.roleId || null,
+          teamId: savedTeam.id,
+          memberId,
+          actor: 'owner',
+          confirmed: true,
+          riskLevel: risk.level,
+          requiresReview: true,
+          digest: approval.digest,
+          reasons: risk.reasons.slice(0, 12),
+          confirmedAt: approval.confirmedAt,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      return savedTeam;
     });
   }
   readTeamRoster(principal) {

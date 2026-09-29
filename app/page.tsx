@@ -294,6 +294,12 @@ type TeamRecruitmentMember = {
   modelHint?: string;
   dependencies?: string[];
 };
+type CapabilityApproval = {
+  confirmed: true;
+  digest: string;
+  riskLevel: string;
+  confirmedAt: string;
+};
 type TeamRecruitmentProposal = {
   version?: number;
   teamName: string;
@@ -386,9 +392,12 @@ type Capability = {
   name: string;
   kind: string;
   version: string | null;
+  revision?: number | null;
+  digest?: string | null;
   enabled: boolean;
   description: string;
   tools: string[];
+  risk?: { level?: string; requiresReview?: boolean; reasons?: string[] };
   health?: {
     ok?: boolean;
     checkedAt?: string | null;
@@ -1271,6 +1280,7 @@ function Workbench() {
   const [timelineHasMore, setTimelineHasMore] = useState<Record<string, boolean>>({});
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [expandedCharters, setExpandedCharters] = useState<Record<string, boolean>>({});
+  const [recruitmentApprovals, setRecruitmentApprovals] = useState<Record<string, CapabilityApproval>>({});
   const endRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const routeInitialized = useRef(false);
@@ -1426,6 +1436,19 @@ function Workbench() {
   const recruitmentProposal = recruitment?.proposal;
   const isRecruiting = isTeamConversation && recruitment?.phase !== 'confirmed';
   const charterKey = `${teamSpace?.id}:${recruitmentProposal?.version}:${recruitment?.phase}`;
+  const recruitmentCapabilityRequirements = (recruitmentProposal?.members || []).flatMap((member) =>
+    (member.capabilityIds || []).flatMap((capabilityId) => {
+      const capability = data?.capabilities.find((item) => item.id === capabilityId);
+      return capability?.risk?.requiresReview === true
+        ? [{ key: `${member.memberId || member.roleId}:${capabilityId}`, member, capability }]
+        : [];
+    }),
+  );
+  const recruitmentReviewsComplete = recruitmentCapabilityRequirements.every((item) => {
+    const approval = recruitmentApprovals[item.key];
+    const digest = item.capability.digest || String(item.capability.revision || `${item.capability.kind}:${item.capability.id}`);
+    return approval?.confirmed === true && approval.digest === digest;
+  });
   const charterExpanded = expandedCharters[charterKey] ?? recruitment?.phase !== 'confirmed';
   const modelOptions = (data?.providers || [])
     // TypeSafe is a structured decision backend. It does not generate chat
@@ -1826,6 +1849,10 @@ function Workbench() {
       clearInterval(timer);
     };
   }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setRecruitmentApprovals({}), 0);
+    return () => window.clearTimeout(timer);
+  }, [charterKey]);
   useEffect(() => {
     const spaceId = isRecruitmentView && teamSpace?.id && teamSpace.recruitment?.phase !== 'confirmed'
       ? teamSpace.id
@@ -2276,7 +2303,7 @@ function Workbench() {
       const saved = await api<TeamSpace>(
         `spaces/${teamSpace.id}/recruitment/confirm`,
         'POST',
-        { version: proposalVersion },
+        { version: proposalVersion, capabilityApprovals: recruitmentApprovals },
       );
       await refresh();
       setSelectedSpaceId(saved.id);
@@ -3093,6 +3120,9 @@ function Workbench() {
                             const capabilityNames = (member.capabilityIds || []).map((id) =>
                               data?.capabilities.find((capability) => capability.id === id)?.name || id,
                             );
+                            const reviewCapabilities = (member.capabilityIds || [])
+                              .map((id) => data?.capabilities.find((capability) => capability.id === id))
+                              .filter((capability): capability is Capability => capability?.risk?.requiresReview === true);
                             const toolLabels = member.toolAccess
                               ? ([
                                   ['files', '文件'],
@@ -3114,6 +3144,41 @@ function Workbench() {
                                   {!!skillNames.length && <small>绑定 Skill：{skillNames.slice(0, 3).join(' · ')}</small>}
                                   {!!member.tools?.length && <small>工具说明：{member.tools.slice(0, 3).join(' · ')}</small>}
                                   {!!capabilityNames.length && <small>绑定能力：{capabilityNames.slice(0, 3).join(' · ')}</small>}
+                                  {!!reviewCapabilities.length && (
+                                    <div className="recruitment-capability-review">
+                                      <strong>中/高风险能力，需要你逐项确认</strong>
+                                      {reviewCapabilities.map((capability) => {
+                                        const key = `${member.memberId || member.roleId}:${capability.id}`;
+                                        const digest = capability.digest || String(capability.revision || `${capability.kind}:${capability.id}`);
+                                        const approved = recruitmentApprovals[key]?.confirmed === true && recruitmentApprovals[key]?.digest === digest;
+                                        return (
+                                          <label key={capability.id}>
+                                            <input
+                                              type="checkbox"
+                                              checked={approved}
+                                              onChange={(event) => {
+                                                setRecruitmentApprovals((current) => {
+                                                  const next = { ...current };
+                                                  if (event.target.checked) {
+                                                    next[key] = {
+                                                      confirmed: true,
+                                                      digest,
+                                                      riskLevel: capability.risk?.level || 'unknown',
+                                                      confirmedAt: new Date().toISOString(),
+                                                    };
+                                                  } else {
+                                                    delete next[key];
+                                                  }
+                                                  return next;
+                                                });
+                                              }}
+                                            />
+                                            <span>确认「{capability.name || capability.id}」的 {capability.risk?.level || '中/高'}风险</span>
+                                          </label>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
                                   {member.toolAccess ? (
                                     !!toolLabels.length && <small>工具权限：{toolLabels.join(' · ')}</small>
                                   ) : (
@@ -3139,7 +3204,7 @@ function Workbench() {
                           <button
                             className="primary-button"
                             type="button"
-                            disabled={busy}
+                            disabled={busy || (!recruitmentProposal.openQuestions?.length && !recruitmentReviewsComplete)}
                             onClick={() => {
                               if (recruitmentProposal.openQuestions?.length) {
                                 composerRef.current?.focus();

@@ -205,6 +205,7 @@ test(
       name: 'Contract fixture',
       kind: 'mcp',
       enabled: true,
+      confirmed: true,
       transport: 'streamable-http',
       url: `http://127.0.0.1:${upstream.address().port}/mcp`,
       tools: ['get_contract'],

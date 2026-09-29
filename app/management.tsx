@@ -140,6 +140,8 @@ const statuses: Record<string, string> = {
   'risk-low': '低风险',
   'risk-medium': '中风险',
   'risk-high': '高风险',
+  confirmed: '已确认',
+  recorded: '已记录',
 };
 const time = (value: unknown) =>
   typeof value === 'string' && value
@@ -3573,11 +3575,16 @@ export function Management({
             icon={Power}
             label={item.enabled === false ? '启用能力' : '停用能力'}
             disabled={busy}
-            onClick={() =>
-              void act(
-                `capabilities/${item.id}/${item.enabled === false ? 'enable' : 'disable'}`,
-              )
-            }
+            onClick={() => {
+              const risk = item.risk && typeof item.risk === 'object' && !Array.isArray(item.risk)
+                ? item.risk as Entity
+                : null;
+              if (item.enabled === false && risk?.requiresReview === true) {
+                void openDetail(item);
+                return;
+              }
+              void act(`capabilities/${item.id}/${item.enabled === false ? 'enable' : 'disable'}`);
+            }}
           />
           <IconButton
             icon={Undo2}
@@ -4225,9 +4232,37 @@ export function Management({
                       <div className="manage-muted">
                         信号：{signalLabels.filter(([key]) => signals[key] === true).map(([, label]) => label).join(' · ') || '无'}
                       </div>
+                      {detail.item.enabled === false && risk.requiresReview === true && (
+                        <button
+                          type="button"
+                          className="primary-button"
+                          disabled={busy}
+                          onClick={async () => {
+                            const ok = await act(`capabilities/${detail.item.id}/enable`, { confirmed: true });
+                            if (ok) setDetail(null);
+                          }}
+                        >
+                          确认风险并启用能力
+                        </button>
+                      )}
                     </section>
                   );
                 })()}
+                {detail.collection === 'capabilities' && (
+                  <section className="capability-audit" aria-label="能力确认审计">
+                    <h3>确认与审计</h3>
+                    {entityList(detail.item.audits).length ? entityList(detail.item.audits).map((audit, index) => (
+                      <div className="manage-row" key={audit.id || index}>
+                        <div className="manage-main">
+                          <strong>{txt(audit, 'action') === 'bind' ? '绑定能力' : txt(audit, 'action') === 'enable' ? '启用能力' : txt(audit, 'action') === 'disable' ? '停用能力' : '回退版本'}</strong>
+                          <small>{txt(audit, 'actor') || 'owner'} · {txt(audit, 'riskLevel') || 'unknown'} · {txt(audit, 'digest') || '无摘要'}</small>
+                          {Array.isArray(audit.reasons) && <small>{(audit.reasons as unknown[]).join('；')}</small>}
+                        </div>
+                        <Badge value={audit.confirmed === true ? 'confirmed' : 'recorded'} />
+                      </div>
+                    )) : <p>尚无确认记录。高风险能力在绑定或启用前会要求逐项确认。</p>}
+                  </section>
+                )}
                 {detail.collection === 'capabilities' &&
                   Boolean(detail.item.bindings) &&
                   typeof detail.item.bindings === 'object' && (
