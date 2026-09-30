@@ -1206,10 +1206,12 @@ test.describe('团队招募核心流程', () => {
     await navigation.getByRole('button', { name: '团队', exact: true }).click({ force: true });
     await expect(page.getByRole('heading').filter({ hasText: /团队/ }).first()).toBeVisible();
     await expect(navigation.getByRole('button', { name: '团队', exact: true })).toHaveAttribute('aria-current', 'page');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()?.width || 1024);
 
     await navigation.getByRole('button', { name: '任务', exact: true }).click({ force: true });
     await expect(page.getByRole('heading', { name: '让工作持续推进。' })).toBeVisible();
     await expect(navigation.getByRole('button', { name: '任务', exact: true })).toHaveAttribute('aria-current', 'page');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()?.width || 1024);
 
     await navigation.getByRole('button', { name: '招募', exact: true }).click({ force: true });
     await expect(page.getByRole('heading', { name: '发布需求，招募团队' })).toBeVisible();
@@ -1229,6 +1231,7 @@ test.describe('团队招募核心流程', () => {
     await expect(sidebarLocator(page)).toBeHidden();
     await expect(navigation.getByRole('button', { name: '更多', exact: true })).toHaveAttribute('aria-current', 'page');
     await expect(page.getByRole('heading', { name: '我的助手' })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()?.width || 1024);
     await navigation.getByRole('button', { name: '更多', exact: true }).click({ force: true });
     await expect(sidebarLocator(page)).toBeVisible();
     await sidebarLocator(page).getByRole('button', { name: '关闭导航', exact: true }).click();
