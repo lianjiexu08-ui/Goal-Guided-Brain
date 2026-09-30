@@ -53,6 +53,7 @@ export function createPlatform({
     scheduledAgain = false;
   let usageMeter = null;
   const stoppingTasks = new Set();
+  const taskEventSubscribers = new Map();
   // A task is claimed before its isolated workspace and runtime are ready.
   // Keep those launch promises visible so shutdown cannot close SQLite while
   // a launch is still writing its snapshot or attachment metadata.
@@ -437,11 +438,17 @@ export function createPlatform({
           ? `${task.id}:${clean.eventId}`
           : undefined;
     if (eventId && records.get('task-events', eventId)) return;
-    records.save(
+    const saved = records.save(
       'task-events',
       { taskId: task.id, type: clean.type || 'event', data, at: nowIso() },
       eventId,
     );
+    const subscribers = taskEventSubscribers.get(task.id);
+    if (subscribers) {
+      for (const subscriber of subscribers) {
+        try { subscriber(saved); } catch {}
+      }
+    }
     if (clean.type === 'tool/call') {
       const meta = records.get('task-meta', task.id);
       records.save('task-meta', { ...meta, toolActivity: true }, task.id);
@@ -519,6 +526,15 @@ export function createPlatform({
         }
       }
     }
+  }
+  function subscribeTaskEvents(taskId, subscriber) {
+    if (!taskEventSubscribers.has(taskId)) taskEventSubscribers.set(taskId, new Set());
+    const subscribers = taskEventSubscribers.get(taskId);
+    subscribers.add(subscriber);
+    return () => {
+      subscribers.delete(subscriber);
+      if (!subscribers.size) taskEventSubscribers.delete(taskId);
+    };
   }
   function maybeFallback(task, outcome) {
     if (stopping || outcome.status !== 'failed' || stoppingTasks.has(task.id))
@@ -2024,6 +2040,7 @@ export function createPlatform({
     start,
     handle,
     manage,
+    subscribeTaskEvents,
     saveLegacyCredential,
     hasCredential: () =>
       providers.list().some((p) =>
@@ -2038,6 +2055,7 @@ export function createPlatform({
       while (automation.busy)
         await new Promise((resolve) => setTimeout(resolve, 20));
       await gateway.close();
+      taskEventSubscribers.clear();
       workspaces.close();
       vault.lock();
       releaseControl();

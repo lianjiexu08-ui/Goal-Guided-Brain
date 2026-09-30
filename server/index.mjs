@@ -106,6 +106,51 @@ export function createWorkbench({
       cursor: last ? `${last.createdAt}|${last.id}` : (after || null),
     };
   };
+  const taskEventCursor = (event) => `${event.createdAt}|${event.id}`;
+  const cursorIsAfter = (event, cursor) => {
+    if (!cursor) return true;
+    const [afterAt, ...afterIdParts] = String(cursor).split('|');
+    const afterId = afterIdParts.join('|');
+    return event.createdAt > afterAt || (event.createdAt === afterAt && String(event.id) > afterId);
+  };
+  const streamTaskEvents = (req, res, taskId, after, limit) => {
+    let closed = false;
+    let cursor = after || null;
+    let unsubscribe = () => {};
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-store',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    const heartbeat = setInterval(() => {
+      if (!closed) res.write(': keep-alive\n\n');
+    }, 15_000);
+    heartbeat.unref?.();
+    const cleanup = () => {
+      if (closed) return;
+      closed = true;
+      clearInterval(heartbeat);
+      unsubscribe();
+    };
+    const write = (event) => {
+      if (closed || !cursorIsAfter(event, cursor)) return;
+      cursor = taskEventCursor(event);
+      const item = { ...event, at: event.at || event.createdAt };
+      try {
+        res.write(`id: ${cursor}\nevent: task_event\ndata: ${JSON.stringify(item)}\n\n`);
+      } catch {
+        cleanup();
+      }
+    };
+    unsubscribe = platform.subscribeTaskEvents(taskId, write);
+    const initial = publicTaskEvents(taskId, { after, limit });
+    for (const event of initial.items) write(event);
+    res.write(`event: ready\ndata: ${JSON.stringify({ taskId, cursor })}\n\n`);
+    req.on('close', cleanup);
+    res.on('error', cleanup);
+    return undefined;
+  };
   const publicCrossTeamTimeline = ({ teamId = '', kind = 'all', limit = 60, before = null } = {}) => {
     const teams = store.teamSpaces()
       .filter((space) => space.status !== 'archived' && space.recruitment?.phase === 'confirmed')
@@ -486,8 +531,17 @@ export function createWorkbench({
       // compatibility. This endpoint is the shared incremental projection
       // used by the web inspector and future CLI/background consumers.
       if (req.method === 'GET' && parts[1] === 'tasks' && parts[2] && parts[3] === 'events') {
-        if (parts[4]) return send(404, { error: '任务事件接口不存在。' });
         if (!store.task(parts[2])) return send(404, { error: '任务不存在。' });
+        if (parts[4] === 'stream') {
+          return streamTaskEvents(
+            req,
+            res,
+            parts[2],
+            options.query.get('after') || null,
+            options.query.get('limit') || 100,
+          );
+        }
+        if (parts[4]) return send(404, { error: '任务事件接口不存在。' });
         return send(200, publicTaskEvents(parts[2], {
           after: options.query.get('after') || null,
           limit: options.query.get('limit') || 100,

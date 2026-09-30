@@ -1754,6 +1754,28 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
   }, [taskId]);
   useEffect(() => {
     let cancelled = false;
+    let streamReady = false;
+    const source = typeof window !== 'undefined' && 'EventSource' in window
+      ? new EventSource(`/api/tasks/${encodeURIComponent(taskId)}/events/stream`)
+      : null;
+    const onTaskEvent = (event: MessageEvent<string>) => {
+      try {
+        const item = JSON.parse(event.data) as Entity;
+        if (!item || typeof item !== 'object' || !item.id) return;
+        eventCursorRef.current = event.lastEventId || `${txt(item, 'createdAt') || txt(item, 'at')}|${String(item.id)}`;
+        setExecution((current) => current ? mergeEvents(current, [item]) : current);
+        if (streamReady) {
+          void api<Entity>(`tasks/${taskId}`).then((item) => {
+            if (!cancelled) setExecution(item);
+          }).catch(() => {});
+        }
+      } catch {
+        // Ignore malformed events; the cursor API below remains the recovery path.
+      }
+    };
+    source?.addEventListener('task_event', onTaskEvent as EventListener);
+    source?.addEventListener('ready', () => { streamReady = true; });
+    source?.addEventListener('error', () => source.close());
     const poll = async () => {
       if (cancelled || eventPollBusyRef.current) return;
       eventPollBusyRef.current = true;
@@ -1785,6 +1807,7 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+      source?.close();
     };
   }, [mergeEvents, taskId]);
   const workspace =
