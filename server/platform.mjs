@@ -1071,9 +1071,18 @@ export function createPlatform({
       ].map((name) => [name, records.list(name).slice(0, 100)]),
     );
     const nodes = records.list('nodes').map((node) => control.nodeView(node));
+    const spaces = store.teamSpaces().map((team) => ({
+      id: team.id,
+      name: team.name,
+      goal: team.goal || '',
+      status: team.status || 'active',
+      teamType: team.teamType || 'custom',
+      recruitmentPhase: team.recruitment?.phase || null,
+    }));
     return {
       ...output,
       attention,
+      spaces,
       providers: providers.list(),
       nodes,
       capabilities: capabilitiesWithBindings,

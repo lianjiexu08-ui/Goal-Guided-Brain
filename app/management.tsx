@@ -3316,6 +3316,8 @@ export function Management({
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [showArchived, setShowArchived] = useState(false);
+  const [jobTeamFilter, setJobTeamFilter] = useState('all');
+  const [jobStatusFilter, setJobStatusFilter] = useState('all');
   const [tab, setTab] = useState('');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(0);
@@ -3473,8 +3475,19 @@ export function Management({
   const powershellBootstrapCommand = pairingCode
     ? `ggb node --control-url ${powershellQuote(pairingControlUrl)} --workspace ${powershellQuote(`default=${pairingWorkspace}`)} --data-dir "$HOME\\.dsh-node" --max-concurrent 3 --pair ${powershellQuote(pairingCode)} --name ${powershellQuote(nodeName)}`
     : '';
-  const visibleItems = collection === 'jobs' && !showArchived
-    ? items.filter((item) => item.archived !== true)
+  const jobTeamOptions = data?.spaces || [];
+  const jobStatusOptions = Array.from(
+    new Set(items.map((item) => status(item)).filter(Boolean)),
+  ).sort((a, b) => (statuses[a] || a).localeCompare(statuses[b] || b, 'zh-CN'));
+  const visibleItems = collection === 'jobs'
+    ? items
+        .filter((item) => showArchived || item.archived !== true)
+        .filter((item) => {
+          if (jobTeamFilter === 'all') return true;
+          const teamId = txt(item, 'teamId') || txt(item, 'spaceId');
+          return jobTeamFilter === 'none' ? !teamId : teamId === jobTeamFilter;
+        })
+        .filter((item) => jobStatusFilter === 'all' || status(item) === jobStatusFilter)
     : items;
   const filtered = visibleItems.filter((item) =>
     `${title(item)} ${description(collection, item, data!)}`
@@ -4109,18 +4122,53 @@ export function Management({
                 />
             </div>
             {collection === 'jobs' && (
-              <button
-                type="button"
-                className="secondary-button"
-                aria-pressed={showArchived}
-                onClick={() => {
-                  setShowArchived((current) => !current);
-                  setPage(0);
-                }}
-              >
-                <Archive size={15} />
-                {showArchived ? '隐藏已归档' : '显示已归档'}
-              </button>
+              <>
+                <select
+                  className="manage-job-filter"
+                  aria-label="按团队筛选"
+                  value={jobTeamFilter}
+                  onChange={(event) => {
+                    setJobTeamFilter(event.target.value);
+                    setPage(0);
+                  }}
+                >
+                  <option value="all">全部团队</option>
+                  <option value="none">独立任务</option>
+                  {jobTeamOptions.map((team) => (
+                    <option key={team.id} value={team.id}>
+                      {title(team)}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="manage-job-filter"
+                  aria-label="按状态筛选"
+                  value={jobStatusFilter}
+                  onChange={(event) => {
+                    setJobStatusFilter(event.target.value);
+                    setPage(0);
+                  }}
+                >
+                  <option value="all">全部状态</option>
+                  {jobStatusOptions.map((value) => (
+                    <option key={value} value={value}>
+                      {statuses[value] || value}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  aria-pressed={showArchived}
+                  onClick={() => {
+                    setShowArchived((current) => !current);
+                    setPage(0);
+                  }}
+                >
+                  <Archive size={15} />
+                  {showArchived ? '隐藏已归档' : '显示已归档'}
+                </button>
+              </>
             )}
           </div>
           <div className="manage-list">

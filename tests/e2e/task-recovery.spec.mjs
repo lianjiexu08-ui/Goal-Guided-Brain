@@ -309,6 +309,88 @@ function seedBatchAcceptanceJobs() {
   }
 }
 
+function seedTaskCenterFilterJobs() {
+  const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
+  try {
+    const suffix = randomUUID().slice(0, 8);
+    const createTeam = (name, goal) => store.saveTeamSpace({
+      name: `${name} ${suffix}`,
+      goal,
+      purpose: goal,
+      workspace: process.cwd(),
+      pmRoleId: 'project_manager',
+      memberRoleIds: ['project_manager'],
+      recruitment: {
+        phase: 'confirmed',
+        sessionId: null,
+        turns: 1,
+        brief: goal,
+        proposal: null,
+        confirmedAt: new Date().toISOString(),
+      },
+    });
+    const teams = {
+      development: createTeam('筛选研发团队', '负责筛选回归的开发交付。'),
+      operations: createTeam('筛选运维团队', '负责筛选回归的运维保障。'),
+    };
+    const createJob = (team, title, status) => {
+      const task = store.createTask({
+        role: 'project_manager',
+        prompt: title,
+        workspace: process.cwd(),
+      });
+      const job = store.records.save('jobs', {
+        title,
+        goal: `验证${title}可以按团队和状态定位。`,
+        role: 'project_manager',
+        groupId: randomUUID(),
+        batchId: randomUUID(),
+        status,
+        taskId: task.id,
+        nodeId: 'local',
+        workspace: process.cwd(),
+        workspaceKey: 'default',
+        requirementVersion: 1,
+        depth: 0,
+        budgetTokens: 200000,
+        maxDurationMinutes: 30,
+        permissions: [],
+        spaceId: team.id,
+        teamId: team.id,
+      }, `e2e-task-filter-${randomUUID()}`);
+      store.records.save('task-meta', {
+        jobId: job.id,
+        groupId: job.groupId,
+        batchId: job.batchId,
+        nodeId: 'local',
+        workspaceKey: 'default',
+        workspaceMode: 'isolated',
+        requirementVersion: 1,
+        dependencies: [],
+        permissions: [],
+        contextExtra: '',
+        attachmentIds: [],
+        spaceId: team.id,
+        teamId: team.id,
+      }, task.id);
+      store.updateTask(task.id, {
+        status,
+        result: `${title} fixture result`,
+      });
+      return { title, teamId: team.id, taskId: task.id };
+    };
+    return {
+      teams,
+      jobs: {
+        development: createJob(teams.development, `筛选开发任务 ${suffix}`, 'completed'),
+        operations: createJob(teams.operations, `筛选运维任务 ${suffix}`, 'failed'),
+      },
+    };
+  } finally {
+    store.close();
+  }
+}
+
 test('协作任务详情提供失败原因和执行实例重试入口', async ({ page }) => {
   const fixture = seedFailedJob();
   await page.goto('/');
@@ -396,6 +478,35 @@ test('协作任务可以归档并从历史中恢复', async ({ page }) => {
   await row().getByRole('button', { name: '恢复任务', exact: true }).click();
   await expect(row().getByRole('button', { name: '归档任务', exact: true })).toBeVisible();
   await expect(row().getByText('已完成', { exact: true })).toBeVisible();
+});
+
+test('协作任务可以按团队和状态快速筛选', async ({ page }) => {
+  const fixture = seedTaskCenterFilterJobs();
+  await page.goto('/');
+  const mobile = (page.viewportSize()?.width || 1024) < 768;
+  if (mobile) {
+    await page.getByRole('button', { name: 'Toggle Sidebar', exact: true }).click();
+    await expect(page.locator('[data-sidebar="sidebar"][data-mobile="true"]')).toBeVisible();
+  }
+  const sidebar = page.locator(
+    mobile ? '[data-sidebar="sidebar"][data-mobile="true"]' : '[data-sidebar="sidebar"]',
+  );
+  await sidebar.getByRole('button', { name: '协作任务', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '协作任务' })).toBeVisible();
+  const row = (title) => page.locator('.manage-list .manage-row').filter({ hasText: title }).first();
+  const teamFilter = page.getByRole('combobox', { name: '按团队筛选', exact: true });
+  const statusFilter = page.getByRole('combobox', { name: '按状态筛选', exact: true });
+  await expect(teamFilter).toBeVisible();
+  await expect(statusFilter).toBeVisible();
+
+  await teamFilter.selectOption(fixture.jobs.development.teamId);
+  await expect(row(fixture.jobs.development.title)).toBeVisible();
+  await expect(row(fixture.jobs.operations.title)).toHaveCount(0);
+
+  await teamFilter.selectOption('all');
+  await statusFilter.selectOption('failed');
+  await expect(row(fixture.jobs.operations.title)).toBeVisible();
+  await expect(row(fixture.jobs.development.title)).toHaveCount(0);
 });
 
 test('协作任务详情支持所有者验收决定', async ({ page }) => {

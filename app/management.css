@@ -80,6 +80,9 @@
   width: auto;
   max-width: 100%;
 }
+.manage-toolbar .manage-job-filter {
+  min-width: 138px;
+}
 .manage-tabs {
   display: flex;
   border-bottom: 1px solid var(--border);
@@ -945,6 +948,13 @@
   }
   .manage-search {
     max-width: none;
+  }
+  .manage-toolbar .manage-job-filter {
+    flex: 1 1 145px;
+    min-height: 44px;
+  }
+  .manage-toolbar > .secondary-button {
+    min-height: 44px;
   }
   .manage-tabs {
     gap: 17px;

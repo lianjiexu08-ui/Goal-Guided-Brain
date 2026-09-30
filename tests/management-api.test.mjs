@@ -258,6 +258,14 @@ test('management capability records expose assistant and team bindings', async (
     roleId: 'project_manager',
     roleName: app.store.role('project_manager').name,
   }]);
+  assert.deepEqual(managed.body.spaces.find((space) => space.id === team.body.id), {
+    id: team.body.id,
+    name: '绑定检查团队',
+    goal: '验证能力绑定来源可见。',
+    status: 'active',
+    teamType: 'custom',
+    recruitmentPhase: 'confirmed',
+  });
   assert.equal(capability.boundAssistantCount, 1);
   assert.equal(capability.boundTeamCount, 1);
 });
