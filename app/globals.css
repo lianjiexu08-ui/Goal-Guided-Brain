@@ -3735,6 +3735,47 @@ h1 {
     display: grid;
     gap: 7px;
   }
+  .mobile-switcher-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 0 11px;
+    border: 1px solid #cfe3db;
+    border-radius: 12px;
+    color: #5f847a;
+    background: #fff;
+  }
+  .mobile-switcher-search:focus-within {
+    border-color: #6caf99;
+    box-shadow: 0 0 0 3px #dff2e8;
+  }
+  .mobile-switcher-search input {
+    min-width: 0;
+    flex: 1;
+    height: 42px;
+    border: 0;
+    outline: 0;
+    color: #294d49;
+    background: transparent;
+    font-size: 16px;
+  }
+  .mobile-switcher-search input::placeholder {
+    color: #98ada7;
+  }
+  .mobile-switcher-search-clear {
+    display: grid;
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    place-items: center;
+    border-radius: 9px;
+    color: #6f8a83;
+    background: #eff7f3;
+  }
+  .mobile-switcher-search-clear:active {
+    transform: scale(.94);
+  }
   .mobile-switcher-label {
     padding: 0 4px 2px;
     color: #819791;

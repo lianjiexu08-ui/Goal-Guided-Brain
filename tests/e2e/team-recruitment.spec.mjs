@@ -1123,6 +1123,12 @@ test.describe('团队招募核心流程', () => {
     const switcher = page.getByRole('dialog');
     await expect(switcher).toBeVisible();
     await expect(switcher.getByText('切换当前工作', { exact: true })).toBeVisible();
+    const teamSearch = switcher.getByRole('searchbox', { name: '搜索我的团队', exact: true });
+    await expect(teamSearch).toBeVisible();
+    await teamSearch.fill(teams.development.name);
+    await expect(switcher.getByRole('button', { name: new RegExp(teams.development.name) })).toBeVisible();
+    await expect(switcher.getByRole('button', { name: new RegExp(teams.operations.name) })).toBeHidden();
+    await switcher.getByRole('button', { name: '清除团队搜索', exact: true }).click();
     await switcher.getByRole('button', { name: new RegExp(teams.development.name) }).click();
     await expect(switcher).toBeHidden({ timeout: 2_000 });
     await expect(context).toContainText(teams.development.name);

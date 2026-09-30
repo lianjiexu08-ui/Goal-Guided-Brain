@@ -1288,6 +1288,7 @@ function Workbench() {
   >(null);
   const [teamRenameForm, setTeamRenameForm] = useState({ name: '' });
   const [teamTemplateForm, setTeamTemplateForm] = useState({ name: '', description: '' });
+  const [mobileTeamQuery, setMobileTeamQuery] = useState('');
   const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
   const [teamTemplateId, setTeamTemplateId] = useState('');
   const [teamForm, setTeamForm] = useState<TeamForm>({
@@ -1400,6 +1401,11 @@ function Workbench() {
   const confirmedSpaces = spaces.filter(
     (space) => space.status !== 'archived' && space.recruitment?.phase === 'confirmed',
   );
+  const mobileTeamMatches = confirmedSpaces.filter((space) => {
+    const query = mobileTeamQuery.trim().toLowerCase();
+    if (!query) return true;
+    return `${space.name} ${space.goal || ''}`.toLowerCase().includes(query);
+  });
   const recruitmentSpaces = spaces.filter(
     (space) => space.status !== 'archived' && space.recruitment?.phase !== 'confirmed',
   );
@@ -2469,6 +2475,7 @@ function Workbench() {
     }
     dismissMobileInput();
     setOpenMobile(false);
+    setMobileTeamQuery('');
     setModal('mobile-switcher');
   }
   function openKnowledge(task?: Task, item?: Knowledge) {
@@ -4734,7 +4741,30 @@ function Workbench() {
               </div>
               <div className="mobile-switcher-section">
                 <span className="mobile-switcher-label">我的团队</span>
-                {confirmedSpaces.length > 0 ? confirmedSpaces.map((space) => (
+                {confirmedSpaces.length > 0 && (
+                  <label className="mobile-switcher-search">
+                    <Search size={16} aria-hidden="true" />
+                    <input
+                      type="search"
+                      aria-label="搜索我的团队"
+                      placeholder="搜索团队名称或职责"
+                      value={mobileTeamQuery}
+                      onChange={(event) => setMobileTeamQuery(event.target.value)}
+                      enterKeyHint="search"
+                    />
+                    {mobileTeamQuery && (
+                      <button
+                        type="button"
+                        className="mobile-switcher-search-clear"
+                        aria-label="清除团队搜索"
+                        onClick={() => setMobileTeamQuery('')}
+                      >
+                        <X size={15} />
+                      </button>
+                    )}
+                  </label>
+                )}
+                {mobileTeamMatches.length > 0 ? mobileTeamMatches.map((space) => (
                   <button
                     type="button"
                     className={`mobile-switcher-option${selectedSpaceId === space.id && isConversationView ? ' active' : ''}`}
@@ -4749,7 +4779,9 @@ function Workbench() {
                     <span><strong>{space.name}</strong><small>{space.goal || '打开团队工作空间'}</small></span>
                     {selectedSpaceId === space.id && isConversationView && <Check size={17} />}
                   </button>
-                )) : (
+                )) : confirmedSpaces.length > 0 ? (
+                  <p className="mobile-switcher-empty">没有匹配的团队，试试团队名称或职责关键词。</p>
+                ) : (
                   <p className="mobile-switcher-empty">确认团队招募方案后，团队会显示在这里。</p>
                 )}
               </div>
