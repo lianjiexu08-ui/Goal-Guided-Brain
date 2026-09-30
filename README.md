@@ -228,6 +228,7 @@ backups/               SQLite 一致性备份及凭据副本
 - [项目全景说明](docs/project-overview.md)：完整产品、架构、接口、权限和路线图。
 - [个人智能体方向](docs/personal-agent.md)：个人偏好、记忆边界和模型分工。
 - [团队智能体空间](docs/team-agent-workspace.md)：团队招募、成员职责和跨团队协作。
+- [手机端交互规范](docs/mobile-interaction.md)：当前工作、团队切换、输入键盘、附件和移动端验收边界。
 - [Claude Code 与 Pi 设计调研](docs/claude-pi-design-review.md)：可借鉴的 Agent 设计。
 - [阶段计划与发布边界](docs/phase-2-plan.md)：已交付能力和未完成验收项。
 - [部署说明](deploy/README.md)：控制平面、执行节点、WSL2 和 HTTPS。
