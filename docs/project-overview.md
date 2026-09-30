@@ -375,7 +375,7 @@ API 默认监听 `127.0.0.1:3089`，网页默认监听 `127.0.0.1:3088`。除健
 | `POST` | `/api/team-templates/:id/apply` | 用模板创建全新团队，并重新确认名称、目标、工作区和协作边界。 |
 | `GET` | `/api/teams/:id/timeline` | 按 `limit` 和 `before=时间\|记录ID` 游标加载更早的团队统一时间线。 |
 | `GET` | `/api/teams/:id/events` | 按 `after=时间\|记录ID` 增量读取团队消息、任务和执行事件；新连接默认回放最近窗口。`/api/spaces` 和 `/api/chats` 是兼容别名。 |
-| `GET` | `/api/teams/:id/events/stream` | 以 SSE 推送团队消息、消息状态回写和任务执行事件；先回放当前窗口，再推送后续事件，支持 `after` 游标断线恢复；CLI 可用 `ggb events --team` 订阅。 |
+| `GET` | `/api/teams/:id/events/stream` | 以 SSE 推送团队消息、消息状态回写、任务执行事件、产物/验收变化和风险刷新标记；先回放当前窗口，再推送后续事件，支持 `after` 游标断线恢复；CLI 可用 `ggb events --team` 订阅。 |
 | `GET` | `/api/teams/:id/recruitment` | 按 `after=时间\|记录ID` 增量读取招募会话消息，支持多设备继续同一会话。 |
 | `GET` | `/api/drafts` | 按 `spaceId`、`role` 查询参数读取服务端草稿、附件引用、版本和更新时间。 |
 | `PUT` | `/api/drafts` | 按请求体中的 `spaceId`、`roleId` 写入草稿；带上当前 `revision` 做乐观并发校验，版本过期返回 `409` 和远端草稿供三方合并。 |

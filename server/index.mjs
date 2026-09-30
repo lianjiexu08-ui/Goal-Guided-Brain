@@ -58,19 +58,6 @@ export function createWorkbench({
           attachments: platform.attachments.list(item.attachmentIds),
         }
       : item);
-  // Team messages are persisted before the project manager task is queued.
-  // Publish both the initial message and later status/task linkage updates so
-  // every open team view can refresh from one durable event source.
-  store.onTeamMessage = (message) => {
-    const item = publicTeamTimeline(message.spaceId)
-      .find((candidate) => candidate.id === `message:${message.id}`);
-    if (item) {
-      platform.publishTeamEvent(message.spaceId, {
-        ...item,
-        at: message.updatedAt || item.at,
-      });
-    }
-  };
   const teamUsageSummary = (space) => {
     const jobs = store.records.list('jobs').filter((job) => (job.teamId || job.spaceId) === space.id);
     const jobIds = new Set(jobs.map((job) => job.id));

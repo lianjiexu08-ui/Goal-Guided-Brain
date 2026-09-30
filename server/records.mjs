@@ -12,6 +12,9 @@ CREATE INDEX IF NOT EXISTS idx_records_collection_updated ON records(collection,
 export class Records {
   constructor(db) {
     this.db = db;
+    // Optional observer used by the platform's live projections. Observers
+    // must never be able to make a durable write fail.
+    this.onSave = null;
     // SQLite can receive several writes within the same millisecond. Keep
     // persisted timestamps strictly increasing so timeline cursors and
     // chronological views do not fall back to lexicographic record IDs.
@@ -70,7 +73,9 @@ export class Records {
       .prepare(`INSERT INTO records(collection,id,data,createdAt,updatedAt) VALUES(?,?,?,?,?)
       ON CONFLICT(collection,id) DO UPDATE SET data=excluded.data,revision=records.revision+1,updatedAt=excluded.updatedAt`)
       .run(collection, id, JSON.stringify(data), now, now);
-    return this.get(collection, id);
+    const saved = this.get(collection, id);
+    try { this.onSave?.({ collection, record: saved, previous }); } catch {}
+    return saved;
   }
   remove(collection, id) {
     return (

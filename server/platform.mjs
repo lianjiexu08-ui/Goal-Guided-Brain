@@ -55,6 +55,11 @@ export function createPlatform({
   const stoppingTasks = new Set();
   const taskEventSubscribers = new Map();
   const teamEventSubscribers = new Map();
+  const previousRecordObserver = records.onSave;
+  records.onSave = (change) => {
+    try { previousRecordObserver?.(change); } catch {}
+    publishTeamRecord(change);
+  };
   // A task is claimed before its isolated workspace and runtime are ready.
   // Keep those launch promises visible so shutdown cannot close SQLite while
   // a launch is still writing its snapshot or attachment metadata.
@@ -429,6 +434,107 @@ export function createPlatform({
         : patch,
     );
   }
+  const liveTeamCollections = new Set([
+    'space-messages',
+    'task-events',
+    'artifacts',
+    'task-acceptance',
+    'attention',
+    'jobs',
+  ]);
+  function teamForTask(taskId) {
+    if (!taskId) return null;
+    const meta = records.get('task-meta', taskId) || {};
+    const job = meta.jobId ? records.get('jobs', meta.jobId) : null;
+    return meta.spaceId || meta.teamId || job?.spaceId || job?.teamId || null;
+  }
+  function teamForRecord(collection, record) {
+    if (!record) return null;
+    if (collection === 'space-messages' || collection === 'jobs')
+      return record.spaceId || record.teamId || null;
+    if (collection === 'attention')
+      return record.spaceId || record.teamId || teamForTask(record.taskId);
+    return teamForTask(record.taskId);
+  }
+  function teamTimelineEvent(collection, record) {
+    if (!record) return null;
+    const at = record.at || record.updatedAt || record.finishedAt || record.decidedAt || record.createdAt || nowIso();
+    if (collection === 'space-messages') {
+      return {
+        id: `message:${record.id}`,
+        type: 'message',
+        at,
+        messageId: record.id,
+        clientMessageId: record.clientMessageId || null,
+        senderType: record.senderType || 'owner',
+        senderId: record.senderId || 'owner',
+        fromTeamId: record.fromTeamId || null,
+        toTeamId: record.toTeamId || record.spaceId || null,
+        relatedMessageId: record.relatedMessageId || null,
+        kind: record.kind || 'request',
+        taskId: record.taskId || null,
+        content: record.content || '',
+        status: record.status || 'sent',
+        error: record.error || null,
+        attachmentIds: Array.isArray(record.attachmentIds) ? record.attachmentIds : [],
+        attachments: attachments.list(record.attachmentIds),
+      };
+    }
+    if (collection === 'task-events') {
+      return {
+        id: `event:${record.id}`,
+        type: 'task-event',
+        at,
+        taskId: record.taskId,
+        eventType: record.type || 'event',
+        data: record.data || null,
+      };
+    }
+    if (collection === 'artifacts') {
+      return {
+        id: `artifact:${record.id}`,
+        type: record.kind === 'verification' ? 'verification' : 'artifact',
+        at,
+        taskId: record.taskId,
+        kind: record.kind || 'artifact',
+        name: record.name || '未命名产物',
+        status: record.status || null,
+        verified: record.verified === true,
+      };
+    }
+    if (collection === 'task-acceptance') {
+      return {
+        id: `acceptance:${record.id}`,
+        type: 'acceptance',
+        at,
+        taskId: record.taskId,
+        status: record.status || 'active',
+        acceptanceDecision: record.decision || null,
+        acceptanceNote: String(record.note || '').slice(0, 360),
+        currentRequirementVersion: Number(record.requirementVersion || 1),
+      };
+    }
+    // Jobs and attention records change a derived task or risk summary. Send
+    // a refresh marker so clients update immediately without rendering a
+    // second copy of the derived row.
+    return {
+      id: `update:${collection}:${record.id}`,
+      type: 'team-update',
+      at,
+      source: collection,
+      recordId: record.id,
+      taskId: record.taskId || null,
+      status: record.status || null,
+      title: record.title || record.name || null,
+    };
+  }
+  function publishTeamRecord(change) {
+    if (!change || !liveTeamCollections.has(change.collection)) return;
+    const teamId = teamForRecord(change.collection, change.record);
+    if (!teamId) return;
+    const event = teamTimelineEvent(change.collection, change.record);
+    if (event) publishTeamEvent(teamId, { ...event, teamId });
+  }
   function recordEvent(task, event, secrets = []) {
     const clean = JSON.parse(redact(JSON.stringify(event), secrets));
     const data = clean.data || clean;
@@ -451,18 +557,6 @@ export function createPlatform({
       }
     }
     const meta = records.get('task-meta', task.id) || {};
-    const job = meta.jobId ? records.get('jobs', meta.jobId) : null;
-    const teamId = meta.spaceId || meta.teamId || job?.spaceId || job?.teamId || null;
-    if (teamId) {
-      publishTeamEvent(teamId, {
-        id: `event:${saved.id}`,
-        type: 'task-event',
-        at: saved.at || saved.updatedAt || saved.createdAt || nowIso(),
-        taskId: saved.taskId,
-        eventType: saved.type || 'event',
-        data: saved.data || null,
-      });
-    }
     if (clean.type === 'tool/call') {
       records.save('task-meta', { ...meta, toolActivity: true }, task.id);
     }
@@ -2088,6 +2182,7 @@ export function createPlatform({
       await gateway.close();
       taskEventSubscribers.clear();
       teamEventSubscribers.clear();
+      records.onSave = previousRecordObserver;
       workspaces.close();
       vault.lock();
       releaseControl();

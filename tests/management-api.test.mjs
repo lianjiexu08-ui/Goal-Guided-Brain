@@ -205,6 +205,31 @@ test('team event stream replays activity and pushes later messages', async (t) =
   assert.match(live, /event: team_event/);
   assert.match(live, /实时团队消息/);
   assert.doesNotMatch(live, /历史团队消息/);
+  const task = app.store.createTask({
+    role: 'project_manager',
+    prompt: '验证团队交付证据实时回传。',
+    workspace,
+  });
+  app.store.records.save('task-meta', { spaceId: team.id }, task.id);
+  app.store.records.save('artifacts', {
+    taskId: task.id,
+    kind: 'artifact',
+    name: 'live-artifact',
+    status: 'ready',
+  }, 'live-artifact');
+  const artifact = await resumed.readUntil(/live-artifact/);
+  assert.match(artifact, /event: team_event/);
+  assert.match(artifact, /"type":"artifact"/);
+  app.store.records.save('attention', {
+    teamId: team.id,
+    kind: 'decision',
+    status: 'open',
+    title: '团队需要确认',
+    detail: '请确认实时交付证据。',
+  }, 'live-attention');
+  const attention = await resumed.readUntil(/live-attention/);
+  assert.match(attention, /event: team_event/);
+  assert.match(attention, /"type":"team-update"/);
   resumed.request.destroy();
   resumed.response.destroy();
   assert.equal((await request('spaces/missing-team/events')).status, 404);
