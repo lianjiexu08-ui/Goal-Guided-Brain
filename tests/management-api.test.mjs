@@ -138,6 +138,79 @@ test('task event stream replays from a cursor and pushes later events', async (t
   resumed.response.destroy();
 });
 
+test('team event stream replays activity and pushes later messages', async (t) => {
+  const { app, request, url, workspace } = await fixture(t);
+  const team = (await request('spaces', {
+    name: '团队事件流 fixture',
+    goal: '验证团队时间线可以实时同步。',
+    purpose: '验证团队时间线可以实时同步。',
+    workspace,
+    pmRoleId: 'project_manager',
+    memberRoleIds: ['project_manager'],
+    recruitment: { phase: 'confirmed' },
+  })).body;
+  const connect = (route) => new Promise((resolve, reject) => {
+    const request = http.get(`${url}/api/${route}`);
+    request.once('response', (response) => {
+      response.setEncoding('utf8');
+      let buffer = '';
+      const readUntil = (pattern) => new Promise((done, fail) => {
+        const check = () => {
+          if (pattern.test(buffer)) {
+            response.off('data', onData);
+            done(buffer);
+          }
+        };
+        const onData = (chunk) => {
+          buffer += chunk;
+          check();
+        };
+        response.on('data', onData);
+        response.once('error', fail);
+        check();
+      });
+      resolve({ request, response, readUntil });
+    });
+    request.once('error', reject);
+  });
+  app.store.saveTeamMessage({
+    spaceId: team.id,
+    teamId: team.id,
+    clientMessageId: 'team-stream-history',
+    content: '历史团队消息',
+  }, 'team-stream-history');
+  const stream = await connect(`spaces/${team.id}/events/stream`);
+  assert.equal(stream.response.statusCode, 200);
+  assert.match(stream.response.headers['content-type'] || '', /text\/event-stream/);
+  const first = await stream.readUntil(/event: ready/);
+  assert.match(first, /event: team_event/);
+  assert.match(first, /历史团队消息/);
+  assert.match(first, /event: ready/);
+  const cursor = first.match(/^id: (.+)$/m)?.[1]?.trim();
+  assert.ok(cursor);
+  stream.request.destroy();
+  stream.response.destroy();
+
+  const resumed = await connect(`spaces/${team.id}/events/stream?after=${encodeURIComponent(cursor)}`);
+  assert.equal(resumed.response.statusCode, 200);
+  const ready = await resumed.readUntil(/event: ready/);
+  assert.match(ready, /event: ready/);
+  app.store.saveTeamMessage({
+    spaceId: team.id,
+    teamId: team.id,
+    clientMessageId: 'team-stream-live',
+    content: '实时团队消息',
+  }, 'team-stream-live');
+  const live = await resumed.readUntil(/实时团队消息/);
+  assert.match(live, /event: team_event/);
+  assert.match(live, /实时团队消息/);
+  assert.doesNotMatch(live, /历史团队消息/);
+  resumed.request.destroy();
+  resumed.response.destroy();
+  assert.equal((await request('spaces/missing-team/events')).status, 404);
+  assert.equal((await request('spaces/missing-team/events/stream')).status, 404);
+});
+
 test('completed jobs can be archived and restored without losing history', async (t) => {
   const { app, request } = await fixture(t);
   const job = app.store.records.save('jobs', {

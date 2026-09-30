@@ -1374,6 +1374,7 @@ function Workbench() {
   const draftBaseRef = useRef<Record<string, DraftBase>>({});
   const draftVersionRef = useRef<Record<string, number>>({});
   const draftTimersRef = useRef<Record<string, number>>({});
+  const teamEventRefreshTimerRef = useRef<number | null>(null);
   const activeDraftKeyRef = useRef('');
   const draftsRef = useRef<Record<string, string>>({});
   const draftAttachmentsRef = useRef<Record<string, Attachment[]>>({});
@@ -1984,6 +1985,37 @@ function Workbench() {
       window.clearInterval(timer);
     };
   }, [isRecruitmentView, teamSpace?.id, teamSpace?.recruitment?.phase, syncRecruitment]);
+  useEffect(() => {
+    const spaceId = teamSpace?.id;
+    if (!spaceId || !(isConversationView || view === 'team')) return;
+    const source = new EventSource(`/api/spaces/${encodeURIComponent(spaceId)}/events/stream?limit=120`);
+    let ready = false;
+    const scheduleRefresh = () => {
+      if (!ready) return;
+      if (teamEventRefreshTimerRef.current !== null)
+        window.clearTimeout(teamEventRefreshTimerRef.current);
+      teamEventRefreshTimerRef.current = window.setTimeout(() => {
+        teamEventRefreshTimerRef.current = null;
+        void refresh();
+      }, 120);
+    };
+    const onReady = () => { ready = true; };
+    source.addEventListener('ready', onReady);
+    source.addEventListener('team_event', scheduleRefresh);
+    source.onerror = () => {
+      // EventSource reconnects on its own. The existing state polling keeps
+      // the workspace usable while a device or server is temporarily offline.
+    };
+    return () => {
+      source.removeEventListener('ready', onReady);
+      source.removeEventListener('team_event', scheduleRefresh);
+      source.close();
+      if (teamEventRefreshTimerRef.current !== null) {
+        window.clearTimeout(teamEventRefreshTimerRef.current);
+        teamEventRefreshTimerRef.current = null;
+      }
+    };
+  }, [isConversationView, teamSpace?.id, view]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const cached = readDraftCache();

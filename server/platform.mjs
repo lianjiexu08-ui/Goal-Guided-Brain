@@ -54,6 +54,7 @@ export function createPlatform({
   let usageMeter = null;
   const stoppingTasks = new Set();
   const taskEventSubscribers = new Map();
+  const teamEventSubscribers = new Map();
   // A task is claimed before its isolated workspace and runtime are ready.
   // Keep those launch promises visible so shutdown cannot close SQLite while
   // a launch is still writing its snapshot or attachment metadata.
@@ -449,8 +450,20 @@ export function createPlatform({
         try { subscriber(saved); } catch {}
       }
     }
+    const meta = records.get('task-meta', task.id) || {};
+    const job = meta.jobId ? records.get('jobs', meta.jobId) : null;
+    const teamId = meta.spaceId || meta.teamId || job?.spaceId || job?.teamId || null;
+    if (teamId) {
+      publishTeamEvent(teamId, {
+        id: `event:${saved.id}`,
+        type: 'task-event',
+        at: saved.at || saved.updatedAt || saved.createdAt || nowIso(),
+        taskId: saved.taskId,
+        eventType: saved.type || 'event',
+        data: saved.data || null,
+      });
+    }
     if (clean.type === 'tool/call') {
-      const meta = records.get('task-meta', task.id);
       records.save('task-meta', { ...meta, toolActivity: true }, task.id);
     }
     const usage = measureUsage(records, task.id, clean, usageMeter);
@@ -534,6 +547,22 @@ export function createPlatform({
     return () => {
       subscribers.delete(subscriber);
       if (!subscribers.size) taskEventSubscribers.delete(taskId);
+    };
+  }
+  function publishTeamEvent(teamId, event) {
+    const subscribers = teamEventSubscribers.get(teamId);
+    if (!subscribers) return;
+    for (const subscriber of subscribers) {
+      try { subscriber(event); } catch {}
+    }
+  }
+  function subscribeTeamEvents(teamId, subscriber) {
+    if (!teamEventSubscribers.has(teamId)) teamEventSubscribers.set(teamId, new Set());
+    const subscribers = teamEventSubscribers.get(teamId);
+    subscribers.add(subscriber);
+    return () => {
+      subscribers.delete(subscriber);
+      if (!subscribers.size) teamEventSubscribers.delete(teamId);
     };
   }
   function maybeFallback(task, outcome) {
@@ -2041,6 +2070,8 @@ export function createPlatform({
     handle,
     manage,
     subscribeTaskEvents,
+    publishTeamEvent,
+    subscribeTeamEvents,
     saveLegacyCredential,
     hasCredential: () =>
       providers.list().some((p) =>
@@ -2056,6 +2087,7 @@ export function createPlatform({
         await new Promise((resolve) => setTimeout(resolve, 20));
       await gateway.close();
       taskEventSubscribers.clear();
+      teamEventSubscribers.clear();
       workspaces.close();
       vault.lock();
       releaseControl();

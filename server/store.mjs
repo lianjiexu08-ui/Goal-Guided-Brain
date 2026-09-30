@@ -893,7 +893,7 @@ export class Store {
     if (!this.teamSpace(spaceId)) throw new Error('团队空间不存在。');
     const content = String(input.content ?? '').trim();
     if (!content || content.length > 32000) throw new Error('团队消息不能为空，且不能超过 32000 字符。');
-    return this.records.save('space-messages', {
+    const saved = this.records.save('space-messages', {
       spaceId,
       teamId: input.teamId || spaceId,
       clientMessageId: input.clientMessageId || null,
@@ -908,6 +908,8 @@ export class Store {
       content,
       status: input.status || 'sent',
     }, id);
+    try { this.onTeamMessage?.(saved); } catch {}
+    return saved;
   }
   knowledge() {
     return this.db

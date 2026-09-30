@@ -58,6 +58,19 @@ export function createWorkbench({
           attachments: platform.attachments.list(item.attachmentIds),
         }
       : item);
+  // Team messages are persisted before the project manager task is queued.
+  // Publish both the initial message and later status/task linkage updates so
+  // every open team view can refresh from one durable event source.
+  store.onTeamMessage = (message) => {
+    const item = publicTeamTimeline(message.spaceId)
+      .find((candidate) => candidate.id === `message:${message.id}`);
+    if (item) {
+      platform.publishTeamEvent(message.spaceId, {
+        ...item,
+        at: message.updatedAt || item.at,
+      });
+    }
+  };
   const teamUsageSummary = (space) => {
     const jobs = store.records.list('jobs').filter((job) => (job.teamId || job.spaceId) === space.id);
     const jobIds = new Set(jobs.map((job) => job.id));
@@ -113,6 +126,13 @@ export function createWorkbench({
     const afterId = afterIdParts.join('|');
     return event.createdAt > afterAt || (event.createdAt === afterAt && String(event.id) > afterId);
   };
+  const teamCursorIsAfter = (event, cursor) => {
+    if (!cursor) return true;
+    const [afterAt, ...afterIdParts] = String(cursor).split('|');
+    const afterId = afterIdParts.join('|');
+    const at = String(event.at || event.createdAt || '');
+    return at > afterAt || (at === afterAt && String(event.id) > afterId);
+  };
   const streamTaskEvents = (req, res, taskId, after, limit) => {
     let closed = false;
     let cursor = after || null;
@@ -147,6 +167,69 @@ export function createWorkbench({
     const initial = publicTaskEvents(taskId, { after, limit });
     for (const event of initial.items) write(event);
     res.write(`event: ready\ndata: ${JSON.stringify({ taskId, cursor })}\n\n`);
+    req.on('close', cleanup);
+    res.on('error', cleanup);
+    return undefined;
+  };
+  const teamEventCursor = (event) => `${event.at}|${event.id}`;
+  const publicTeamEvents = (spaceId, { after = null, limit = 100 } = {}) => {
+    const messages = new Map(store.teamMessages(spaceId).map((message) => [message.id, message]));
+    const ordered = publicTeamTimeline(spaceId, { limit: 200 })
+      .map((item) => item.type === 'message' && messages.get(item.messageId)
+        ? { ...item, at: messages.get(item.messageId).updatedAt || item.at }
+        : item)
+      .sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id))
+      .filter((item) => teamCursorIsAfter(item, after));
+    const pageSize = Math.max(1, Math.min(200, Number(limit) || 100));
+    // A fresh stream starts at the newest window; a resumed stream walks
+    // forward from its cursor so no later item is skipped.
+    const page = after
+      ? ordered.slice(0, pageSize + 1)
+      : ordered.slice(-(pageSize + 1));
+    const hasMore = page.length > pageSize;
+    const items = hasMore ? page.slice(0, pageSize) : page;
+    const last = items[items.length - 1];
+    return {
+      items,
+      hasMore,
+      cursor: last ? teamEventCursor(last) : (after || null),
+    };
+  };
+  const streamTeamEvents = (req, res, spaceId, after, limit) => {
+    let closed = false;
+    let cursor = after || null;
+    let unsubscribe = () => {};
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-store',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    const heartbeat = setInterval(() => {
+      if (!closed) res.write(': keep-alive\n\n');
+    }, 15_000);
+    heartbeat.unref?.();
+    const cleanup = () => {
+      if (closed) return;
+      closed = true;
+      clearInterval(heartbeat);
+      unsubscribe();
+    };
+    const write = (event) => {
+      if (closed || !teamCursorIsAfter(event, cursor)) return;
+      cursor = teamEventCursor(event);
+      try {
+        res.write(`id: ${cursor}\nevent: team_event\ndata: ${JSON.stringify(event)}\n\n`);
+      } catch {
+        cleanup();
+      }
+    };
+    // Subscribe before replaying history so a message written during the
+    // replay window cannot be lost. The cursor check removes duplicates.
+    unsubscribe = platform.subscribeTeamEvents(spaceId, write);
+    const initial = publicTeamEvents(spaceId, { after, limit });
+    for (const event of initial.items) write(event);
+    res.write(`event: ready\ndata: ${JSON.stringify({ spaceId, cursor })}\n\n`);
     req.on('close', cleanup);
     res.on('error', cleanup);
     return undefined;
@@ -573,6 +656,32 @@ export function createWorkbench({
         }
         if (parts[4]) return send(404, { error: '任务事件接口不存在。' });
         return send(200, publicTaskEvents(parts[2], {
+          after: options.query.get('after') || null,
+          limit: options.query.get('limit') || 100,
+        }));
+      }
+      // Team activity is the shared live projection for the web workspace,
+      // CLI consumers and background workers. It replays the durable timeline
+      // first, then keeps the connection open for new messages and task events.
+      if (
+        req.method === 'GET' &&
+        ['spaces', 'teams', 'chats'].includes(parts[1]) &&
+        parts[2] &&
+        parts[3] === 'events'
+      ) {
+        const space = store.teamSpace(parts[2]);
+        if (!space) return send(404, { error: '团队空间不存在。' });
+        if (parts[4] === 'stream') {
+          return streamTeamEvents(
+            req,
+            res,
+            space.id,
+            options.query.get('after') || null,
+            options.query.get('limit') || 100,
+          );
+        }
+        if (parts[4]) return send(404, { error: '团队事件接口不存在。' });
+        return send(200, publicTeamEvents(space.id, {
           after: options.query.get('after') || null,
           limit: options.query.get('limit') || 100,
         }));

@@ -1702,6 +1702,58 @@ test.describe('团队招募核心流程', () => {
     await expect(timeline.getByRole('button', { name: '更早动态', exact: true })).toHaveCount(0);
   });
 
+  test('团队动态通过实时事件流接收新消息', async ({ page }) => {
+    const teams = seedConfirmedTeams();
+    const providerId = 'e2e-live-team-provider';
+    const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
+    try {
+      store.records.save('providers', {
+        id: providerId,
+        name: 'E2E live team provider',
+        protocol: 'openai-completions',
+        baseUrl: 'http://127.0.0.1:1',
+        credentialId: '',
+        enabled: true,
+        priority: 1,
+        models: [{ id: 'e2e-live-team-model', tools: false, vision: false, contextWindow: 128000 }],
+      }, providerId);
+      const existing = store.teamSpace(teams.development.id);
+      store.saveTeamSpace({ ...existing, providerId, model: 'e2e-live-team-model' }, existing.id);
+    } finally {
+      store.close();
+    }
+    await page.goto('/');
+    await openMobileSidebar(page);
+    const navigation = sidebarLocator(page).locator('button').filter({ hasText: teams.development.name }).first();
+    await expect(navigation).toBeVisible();
+    await navigation.click({ force: true });
+    await expect(page.getByRole('heading', { name: teams.development.name })).toBeVisible();
+    const streamRequest = page.waitForRequest(
+      (request) => request.url().includes(`/api/spaces/${teams.development.id}/events/stream`),
+      { timeout: 10_000 },
+    );
+    await clickNavigation(page, '团队动态');
+    await streamRequest;
+    const timeline = page.locator('[aria-label="团队统一时间线"]');
+    await expect(timeline).toBeVisible();
+    const message = `实时团队消息 ${Date.now()}`;
+    const sent = await page.evaluate(async ({ id, providerId, message }) => {
+      const response = await fetch(`/api/spaces/${id}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientMessageId: `e2e-live-${Date.now()}`,
+          content: message,
+          providerId,
+          model: 'e2e-live-team-model',
+        }),
+      });
+      return { status: response.status, body: await response.json() };
+    }, { id: teams.development.id, providerId, message });
+    expect(sent.status).toBe(201);
+    await expect(timeline.getByText(message, { exact: true })).toBeVisible({ timeout: 10_000 });
+  });
+
   test('后台任务提供跨团队风险筛选并可回到对应团队', async ({ page }) => {
     const teams = seedRiskTeams();
     await page.goto('/');
