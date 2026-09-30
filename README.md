@@ -128,6 +128,7 @@ ggb run --provider deepseek --model deepseek-chat "分析当前项目风险"
 echo "设计一个缓存方案" | ggb run --provider claude
 ggb chat --provider gemini --session personal
 printf '{"type":"prompt","id":"p1","text":"检查项目"}\n' | ggb rpc --provider deepseek --session automation
+ggb events <task-id> --once --json
 ggb providers
 ggb doctor --json
 ggb node --control-url https://workbench.example.com --workspace project=/absolute/path --print-config
@@ -138,6 +139,7 @@ CLI 支持：
 - `ggb run`：执行一次任务，可使用 `--system`、`--no-stream`、`--json`、`--session` 和 `--continue`。
 - `ggb chat`：进入持续对话，支持 `/new`、`/model`、`/session`、`/help` 和 `/exit`。
 - `ggb rpc`：使用 stdin/stdout JSONL 驱动会话，支持 `prompt`、`follow_up`、`set_model`、`abort`、`session` 和 `ping`，输出稳定的 `turn_start`、`text_delta`、`turn_end`、`model_changed`、`aborted` 和 `error` 事件。
+- `ggb events`：订阅工作台任务的 SSE 事件流，支持 `--after` 游标断线恢复、`--once` 读取历史后退出，以及 `--json` 输出 JSONL，适合终端监控和自动化脚本。
 - `ggb providers`：查看普通模型预设和可选 TypeSafe 后端。
 - `ggb doctor`：检查 Node.js、平台、会话目录、Git、模型凭据和本地工作台服务；服务未启动只会给出提醒，不影响直接调用模型。`--json` 输出适合脚本和 CI 读取的报告，绝不会打印密钥。
 - `ggb decide`：向 TypeSafe 发送结构化 `state` 和 `questions`，只返回 JSON 判断结果。
@@ -243,7 +245,7 @@ npm run test:e2e
 npm run build
 ```
 
-`npm run test:e2e` 会启动隔离的 API/UI 服务，在桌面和移动 Chromium 尺寸下验证团队招募、招募会话跨设备同步、团队模板复制边界、统一团队时间线筛选与分页、跨团队统一时间线浏览、跨团队风险筛选、团队协作控制台、协作目标团队白名单、团队级自治暂停/恢复与拆解/任务/Token 限额、助手编辑器的能力兼容与绑定范围、能力中心的中高风险能力确认与审计、Team Charter 绑定中高风险能力前的逐项确认与绑定审计、团队专属知识隔离、浏览器本地与服务端草稿跨刷新恢复、双团队草稿隔离、多设备草稿自动合并与冲突选择、工作区视图恢复、模型切换、模型运行指标筛选、失败任务恢复、任务事件增量更新（含 SSE 实时流）、任务归档/恢复、任务中心按团队/状态筛选、交付验收决定、批量复核、待处理事项关联执行与持久通知、定时任务失败通知、真实二进制附件、手机端当前工作快速切换（支持按团队名称/职责搜索）/底部主导航/完整导航抽屉/触控文件入口/底部设置面板/键盘态布局、执行节点配对向导、跨平台启动命令、节点详情状态刷新和撤销后重新配对；当前基线为 70 个浏览器运行，后端确定性套件为 175/175，并包含两个团队连续 20 次交替消息的归属压力测试。首次运行若本机没有 Playwright 浏览器，请执行 `npx playwright install chromium`。测试使用临时数据库、本地确定性模型和 MCP fixture，不调用付费模型。每次功能迭代都应补充对应验证，检查 `git diff --check`，提交清晰的 Git commit，并推送到远程仓库：
+`npm run test:e2e` 会启动隔离的 API/UI 服务，在桌面和移动 Chromium 尺寸下验证团队招募、招募会话跨设备同步、团队模板复制边界、统一团队时间线筛选与分页、跨团队统一时间线浏览、跨团队风险筛选、团队协作控制台、协作目标团队白名单、团队级自治暂停/恢复与拆解/任务/Token 限额、助手编辑器的能力兼容与绑定范围、能力中心的中高风险能力确认与审计、Team Charter 绑定中高风险能力前的逐项确认与绑定审计、团队专属知识隔离、浏览器本地与服务端草稿跨刷新恢复、双团队草稿隔离、多设备草稿自动合并与冲突选择、工作区视图恢复、模型切换、模型运行指标筛选、失败任务恢复、任务事件增量更新（含 SSE 实时流）、任务归档/恢复、任务中心按团队/状态筛选、交付验收决定、批量复核、待处理事项关联执行与持久通知、定时任务失败通知、真实二进制附件、手机端当前工作快速切换（支持按团队名称/职责搜索）/底部主导航/完整导航抽屉/触控文件入口/底部设置面板/键盘态布局、执行节点配对向导、跨平台启动命令、节点详情状态刷新和撤销后重新配对；当前基线为 70 个浏览器运行，后端确定性套件为 176/176，并包含两个团队连续 20 次交替消息的归属压力测试。首次运行若本机没有 Playwright 浏览器，请执行 `npx playwright install chromium`。测试使用临时数据库、本地确定性模型和 MCP fixture，不调用付费模型。每次功能迭代都应补充对应验证，检查 `git diff --check`，提交清晰的 Git commit，并推送到远程仓库：
 
 ```text
 https://github.com/lianjiexu08-ui/Goal-Guided-Brain.git

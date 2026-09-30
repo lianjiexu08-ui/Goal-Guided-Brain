@@ -36,6 +36,7 @@ const CLI_NAME = 'ggb';
 const usage = `用法：
   ggb providers
   ggb doctor [--api-url http://127.0.0.1:3089/api/health] [--ui-url http://127.0.0.1:3088/] [--json]
+  ggb events <task-id> [--api-url http://127.0.0.1:3089/api] [--after <cursor>] [--once] [--json]
   ggb run --provider gemini --model gemini-2.5-flash "解释这段代码"
   echo "总结这个项目" | ggb run --provider claude
   ggb run --provider deepseek --system "你是后端专家" --no-stream "设计 API"
@@ -162,6 +163,73 @@ async function doctor(args) {
   }
   console.log(result.ok ? '\n环境检查通过；带 ! 的项目是可选提醒。' : '\n环境检查未通过，请先修复 ✗ 项目。');
   return result;
+}
+
+function taskEventApiUrl(args) {
+  const raw = valueAfter(args, '--api-url', process.env.DSH_API_URL || 'http://127.0.0.1:3089/api');
+  const parsed = safeBaseUrl(raw.replace(/\/health$/, ''));
+  if (!parsed) throw new Error('工作台 API 地址无效。');
+  return parsed.endsWith('/api') ? parsed : `${parsed}/api`;
+}
+
+function parseSseBlock(block) {
+  let event = 'message';
+  const data = [];
+  for (const line of block.split(/\r?\n/)) {
+    if (line.startsWith('event:')) event = line.slice(6).trim();
+    else if (line.startsWith('data:')) data.push(line.slice(5).trimStart());
+  }
+  return { event, data: data.join('\n') };
+}
+
+async function events(args) {
+  const taskId = valueAfter(args, '--task', args.find((value, index) => index === 0 && !value.startsWith('--')) || '');
+  if (!taskId || taskId.startsWith('--')) throw new Error('请提供任务 ID，例如：ggb events <task-id>。');
+  const baseUrl = taskEventApiUrl(args);
+  const query = new URLSearchParams();
+  const after = valueAfter(args, '--after', '');
+  if (after) query.set('after', after);
+  const url = `${baseUrl}/tasks/${encodeURIComponent(taskId)}/events/stream${query.toString() ? `?${query}` : ''}`;
+  const controller = new AbortController();
+  const onSigint = () => controller.abort();
+  process.once('SIGINT', onSigint);
+  let reader;
+  try {
+    const response = await fetch(url, {
+      headers: process.env.DSH_SESSION_COOKIE ? { cookie: process.env.DSH_SESSION_COOKIE } : {},
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`工作台事件流返回 HTTP ${response.status}。`);
+    if (!response.body) throw new Error('工作台事件流没有返回可读取的响应体。');
+    reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    const once = has(args, '--once');
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let boundary;
+      while ((boundary = buffer.search(/\r?\n\r?\n/)) !== -1) {
+        const block = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary).replace(/^\r?\n\r?\n/, '');
+        const parsed = parseSseBlock(block);
+        if (parsed.event !== 'task_event' || !parsed.data) {
+          if (once && parsed.event === 'ready') return;
+          continue;
+        }
+        let item;
+        try { item = JSON.parse(parsed.data); } catch { continue; }
+        if (has(args, '--json')) process.stdout.write(`${JSON.stringify(item)}\n`);
+        else process.stdout.write(`[${item.at || item.createdAt || '-'}] ${item.type || 'event'}\n`);
+      }
+    }
+  } catch (error) {
+    if (error?.name !== 'AbortError') throw error;
+  } finally {
+    if (reader) await reader.cancel().catch(() => {});
+    process.removeListener('SIGINT', onSigint);
+  }
 }
 
 function presetFor(name) {
@@ -726,6 +794,7 @@ async function main() {
     return;
   }
   if (command === 'doctor') return doctor(args);
+  if (command === 'events') return events(args);
   if (command === 'decide') return decide(args);
   if (command === 'node') return runNode(args);
   if (command === 'rpc') return rpc(args);

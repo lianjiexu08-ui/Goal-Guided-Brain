@@ -135,6 +135,7 @@ pi 提供交互、一次性打印、JSON 事件和 RPC 模式。RPC 支持 steer
 
 - `dsh --mode json`：每行一个稳定事件，便于 CI 和 IDE。
 - `ggb rpc`：stdin/stdout JSONL，支持 `prompt`、`follow_up`、`set_model`、`session`、`ping` 和 `abort`；中止不会写入虚假的 response。
+- `ggb events`：订阅工作台任务 SSE，支持 `--after` 游标、`--once` 历史读取和 `--json` JSONL 输出。
 - `dsh --continue`、`--session`、`--fork`。
 - 事件中包含 `sessionId`、`taskId`、`provider`、`model`、`usage` 和 `workspace`，禁止输出密钥。
 

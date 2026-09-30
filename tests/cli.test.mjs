@@ -56,6 +56,20 @@ function runDoctor(args = [], extraEnv = {}) {
   });
 }
 
+function runEvents(url, args = [], extraEnv = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cli, 'events', 'fixture-task', '--api-url', url, ...args], {
+      env: { ...process.env, PATH: process.env.PATH, ...extraEnv },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '', stderr = '';
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.on('error', reject);
+    child.on('close', code => resolve({ code, stdout, stderr }));
+  });
+}
+
 function runNode(args, extraEnv = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cli, 'node', ...args], {
@@ -244,6 +258,32 @@ test('CLI emits streaming SSE chunks as they arrive', async (t) => {
   const result = await runCli(`http://127.0.0.1:${server.address().port}`, ['--provider', 'deepseek', 'hello'], '', false);
   assert.equal(result.code, 0);
   assert.equal(result.stdout, 'one two\n');
+});
+
+test('CLI events follows the workbench task stream and supports cursor recovery', async (t) => {
+  const requests = [];
+  const server = http.createServer(async (req, res) => {
+    requests.push(req.url);
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    res.write('id: 2026-09-30T00:00:00.000Z|history\nevent: task_event\ndata: {"id":"history","type":"history/test","at":"2026-09-30T00:00:00.000Z"}\n\n');
+    res.write('event: ready\ndata: {"taskId":"fixture-task","cursor":"2026-09-30T00:00:00.000Z|history"}\n\n');
+    await new Promise(resolve => setTimeout(resolve, 20));
+    if (!res.destroyed) {
+      res.write('id: 2026-09-30T00:00:01.000Z|live\nevent: task_event\ndata: {"id":"live","type":"live/test","at":"2026-09-30T00:00:01.000Z"}\n\n');
+      res.end();
+    }
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const result = await runEvents(url, ['--after', 'old-time|old-id', '--json']);
+  assert.equal(result.code, 0, result.stderr);
+  const events = result.stdout.trim().split('\n').map(line => JSON.parse(line));
+  assert.deepEqual(events.map(event => event.type), ['history/test', 'live/test']);
+  assert.equal(requests[0], '/api/tasks/fixture-task/events/stream?after=old-time%7Cold-id');
+  const once = await runEvents(url, ['--once', '--json']);
+  assert.equal(once.code, 0, once.stderr);
+  assert.deepEqual(once.stdout.trim().split('\n').map(line => JSON.parse(line)).map(event => event.type), ['history/test']);
 });
 
 test('CLI rpc exposes stable JSONL events and switches models between turns', async (t) => {
