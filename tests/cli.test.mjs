@@ -132,6 +132,38 @@ test('CLI doctor reports cross-platform runtime and service checks without expos
   assert.equal(report.checks.find(check => check.id === 'ui').status, 'pass');
 });
 
+test('CLI doctor strict mode returns a gateable status for deployment checks', async (t) => {
+  const api = http.createServer((_req, res) => {
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ status: 'ok' }));
+  });
+  const ui = http.createServer((_req, res) => {
+    res.setHeader('content-type', 'text/html');
+    res.end('<!doctype html><title>fixture</title>');
+  });
+  await Promise.all([
+    new Promise(resolve => api.listen(0, '127.0.0.1', resolve)),
+    new Promise(resolve => ui.listen(0, '127.0.0.1', resolve)),
+  ]);
+  t.after(() => { api.close(); ui.close(); });
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cli-strict-doctor-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const healthy = await runDoctor([
+    '--api-url', `http://127.0.0.1:${api.address().port}/api/health`,
+    '--ui-url', `http://127.0.0.1:${ui.address().port}/`,
+    '--strict', '--json',
+  ], { DSH_SESSION_DIR: directory, DEEPSEEK_API_KEY: 'strict-fixture-key' });
+  assert.equal(healthy.code, 0, healthy.stderr);
+  assert.equal(JSON.parse(healthy.stdout).strictOk, true);
+  const unhealthy = await runDoctor([
+    '--api-url', 'http://127.0.0.1:1/api/health',
+    '--ui-url', 'http://127.0.0.1:1/',
+    '--strict', '--json',
+  ], { DSH_SESSION_DIR: directory, DEEPSEEK_API_KEY: 'strict-fixture-key' });
+  assert.equal(unhealthy.code, 1);
+  assert.equal(JSON.parse(unhealthy.stdout).strictOk, false);
+});
+
 test('CLI doctor identifies a WSL2 environment from standard process variables', async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cli-wsl-doctor-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));

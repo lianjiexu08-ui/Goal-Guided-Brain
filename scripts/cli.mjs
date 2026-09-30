@@ -35,7 +35,7 @@ const CLI_NAME = 'ggb';
 
 const usage = `用法：
   ggb providers
-  ggb doctor [--api-url http://127.0.0.1:3089/api/health] [--ui-url http://127.0.0.1:3088/] [--json]
+  ggb doctor [--api-url http://127.0.0.1:3089/api/health] [--ui-url http://127.0.0.1:3088/] [--strict] [--json]
   ggb events <task-id> [--api-url http://127.0.0.1:3089/api] [--after <cursor>] [--once] [--json]
   ggb run --provider gemini --model gemini-2.5-flash "解释这段代码"
   echo "总结这个项目" | ggb run --provider claude
@@ -147,21 +147,29 @@ async function doctor(args) {
     await checkReachable('api', '工作台 API', apiUrl),
     await checkReachable('ui', '工作台网页', uiUrl),
   ];
+  const strict = has(args, '--strict');
+  const strictOk = checks.every(check => check.status !== 'fail' && check.status !== 'warn');
   const result = {
     ok: checks.every(check => check.status !== 'fail'),
+    strict,
+    strictOk,
     generatedAt: new Date().toISOString(),
     platform: { os: process.platform, arch: process.arch, node: process.versions.node, wsl: Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP) },
     checks,
   };
   if (has(args, '--json')) {
     process.stdout.write(`${JSON.stringify(result)}\n`);
+    if (strict && !strictOk) process.exitCode = 1;
     return result;
   }
   for (const check of checks) {
     const marker = check.status === 'pass' ? '✓' : check.status === 'fail' ? '✗' : check.status === 'warn' ? '!' : '·';
     console.log(`${marker} ${check.label}：${check.detail}`);
   }
-  console.log(result.ok ? '\n环境检查通过；带 ! 的项目是可选提醒。' : '\n环境检查未通过，请先修复 ✗ 项目。');
+  console.log(strict
+    ? (strictOk ? '\n严格环境检查通过。' : '\n严格环境检查未通过，请先修复 ✗ 或 ! 项目。')
+    : (result.ok ? '\n环境检查通过；带 ! 的项目是可选提醒。' : '\n环境检查未通过，请先修复 ✗ 项目。'));
+  if (strict && !strictOk) process.exitCode = 1;
   return result;
 }
 
