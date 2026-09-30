@@ -816,6 +816,12 @@
 .node-status-panel h3 {
   margin: 0;
 }
+.node-status-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .node-status-summary,
 .node-workspace-list,
 .node-active-list {

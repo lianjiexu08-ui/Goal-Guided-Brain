@@ -778,6 +778,44 @@ function seedTeamTemplateSource() {
   }
 }
 
+function seedNodeLifecycleFixtures() {
+  const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
+  try {
+    const now = Date.now();
+    const base = {
+      workspaces: ['default'],
+      platform: 'linux',
+      tokenHash: 'fixture-token-hash',
+    };
+    store.records.save('nodes', {
+      ...base,
+      name: 'E2E 离线节点',
+      lastSeenAt: now - 5 * 60_000,
+      status: 'online',
+    }, 'e2e-offline-node');
+    store.records.save('nodes', {
+      ...base,
+      name: 'E2E 已撤销节点',
+      tokenHash: null,
+      lastSeenAt: now,
+      status: 'revoked',
+      revokedAt: new Date(now - 60_000).toISOString(),
+    }, 'e2e-revoked-node');
+  } finally {
+    store.close();
+  }
+}
+
+function markNodeOnline(id) {
+  const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
+  try {
+    const node = store.records.get('nodes', id);
+    if (node) store.records.save('nodes', { ...node, lastSeenAt: Date.now(), status: 'online' }, id);
+  } finally {
+    store.close();
+  }
+}
+
 function sidebarLocator(page) {
   const mobile = (page.viewportSize()?.width || 1024) < 768;
   return page.locator(mobile
@@ -1267,6 +1305,38 @@ test.describe('团队招募核心流程', () => {
     const text = await dialog.innerText();
     expect(text).not.toContain('tokenHash');
     expect(text).not.toContain('node-identity.json');
+    await page.keyboard.press('Escape');
+  });
+
+  test('执行节点详情持续刷新并为撤销节点提供重新配对入口', async ({ page }) => {
+    seedNodeLifecycleFixtures();
+    await page.goto('/');
+    await clickNavigation(page, '执行节点');
+    await expect(page.getByRole('heading', { name: '执行节点' })).toBeVisible();
+
+    const offline = page.getByRole('button', { name: 'E2E 离线节点', exact: true });
+    await expect(offline).toBeVisible();
+    await offline.click();
+    let dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText('离线');
+    await expect(dialog.getByRole('button', { name: '刷新状态', exact: true })).toBeVisible();
+    await dialog.getByRole('button', { name: '刷新状态', exact: true }).click();
+    await expect(dialog).toContainText('重新运行启动命令');
+    markNodeOnline('e2e-offline-node');
+    await expect(dialog).toContainText('在线', { timeout: 7_000 });
+    await page.keyboard.press('Escape');
+
+    const revoked = page.getByRole('button', { name: 'E2E 已撤销节点', exact: true });
+    await expect(revoked).toBeVisible();
+    await revoked.click();
+    dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText('已撤销');
+    await dialog.getByRole('button', { name: '重新配对节点', exact: true }).click();
+    dialog = page.getByRole('dialog');
+    await expect(dialog.getByRole('textbox', { name: '节点名称' })).toHaveValue('E2E 已撤销节点-repaired');
+    await dialog.getByRole('button', { name: '生成配对码', exact: true }).click();
+    await expect(dialog.locator('.manage-pairing')).toHaveText(/^[a-f0-9]{32}$/);
+    await expect(dialog).not.toContainText('fixture-token-hash');
     await page.keyboard.press('Escape');
   });
 

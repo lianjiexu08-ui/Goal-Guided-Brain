@@ -3420,6 +3420,25 @@ export function Management({
       clearInterval(timer);
     };
   }, [detail?.collection, detail?.item.id]);
+  useEffect(() => {
+    if (detail?.collection !== 'nodes') return;
+    const id = detail.item.id;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const item = await api<Entity>(`nodes/${id}`);
+        if (!cancelled)
+          setDetail({ collection: 'nodes', item: { ...item, id } });
+      } catch (err) {
+        if (!cancelled) setError((err as Error).message);
+      }
+    };
+    const timer = setInterval(() => void poll(), 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [detail?.collection, detail?.item.id]);
   const act = async (path: string, body?: unknown, method = 'POST') => {
     setBusy(true);
     setError('');
@@ -3503,7 +3522,7 @@ export function Management({
   const openDetail = async (item: Entity) => {
     setDetail({ collection, item });
     if (
-      ['jobs', 'schedules', 'monitors', 'capabilities'].includes(collection)
+      ['jobs', 'nodes', 'schedules', 'monitors', 'capabilities'].includes(collection)
     ) {
       try {
         const full = await api<Entity>(`${collection}/${item.id}`);
@@ -3516,6 +3535,13 @@ export function Management({
         setError((err as Error).message);
       }
     }
+  };
+  const openPairingDialog = (name = '') => {
+    setPairDialog(true);
+    setPairName(name);
+    setPairResult(null);
+    setPairWorkspacePath('/absolute/path/to/project');
+    setPairControlUrl(typeof window !== 'undefined' ? window.location.origin : '');
   };
   const openRelatedJob = async (item: Entity) => {
     const jobId = txt(item, 'jobId');
@@ -3659,6 +3685,14 @@ export function Management({
           label="撤销节点"
           disabled={busy}
           onClick={() => setRemoving({ collection, item })}
+        />
+      )}
+      {collection === 'nodes' && status(item) === 'revoked' && (
+        <IconButton
+          icon={RefreshCw}
+          label="重新配对节点"
+          disabled={busy}
+          onClick={() => openPairingDialog(`${title(item)}-repaired`)}
         />
       )}
       {collection === 'capabilities' && (
@@ -3850,13 +3884,7 @@ export function Management({
             <button
               className="primary-button"
               disabled={busy}
-              onClick={() => {
-                setPairDialog(true);
-                setPairName('');
-                setPairResult(null);
-                setPairWorkspacePath('/absolute/path/to/project');
-                setPairControlUrl(typeof window !== 'undefined' ? window.location.origin : '');
-              }}
+              onClick={() => openPairingDialog()}
             >
               <Plus size={16} />
               配对节点
@@ -4286,6 +4314,26 @@ export function Management({
                 {detail.collection === 'nodes' && (
                   <section className="node-status-panel" aria-label="节点运行状态">
                     <h3>节点运行状态</h3>
+                    <div className="node-status-actions">
+                      <button
+                        type="button"
+                        className="text-button"
+                        disabled={busy}
+                        onClick={() => void openDetail(detail.item)}
+                      >
+                        <RefreshCw size={14} /> 刷新状态
+                      </button>
+                      {status(detail.item) === 'revoked' && (
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          disabled={busy}
+                          onClick={() => openPairingDialog(`${title(detail.item)}-repaired`)}
+                        >
+                          <Network size={14} /> 重新配对节点
+                        </button>
+                      )}
+                    </div>
                     <div className="node-status-summary">
                       <span>最近心跳：{detail.item.lastSeenAt ? time(detail.item.lastSeenAt) : '尚未上报'}</span>
                       <span>平台：{txt(detail.item, 'platform') || '未知'}</span>
