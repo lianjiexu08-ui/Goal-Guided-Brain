@@ -282,6 +282,7 @@ p {
 .team-nav-item strong, .team-nav-item small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .team-nav-item strong { color: #d7e2e2; font-size: 12px; font-weight: 580; }
 .team-nav-item small { margin-top: 3px; color: #7e959d; font-size: 10px; line-height: 1.25; }
+.team-risk-badge { display: inline-grid; min-width: 19px; height: 19px; place-items: center; padding: 0 5px; border-radius: 999px; color: #fff; background: #bf6c5e; font-size: 10px; font-weight: 700; line-height: 1; }
 .team-nav-item[data-active='true'] { background: #293d44 !important; box-shadow: inset 2px 0 #83cdb6; }
 .team-nav-dot { display: grid; width: 27px; height: 27px; flex: 0 0 27px; place-items: center; border: 1px solid #496269; border-radius: 8px; color: #8dcbb7; background: #25434a; }
 .team-nav-empty { display: flex; align-items: center; gap: 7px; width: 100%; padding: 9px 12px; border: 1px dashed #435860; border-radius: 8px; color: #91a9ad; background: transparent; font-size: 11px; }
@@ -3811,6 +3812,20 @@ h1 {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .mobile-switcher-badge {
+    display: inline-grid;
+    flex: 0 0 auto;
+    min-width: 21px;
+    height: 21px;
+    place-items: center;
+    padding: 0 5px;
+    border-radius: 999px;
+    color: #fff;
+    background: #bf6c5e;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
   }
   .mobile-switcher-option strong {
     color: #28534f;

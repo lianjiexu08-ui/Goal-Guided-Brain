@@ -1705,6 +1705,10 @@ test.describe('团队招募核心流程', () => {
   test('后台任务提供跨团队风险筛选并可回到对应团队', async ({ page }) => {
     const teams = seedRiskTeams();
     await page.goto('/');
+    const sidebar = await openMobileSidebar(page);
+    const targetNavigation = sidebar.locator('button').filter({ hasText: teams.target.name }).first();
+    await expect(targetNavigation.locator('.team-risk-badge')).toHaveText('2');
+    await expect(targetNavigation.locator('.team-risk-badge')).toHaveAttribute('aria-label', '2 项待处理');
     await clickNavigation(page, '后台任务');
     const inbox = page.getByRole('region', { name: '跨团队风险', exact: true });
     await expect(inbox).toBeVisible();

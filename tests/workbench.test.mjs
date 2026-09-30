@@ -425,6 +425,41 @@ test('team-scoped knowledge stays isolated when teams share a workspace', () => 
   }
 });
 
+test('state exposes risk counts per confirmed team for workspace switching', async () => {
+  const s = sandbox();
+  const app = createWorkbench({ ...s, requireCredential: false });
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  const request = async (route) => {
+    const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`);
+    return { status: response.status, body: await response.json() };
+  };
+  try {
+    const risky = app.store.saveTeamSpace({
+      name: '研发团队', goal: '交付代码', workspace: s.workspace,
+      pmRoleId: 'project_manager', memberRoleIds: ['project_manager', 'developer'],
+      recruitment: { phase: 'confirmed' },
+    });
+    const quiet = app.store.saveTeamSpace({
+      name: '资料团队', goal: '整理资料', workspace: s.workspace,
+      pmRoleId: 'project_manager', memberRoleIds: ['project_manager', 'assistant'],
+      recruitment: { phase: 'confirmed' },
+    });
+    const task = app.store.createTask({ role: 'project_manager', prompt: '失败的研发任务', workspace: s.workspace });
+    app.store.records.save('task-meta', { teamId: risky.id, spaceId: risky.id }, task.id);
+    app.store.updateTask(task.id, { status: 'failed', error: 'fixture failure' });
+    app.store.records.save('attention', {
+      teamId: risky.id, status: 'open', title: '需要补充验证', detail: 'fixture attention',
+    }, 'team-risk-attention');
+    const state = await request('state');
+    assert.equal(state.status, 200);
+    assert.equal(state.body.teamRiskCounts[risky.id], 2);
+    assert.equal(state.body.teamRiskCounts[quiet.id], 0);
+  } finally {
+    await app.close();
+    fs.rmSync(s.dir, { recursive: true, force: true });
+  }
+});
+
 test('running tasks become interrupted after a restart; queued work remains queued', () => {
   const s = sandbox();
   let store = new Store(s.dataDir, s.workspace);

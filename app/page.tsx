@@ -451,6 +451,7 @@ type State = {
   skillCatalog: { id: string; name: string }[];
   unreadNotificationCount: number;
   openAttentionCount: number;
+  teamRiskCounts: Record<string, number>;
   capabilities: Capability[];
   providers: Provider[];
   tasks: Task[];
@@ -2943,6 +2944,11 @@ function Workbench() {
                     <strong>{space.name}</strong>
                     <small>{space.goal || '尚未设置团队职责'}</small>
                   </span>
+                  {Number(data?.teamRiskCounts?.[space.id] || 0) > 0 && (
+                    <b className="team-risk-badge" aria-label={`${data?.teamRiskCounts?.[space.id]} 项待处理`}>
+                      {Number(data?.teamRiskCounts?.[space.id] || 0) > 9 ? '9+' : data?.teamRiskCounts?.[space.id]}
+                    </b>
+                  )}
                   {tasks.some((task) => task.spaceId === space.id && isActive(task)) && <span className="live-dot" />}
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -4777,6 +4783,11 @@ function Workbench() {
                   >
                     <Users size={17} />
                     <span><strong>{space.name}</strong><small>{space.goal || '打开团队工作空间'}</small></span>
+                    {Number(data?.teamRiskCounts?.[space.id] || 0) > 0 && (
+                      <b className="mobile-switcher-badge" aria-label={`${data?.teamRiskCounts?.[space.id]} 项待处理`}>
+                        {Number(data?.teamRiskCounts?.[space.id] || 0) > 9 ? '9+' : data?.teamRiskCounts?.[space.id]}
+                      </b>
+                    )}
                     {selectedSpaceId === space.id && isConversationView && <Check size={17} />}
                   </button>
                 )) : confirmedSpaces.length > 0 ? (

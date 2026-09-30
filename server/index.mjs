@@ -299,11 +299,41 @@ export function createWorkbench({
       total: filtered.length,
     };
   };
+  const teamRiskCounts = () => {
+    const executionRiskStatuses = new Set(['blocked', 'failed', 'interrupted', 'state_unknown', 'budget-exceeded', 'budget_exceeded']);
+    const deliveryRiskStatuses = new Set(['pending-review', 'awaiting-owner', 'rejected', 'failed']);
+    const teams = new Map(store.teamSpaces()
+      .filter((space) => space.status !== 'archived' && space.recruitment?.phase === 'confirmed')
+      .map((space) => [space.id, space]));
+    const counts = Object.fromEntries([...teams.keys()].map((id) => [id, 0]));
+    const scopeForTask = (task) => {
+      const meta = store.records.get('task-meta', task.id) || {};
+      const job = meta.jobId ? store.records.get('jobs', meta.jobId) : null;
+      const teamId = meta.spaceId || meta.teamId || job?.spaceId || job?.teamId || null;
+      return teams.has(teamId) ? teamId : null;
+    };
+    for (const task of store.tasks()) {
+      const teamId = scopeForTask(task);
+      if (!teamId) continue;
+      const delivery = store.taskDelivery(task);
+      const executionRisk = executionRiskStatuses.has(task.status) || (task.status !== 'completed' && Boolean(task.error));
+      const deliveryRisk = deliveryRiskStatuses.has(delivery.deliveryStatus);
+      if (executionRisk || deliveryRisk) counts[teamId] += 1;
+    }
+    for (const attention of store.records.list('attention')) {
+      if (['resolved', 'dismissed'].includes(attention.status)) continue;
+      const task = attention.taskId ? store.task(attention.taskId) : null;
+      const teamId = task ? scopeForTask(task) : (teams.has(attention.teamId || attention.spaceId) ? (attention.teamId || attention.spaceId) : null);
+      if (teamId) counts[teamId] += 1;
+    }
+    return counts;
+  };
   const getState = () => ({
     roles: store.roles(),
     skillCatalog: SKILLS.map(({ id, name }) => ({ id, name })),
     unreadNotificationCount: store.records.list('notifications').filter((item) => item.read !== true && !item.readAt).length,
     openAttentionCount: store.records.list('attention').filter((item) => !['resolved', 'dismissed'].includes(item.status)).length,
+    teamRiskCounts: teamRiskCounts(),
     capabilities: platform.capabilities.list().map((capability) => ({
       id: capability.id,
       name: capability.name,
