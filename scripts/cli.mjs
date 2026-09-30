@@ -37,6 +37,7 @@ const usage = `用法：
   ggb providers
   ggb doctor [--api-url http://127.0.0.1:3089/api/health] [--ui-url http://127.0.0.1:3088/] [--strict] [--json]
   ggb events <task-id> [--api-url http://127.0.0.1:3089/api] [--after <cursor>] [--once] [--json]
+  ggb events --team <team-id> [--api-url http://127.0.0.1:3089/api] [--after <cursor>] [--once] [--json]
   ggb run --provider gemini --model gemini-2.5-flash "解释这段代码"
   echo "总结这个项目" | ggb run --provider claude
   ggb run --provider deepseek --system "你是后端专家" --no-stream "设计 API"
@@ -191,13 +192,19 @@ function parseSseBlock(block) {
 }
 
 async function events(args) {
+  const teamId = valueAfter(args, '--team', '');
   const taskId = valueAfter(args, '--task', args.find((value, index) => index === 0 && !value.startsWith('--')) || '');
-  if (!taskId || taskId.startsWith('--')) throw new Error('请提供任务 ID，例如：ggb events <task-id>。');
+  if ((!taskId || taskId.startsWith('--')) && !teamId)
+    throw new Error('请提供任务 ID，或使用 --team 指定团队 ID，例如：ggb events <task-id>。');
   const baseUrl = taskEventApiUrl(args);
   const query = new URLSearchParams();
   const after = valueAfter(args, '--after', '');
   if (after) query.set('after', after);
-  const url = `${baseUrl}/tasks/${encodeURIComponent(taskId)}/events/stream${query.toString() ? `?${query}` : ''}`;
+  const resource = teamId
+    ? `teams/${encodeURIComponent(teamId)}`
+    : `tasks/${encodeURIComponent(taskId)}`;
+  const expectedEvent = teamId ? 'team_event' : 'task_event';
+  const url = `${baseUrl}/${resource}/events/stream${query.toString() ? `?${query}` : ''}`;
   const controller = new AbortController();
   const onSigint = () => controller.abort();
   process.once('SIGINT', onSigint);
@@ -222,7 +229,7 @@ async function events(args) {
         const block = buffer.slice(0, boundary);
         buffer = buffer.slice(boundary).replace(/^\r?\n\r?\n/, '');
         const parsed = parseSseBlock(block);
-        if (parsed.event !== 'task_event' || !parsed.data) {
+        if (parsed.event !== expectedEvent || !parsed.data) {
           if (once && parsed.event === 'ready') return;
           continue;
         }

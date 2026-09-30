@@ -70,6 +70,20 @@ function runEvents(url, args = [], extraEnv = {}) {
   });
 }
 
+function runTeamEvents(url, args = [], extraEnv = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cli, 'events', '--team', 'fixture-team', '--api-url', url, ...args], {
+      env: { ...process.env, PATH: process.env.PATH, ...extraEnv },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '', stderr = '';
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.on('error', reject);
+    child.on('close', code => resolve({ code, stdout, stderr }));
+  });
+}
+
 function runNode(args, extraEnv = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cli, 'node', ...args], {
@@ -316,6 +330,32 @@ test('CLI events follows the workbench task stream and supports cursor recovery'
   const once = await runEvents(url, ['--once', '--json']);
   assert.equal(once.code, 0, once.stderr);
   assert.deepEqual(once.stdout.trim().split('\n').map(line => JSON.parse(line)).map(event => event.type), ['history/test']);
+});
+
+test('CLI events can follow a team activity stream with cursor recovery', async (t) => {
+  const requests = [];
+  const server = http.createServer(async (req, res) => {
+    requests.push(req.url);
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    res.write('id: 2026-09-30T00:00:00.000Z|message:history\nevent: team_event\ndata: {"id":"message:history","type":"message","content":"团队历史消息","at":"2026-09-30T00:00:00.000Z"}\n\n');
+    res.write('event: ready\ndata: {"spaceId":"fixture-team","cursor":"2026-09-30T00:00:00.000Z|message:history"}\n\n');
+    await new Promise(resolve => setTimeout(resolve, 20));
+    if (!res.destroyed) {
+      res.write('id: 2026-09-30T00:00:01.000Z|message:live\nevent: team_event\ndata: {"id":"message:live","type":"message","content":"团队实时消息","at":"2026-09-30T00:00:01.000Z"}\n\n');
+      res.end();
+    }
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const result = await runTeamEvents(url, ['--after', 'old-time|old-id', '--json']);
+  assert.equal(result.code, 0, result.stderr);
+  const events = result.stdout.trim().split('\n').map(line => JSON.parse(line));
+  assert.deepEqual(events.map(event => event.content), ['团队历史消息', '团队实时消息']);
+  assert.equal(requests[0], '/api/teams/fixture-team/events/stream?after=old-time%7Cold-id');
+  const once = await runTeamEvents(url, ['--once', '--json']);
+  assert.equal(once.code, 0, once.stderr);
+  assert.deepEqual(once.stdout.trim().split('\n').map(line => JSON.parse(line)).map(event => event.content), ['团队历史消息']);
 });
 
 test('CLI rpc exposes stable JSONL events and switches models between turns', async (t) => {

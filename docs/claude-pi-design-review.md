@@ -135,11 +135,11 @@ pi 提供交互、一次性打印、JSON 事件和 RPC 模式。RPC 支持 steer
 
 - `dsh --mode json`：每行一个稳定事件，便于 CI 和 IDE。
 - `ggb rpc`：stdin/stdout JSONL，支持 `prompt`、`follow_up`、`set_model`、`session`、`ping` 和 `abort`；中止不会写入虚假的 response。
-- `ggb events`：订阅工作台任务 SSE，支持 `--after` 游标、`--once` 历史读取和 `--json` JSONL 输出。
+- `ggb events`：订阅工作台任务或团队 SSE，任务使用位置参数、团队使用 `--team`，支持 `--after` 游标、`--once` 历史读取和 `--json` JSONL 输出。
 - `dsh --continue`、`--session`、`--fork`。
 - 事件中包含 `sessionId`、`taskId`、`provider`、`model`、`usage` 和 `workspace`，禁止输出密钥。
 
-第一版仍保留在 CLI 本地 Agent Core 中；网页任务详情现在通过 `/api/tasks/:id/events/stream` 消费带游标的 SSE 实时事件流，团队空间通过 `/api/teams/:id/events/stream` 消费消息、委派和执行事件，并保留对应的游标接口作为断线恢复和兼容回退。后台任务和 CLI 仍需要进一步统一到同一条 Agent Core 事件总线，并补齐 `steer`、`taskId`、usage 和 workspace 字段。
+第一版仍保留在 CLI 本地 Agent Core 中；网页任务详情现在通过 `/api/tasks/:id/events/stream` 消费带游标的 SSE 实时事件流，团队空间通过 `/api/teams/:id/events/stream` 消费消息、委派和执行事件，CLI 也可以用 `ggb events --team` 订阅同一条团队流，并保留对应的游标接口作为断线恢复和兼容回退。后台任务和 CLI 仍需要进一步统一到同一条 Agent Core 事件总线，并补齐 `steer`、`taskId`、usage 和 workspace 字段。
 
 ## 不建议照搬
 

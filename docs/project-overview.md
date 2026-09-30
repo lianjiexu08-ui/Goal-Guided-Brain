@@ -278,7 +278,7 @@ ggb node --control-url https://workbench.example.com --workspace project=/absolu
 ggb chat --provider claude --session personal
 ```
 
-交互中支持 `/new`、`/model [供应商/]模型`、`/session`、`/help` 和 `/exit`。会话以 JSONL 保存，`--continue` 可以恢复最近会话；密钥不会写入会话文件。`ggb rpc` 使用 stdin/stdout JSONL，支持 `prompt`、`follow_up`、`set_model`、`abort`、`session` 和 `ping`，输出 `turn_start`、`text_delta`、`turn_end`、`model_changed`、`aborted` 和 `error` 等稳定事件，适合 IDE、脚本和其他客户端接入。`ggb events <task-id>` 订阅工作台任务 SSE，`--after` 用于断线恢复，`--once --json` 适合脚本读取历史事件。
+交互中支持 `/new`、`/model [供应商/]模型`、`/session`、`/help` 和 `/exit`。会话以 JSONL 保存，`--continue` 可以恢复最近会话；密钥不会写入会话文件。`ggb rpc` 使用 stdin/stdout JSONL，支持 `prompt`、`follow_up`、`set_model`、`abort`、`session` 和 `ping`，输出 `turn_start`、`text_delta`、`turn_end`、`model_changed`、`aborted` 和 `error` 等稳定事件，适合 IDE、脚本和其他客户端接入。`ggb events <task-id>` 订阅工作台任务 SSE，`ggb events --team <team-id>` 订阅团队消息、委派和执行 SSE；两者都支持 `--after` 用于断线恢复，`--once --json` 适合脚本读取历史事件。
 
 ### 结构化决策
 
@@ -375,7 +375,7 @@ API 默认监听 `127.0.0.1:3089`，网页默认监听 `127.0.0.1:3088`。除健
 | `POST` | `/api/team-templates/:id/apply` | 用模板创建全新团队，并重新确认名称、目标、工作区和协作边界。 |
 | `GET` | `/api/teams/:id/timeline` | 按 `limit` 和 `before=时间\|记录ID` 游标加载更早的团队统一时间线。 |
 | `GET` | `/api/teams/:id/events` | 按 `after=时间\|记录ID` 增量读取团队消息、任务和执行事件；新连接默认回放最近窗口。`/api/spaces` 和 `/api/chats` 是兼容别名。 |
-| `GET` | `/api/teams/:id/events/stream` | 以 SSE 推送团队消息、消息状态回写和任务执行事件；先回放当前窗口，再推送后续事件，支持 `after` 游标断线恢复。 |
+| `GET` | `/api/teams/:id/events/stream` | 以 SSE 推送团队消息、消息状态回写和任务执行事件；先回放当前窗口，再推送后续事件，支持 `after` 游标断线恢复；CLI 可用 `ggb events --team` 订阅。 |
 | `GET` | `/api/teams/:id/recruitment` | 按 `after=时间\|记录ID` 增量读取招募会话消息，支持多设备继续同一会话。 |
 | `GET` | `/api/drafts` | 按 `spaceId`、`role` 查询参数读取服务端草稿、附件引用、版本和更新时间。 |
 | `PUT` | `/api/drafts` | 按请求体中的 `spaceId`、`roleId` 写入草稿；带上当前 `revision` 做乐观并发校验，版本过期返回 `409` 和远端草稿供三方合并。 |
@@ -461,7 +461,7 @@ npm test
 npm run build
 ```
 
-测试使用临时数据库、本地确定性模型和 MCP fixture，不调用付费模型。覆盖加密凭据、协议认证、模型路由、模型运行指标、能力绑定可见性、能力风险摘要、能力启用确认与审计、Team Charter 能力绑定确认与审计、工具网关、任务租约、消息幂等、团队招募、团队模板复制、多设备招募会话游标、服务端草稿版本、多设备草稿自动合并与冲突选择、跨团队协作白名单、团队自治暂停/恢复、团队自治限额、团队专属知识隔离、工作树、定时任务、定时任务失败通知、任务介入事项持久通知与已读状态、恢复、任务组归档/恢复、任务中心按团队/状态筛选、CLI 节点 bootstrap、`ggb node` 统一入口、`ggb rpc` JSONL 事件流与中止、`ggb events` SSE 任务事件订阅、`ggb doctor --strict` 部署门禁、任务事件游标、任务与团队 SSE 实时流、网页增量消费和断线回放、远程节点在线/执行状态和断线恢复事件；当前后端套件为 179/179，桌面/移动浏览器基线为 72 个运行，并包含手机端团队上下文、支持按名称/职责搜索的快速切换团队、底部主导航、导航抽屉、触控文件入口、底部设置面板、模型指标卡片无横向溢出、团队实时消息回归、执行节点配对向导、节点详情状态刷新和撤销后重新配对回归。
+测试使用临时数据库、本地确定性模型和 MCP fixture，不调用付费模型。覆盖加密凭据、协议认证、模型路由、模型运行指标、能力绑定可见性、能力风险摘要、能力启用确认与审计、Team Charter 能力绑定确认与审计、工具网关、任务租约、消息幂等、团队招募、团队模板复制、多设备招募会话游标、服务端草稿版本、多设备草稿自动合并与冲突选择、跨团队协作白名单、团队自治暂停/恢复、团队自治限额、团队专属知识隔离、工作树、定时任务、定时任务失败通知、任务介入事项持久通知与已读状态、恢复、任务组归档/恢复、任务中心按团队/状态筛选、CLI 节点 bootstrap、`ggb node` 统一入口、`ggb rpc` JSONL 事件流与中止、`ggb events` 任务和团队 SSE 订阅、`ggb doctor --strict` 部署门禁、任务事件游标、任务与团队 SSE 实时流、网页增量消费和断线回放、远程节点在线/执行状态和断线恢复事件；当前后端套件为 180/180，桌面/移动浏览器基线为 72 个运行，并包含手机端团队上下文、支持按名称/职责搜索的快速切换团队、底部主导航、导航抽屉、触控文件入口、底部设置面板、模型指标卡片无横向溢出、团队实时消息回归、执行节点配对向导、节点详情状态刷新和撤销后重新配对回归。
 
 ### 每轮迭代要求
 
@@ -506,7 +506,7 @@ https://github.com/lianjiexu08-ui/Goal-Guided-Brain.git
 
 ### 中期：统一 Agent Core
 
-- 让网页、CLI、后台任务共享同一事件流和上下文压缩策略；网页现在已经通过任务级和团队级 SSE 消费增量事件，CLI 已能订阅任务事件，下一步把团队事件游标接入 `ggb events` 并统一 CLI 会话和结构化招募字段。
+- 让网页、CLI、后台任务共享同一事件流和上下文压缩策略；网页和 CLI 现在已经通过任务级、团队级 SSE 消费增量事件，下一步把团队事件游标接入更完整的 `ggb events` 过滤与后台任务通知，并统一 CLI 会话和结构化招募字段。
 - 支持分支会话、任务恢复和项目级工作规则。
 - 为每个工具提供参数预览、审批、结果复核和可重放记录。
 - 扩展团队模板、团队复制和按项目保存默认成员组合：当前已支持保存已确认团队的配置模板，并在复制时隔离历史、任务、招募会话、草稿和附件；后续补充按项目的模板目录与高风险能力逐项确认。
