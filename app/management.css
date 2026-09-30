@@ -257,6 +257,58 @@
   .model-metrics-summary div:last-child {
     border-bottom: 0;
   }
+  .model-metrics-table-wrap {
+    overflow: visible;
+  }
+  .model-metrics-table {
+    display: block;
+    min-width: 0;
+  }
+  .model-metrics-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .model-metrics-table tbody {
+    display: grid;
+    gap: 10px;
+  }
+  .model-metrics-table tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 14px;
+    padding: 13px;
+    border: 1px solid #e0e9e5;
+    border-radius: 10px;
+    background: #fff;
+  }
+  .model-metrics-table td {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    white-space: normal;
+    line-height: 1.35;
+  }
+  .model-metrics-table td::before {
+    content: attr(data-label);
+    color: #80908f;
+    font-size: 10px;
+    line-height: 1.3;
+  }
+  .model-metrics-table td:first-child,
+  .model-metrics-table td:nth-child(9) {
+    grid-column: 1 / -1;
+  }
+  .model-metrics-table td strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 .manage-row {
   padding: 16px 0;

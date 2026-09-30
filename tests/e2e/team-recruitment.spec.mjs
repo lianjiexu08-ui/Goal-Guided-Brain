@@ -1600,6 +1600,11 @@ test.describe('团队招募核心流程', () => {
     await expect(panel.getByTestId('model-metrics-row').filter({ hasText: 'e2e-alpha-model' })).toBeVisible();
     await expect(panel.getByTestId('model-metrics-row').filter({ hasText: 'e2e-beta-model' })).toBeVisible();
     await expect(panel.getByTestId('model-metrics-row').filter({ hasText: 'e2e-beta-model' }).getByText('未知', { exact: true })).toBeVisible();
+    const metricsViewport = await panel.locator('.model-metrics-table-wrap').evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    }));
+    expect(metricsViewport.scrollWidth).toBeLessThanOrEqual(metricsViewport.clientWidth + 1);
     await panel.getByRole('combobox', { name: '指标团队', exact: true }).selectOption(teams.alpha.id);
     await expect(panel.getByTestId('model-metrics-row').filter({ hasText: 'e2e-alpha-model' })).toHaveCount(1);
     await expect(panel.getByTestId('model-metrics-row').filter({ hasText: 'e2e-alpha-model' })).toBeVisible();

@@ -392,16 +392,16 @@ function ModelMetricsPanel() {
           <table className="model-metrics-table">
             <thead><tr><th>供应商 / 模型</th><th>范围</th><th>尝试</th><th>完成 / 失败</th><th>回退</th><th>平均耗时</th><th>Token</th><th>费用</th><th>路由解释</th><th>交付</th></tr></thead>
             <tbody>{metrics.items.map((item) => <tr key={`${item.providerId || 'unknown'}:${item.model || 'unknown'}`} data-testid="model-metrics-row">
-              <td><strong>{item.providerName}</strong><small>{item.model || '未识别模型'}</small></td>
-              <td><small>{item.teamName}</small><small>{item.roleName}</small></td>
-              <td>{metricNumber(item.attempts)}<small>{metricNumber(item.logicalTasks)} 个逻辑任务</small></td>
-              <td>{metricNumber(item.completed)} / {metricNumber(item.failed)}<small>验收 {metricNumber(item.accepted)}</small></td>
-              <td>{metricNumber(item.fallbacks)}<small>接收 {metricNumber(item.fallbackTargets)}</small></td>
-              <td>{item.avgLatencyMs === null ? '-' : `${metricNumber(item.avgLatencyMs)} ms`}<small>p50 {item.p50LatencyMs === null ? '-' : `${metricNumber(item.p50LatencyMs)} ms`}</small></td>
-              <td>{metricNumber(item.totalTokens)}<small>输入 {metricNumber(item.inputTokens)} · 输出 {metricNumber(item.outputTokens)}</small></td>
-              <td>{item.costKnown && item.cost !== null ? `$${item.cost.toFixed(4)}` : '未知'}</td>
-              <td><small>{metricRouteExplanation(item) || '未记录候选决策'}</small></td>
-              <td><small>验证 {metricNumber(item.verificationPassed)}</small><small>待处理 {metricNumber(item.pending)}</small></td>
+              <td data-label="供应商 / 模型"><strong>{item.providerName}</strong><small>{item.model || '未识别模型'}</small></td>
+              <td data-label="范围"><small>{item.teamName}</small><small>{item.roleName}</small></td>
+              <td data-label="尝试">{metricNumber(item.attempts)}<small>{metricNumber(item.logicalTasks)} 个逻辑任务</small></td>
+              <td data-label="完成 / 失败">{metricNumber(item.completed)} / {metricNumber(item.failed)}<small>验收 {metricNumber(item.accepted)}</small></td>
+              <td data-label="回退">{metricNumber(item.fallbacks)}<small>接收 {metricNumber(item.fallbackTargets)}</small></td>
+              <td data-label="平均耗时">{item.avgLatencyMs === null ? '-' : `${metricNumber(item.avgLatencyMs)} ms`}<small>p50 {item.p50LatencyMs === null ? '-' : `${metricNumber(item.p50LatencyMs)} ms`}</small></td>
+              <td data-label="Token">{metricNumber(item.totalTokens)}<small>输入 {metricNumber(item.inputTokens)} · 输出 {metricNumber(item.outputTokens)}</small></td>
+              <td data-label="费用">{item.costKnown && item.cost !== null ? `$${item.cost.toFixed(4)}` : '未知'}</td>
+              <td data-label="路由解释"><small>{metricRouteExplanation(item) || '未记录候选决策'}</small></td>
+              <td data-label="交付"><small>验证 {metricNumber(item.verificationPassed)}</small><small>待处理 {metricNumber(item.pending)}</small></td>
             </tr>)}</tbody>
           </table>
         </div>
