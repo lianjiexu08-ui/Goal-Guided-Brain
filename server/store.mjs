@@ -89,6 +89,7 @@ export class Store {
     this.db = new DatabaseSync(path.join(dir, 'workspace.sqlite'));
     migrate(this.db, dir);
     this.records = new Records(this.db);
+    this.onTaskUpdate = null;
     this.db
       .exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL);
@@ -926,7 +927,8 @@ export class Store {
     const entries = Object.entries(changes).filter(([key]) =>
       allowed.includes(key),
     );
-    if (!entries.length) return;
+    if (!entries.length) return this.task(id);
+    const previous = this.task(id);
     this.db
       .prepare(
         `UPDATE tasks SET ${entries.map(([key]) => `${key}=?`).join(',')},updatedAt=? WHERE id=?`,
@@ -935,9 +937,12 @@ export class Store {
         ...entries.map(([key, v]) =>
           key === 'knowledgeIds' ? JSON.stringify(v) : v,
         ),
-        new Date().toISOString(),
+        this.records.nextTimestamp(),
         id,
       );
+    const saved = this.task(id);
+    try { this.onTaskUpdate?.({ task: saved, previous }); } catch {}
+    return saved;
   }
   createTask({
     role,

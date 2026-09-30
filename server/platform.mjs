@@ -60,6 +60,11 @@ export function createPlatform({
     try { previousRecordObserver?.(change); } catch {}
     publishTeamRecord(change);
   };
+  const previousTaskObserver = store.onTaskUpdate;
+  store.onTaskUpdate = (change) => {
+    try { previousTaskObserver?.(change); } catch {}
+    publishTeamTask(change);
+  };
   // A task is claimed before its isolated workspace and runtime are ready.
   // Keep those launch promises visible so shutdown cannot close SQLite while
   // a launch is still writing its snapshot or attachment metadata.
@@ -534,6 +539,31 @@ export function createPlatform({
     if (!teamId) return;
     const event = teamTimelineEvent(change.collection, change.record);
     if (event) publishTeamEvent(teamId, { ...event, teamId });
+  }
+  function publishTeamTask(change) {
+    const task = change?.task;
+    const teamId = task ? teamForTask(task.id) : null;
+    if (!task || !teamId) return;
+    const meta = records.get('task-meta', task.id) || {};
+    const delivery = store.taskDelivery(task);
+    const artifacts = records.list('artifacts').filter((artifact) => artifact.taskId === task.id);
+    publishTeamEvent(teamId, {
+      id: `task:${task.id}`,
+      type: 'task',
+      at: task.updatedAt || task.createdAt || nowIso(),
+      taskId: task.id,
+      role: task.role,
+      title: task.title,
+      status: task.status,
+      result: String(task.result || '').slice(0, 360),
+      error: String(task.error || '').slice(0, 360),
+      workspaceMode: meta.workspaceMode || null,
+      artifactCount: artifacts.length,
+      verificationStatus: delivery.hasVerificationEvidence ? delivery.acceptanceStatus : null,
+      deliveryStatus: delivery.deliveryStatus,
+      acceptanceDecision: delivery.acceptanceDecision,
+      teamId,
+    });
   }
   function recordEvent(task, event, secrets = []) {
     const clean = JSON.parse(redact(JSON.stringify(event), secrets));
@@ -2183,6 +2213,7 @@ export function createPlatform({
       taskEventSubscribers.clear();
       teamEventSubscribers.clear();
       records.onSave = previousRecordObserver;
+      store.onTaskUpdate = previousTaskObserver;
       workspaces.close();
       vault.lock();
       releaseControl();

@@ -230,6 +230,10 @@ test('team event stream replays activity and pushes later messages', async (t) =
   const attention = await resumed.readUntil(/live-attention/);
   assert.match(attention, /event: team_event/);
   assert.match(attention, /"type":"team-update"/);
+  app.store.updateTask(task.id, { status: 'failed', error: '实时状态更新 fixture' });
+  const taskUpdate = await resumed.readUntil(/实时状态更新 fixture/);
+  assert.match(taskUpdate, /event: team_event/);
+  assert.match(taskUpdate, /"type":"task"/);
   resumed.request.destroy();
   resumed.response.destroy();
   assert.equal((await request('spaces/missing-team/events')).status, 404);
