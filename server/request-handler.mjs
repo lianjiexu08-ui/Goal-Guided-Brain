@@ -305,6 +305,8 @@ export function createRequestHandler({
         if (parts[2]) {
           const space = store.teamSpace(parts[2]);
           if (!space) return send(404, { error: '团队空间不存在。' });
+          if (parts[3] === 'plan' && !parts[4] && req.method === 'GET') return send(200, store.teamPlan(space.id));
+          if (parts[3] === 'plan' && !parts[4] && req.method === 'PUT') return send(200, store.saveTeamPlan(space.id, body));
           if (req.method === 'GET' && !parts[3]) {
             const tasks = store
               .tasks()

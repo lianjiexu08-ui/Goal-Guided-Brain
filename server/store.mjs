@@ -248,6 +248,89 @@ export class Store {
     const space = this.records.get('spaces', id);
     return space ? this.normalizeTeamSpace(space) : null;
   }
+  defaultTeamPlan(spaceId) {
+    const space = this.teamSpace(spaceId);
+    if (!space) return null;
+    return {
+      id: space.id,
+      teamId: space.id,
+      version: 1,
+      status: 'active',
+      summary: space.goal,
+      milestones: [],
+      revision: 0,
+      createdAt: null,
+      updatedAt: null,
+    };
+  }
+  teamPlan(spaceId) {
+    if (!this.teamSpace(spaceId)) return null;
+    return this.records.get('team-plans', spaceId) || this.defaultTeamPlan(spaceId);
+  }
+  saveTeamPlan(spaceId, input = {}) {
+    const space = this.teamSpace(spaceId);
+    if (!space) throw new Error('团队空间不存在。');
+    if (space.status === 'archived') throw new Error('归档团队不能编辑计划。');
+    const existing = this.records.get('team-plans', spaceId) || {};
+    const status = input.status ?? existing.status ?? 'active';
+    if (!['active', 'paused', 'completed'].includes(status))
+      throw new Error('团队计划状态无效。');
+    const summary = String(input.summary ?? existing.summary ?? space.goal).trim();
+    if (!summary || summary.length > 2000) throw new Error('团队计划说明无效。');
+    const source = Array.isArray(input.milestones)
+      ? input.milestones
+      : (Array.isArray(existing.milestones) ? existing.milestones : []);
+    if (source.length > 40) throw new Error('团队里程碑最多 40 项。');
+    const milestones = source.map((item, index) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item))
+        throw new Error('团队里程碑格式无效。');
+      const title = String(item.title ?? '').trim();
+      if (!title || title.length > 160) throw new Error('里程碑标题无效。');
+      const description = String(item.description ?? '').trim();
+      if (description.length > 1000) throw new Error('里程碑说明不能超过 1000 个字符。');
+      const milestoneStatus = item.status ?? 'planned';
+      if (!['planned', 'active', 'blocked', 'completed'].includes(milestoneStatus))
+        throw new Error('里程碑状态无效。');
+      const dueAt = item.dueAt ? String(item.dueAt).trim().slice(0, 40) : null;
+      const ownerRoleId = item.ownerRoleId ? String(item.ownerRoleId).trim().slice(0, 160) : null;
+      return {
+        id: String(item.id || randomUUID()).slice(0, 80),
+        title,
+        description,
+        status: milestoneStatus,
+        dueAt,
+        ownerRoleId,
+        taskIds: Array.isArray(item.taskIds)
+          ? [...new Set(item.taskIds.filter((value) => typeof value === 'string').slice(0, 40))]
+          : [],
+        order: Number.isSafeInteger(item.order) ? item.order : index,
+        completedAt: milestoneStatus === 'completed'
+          ? (item.completedAt || new Date().toISOString())
+          : null,
+      };
+    });
+    milestones.sort((a, b) => a.order - b.order);
+    const expectedRevision = existing.revision && input.revision !== undefined
+      ? input.revision
+      : undefined;
+    const saved = this.records.save('team-plans', {
+      ...existing,
+      id: spaceId,
+      teamId: spaceId,
+      version: 1,
+      status,
+      summary,
+      milestones,
+    }, spaceId, expectedRevision);
+    if (summary !== space.goal) {
+      this.saveTeamSpace({
+        ...space,
+        goal: summary,
+        purpose: space.purpose === space.goal ? summary : space.purpose,
+      }, space.id);
+    }
+    return saved;
+  }
   teamTemplates() {
     return this.records.list('team-templates').map((template) => this.normalizeTeamTemplate(template));
   }

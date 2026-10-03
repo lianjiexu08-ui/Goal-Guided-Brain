@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { CrossTeamTimeline } from './team-overview';
 import { TeamCollaborationConsole } from './team-collaboration-console';
+import { TeamPlan } from './team-plan';
 import { Choice } from './choice';
 import { assistantIcons } from '../assistant-editor';
 import type { Task, TeamSpace, TeamTimelineItem } from './model';
@@ -291,6 +292,11 @@ export function TeamActivity({
           onChanged={refresh}
         />
       )}
+      <TeamPlan
+        key={`team-plan:${teamSpace?.id || 'none'}`}
+        teamSpace={teamSpace}
+        onChanged={refresh}
+      />
       <div className="team-grid">
         <section className="team-chat-panel">
           <div className="team-chat-head">

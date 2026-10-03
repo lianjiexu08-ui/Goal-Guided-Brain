@@ -593,6 +593,76 @@ test('team knowledge freshness becomes an actionable risk and clears after revie
   }
 });
 
+test('team plan persists a goal and milestone progress per team', async () => {
+  const s = sandbox();
+  const app = createWorkbench({ ...s, requireCredential: false });
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  const request = async (route, body, method = 'GET') => {
+    const response = await fetch(
+      `http://127.0.0.1:${app.server.address().port}/api/${route}`,
+      {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      },
+    );
+    return { status: response.status, body: await response.json() };
+  };
+  try {
+    const team = app.store.saveTeamSpace({
+      name: '交付计划团队',
+      goal: '把第一版交付到可验证状态',
+      workspace: s.workspace,
+      pmRoleId: 'project_manager',
+      memberRoleIds: ['project_manager', 'developer'],
+      recruitment: { phase: 'confirmed' },
+    });
+    const initial = await request(`spaces/${team.id}/plan`);
+    assert.equal(initial.status, 200);
+    assert.equal(initial.body.teamId, team.id);
+    assert.equal(initial.body.revision, 0);
+    const saved = await request(`spaces/${team.id}/plan`, {
+      revision: initial.body.revision,
+      summary: '完成首个可验证交付',
+      milestones: [
+        { id: 'spec', title: '明确验收标准', status: 'completed', order: 0 },
+        { id: 'build', title: '完成实现与测试', status: 'active', order: 1 },
+      ],
+    }, 'PUT');
+    assert.equal(saved.status, 200);
+    assert.equal(saved.body.revision, 1);
+    assert.equal(saved.body.milestones[0].completedAt !== null, true);
+    assert.equal((await request(`spaces/${team.id}`, undefined, 'GET')).body.goal, '完成首个可验证交付');
+    const conflict = await request(`spaces/${team.id}/plan`, {
+      revision: initial.body.revision,
+      summary: '旧版本覆盖',
+      milestones: [],
+    }, 'PUT');
+    assert.equal(conflict.status, 400);
+    assert.match(conflict.body.error, /记录已更新/);
+    const fetched = await request(`spaces/${team.id}/plan`);
+    assert.equal(fetched.body.summary, '完成首个可验证交付');
+    assert.deepEqual(fetched.body.milestones.map((item) => item.status), ['completed', 'active']);
+    assert.equal((await request(`spaces/${team.id}/plan`, {
+      revision: fetched.body.revision,
+      status: 'completed',
+      summary: fetched.body.summary,
+      milestones: fetched.body.milestones.map((item) => ({ ...item, status: 'completed' })),
+    }, 'PUT')).body.status, 'completed');
+    await request(`spaces/${team.id}/archive`, {}, 'POST');
+    const archivedPlan = await request(`spaces/${team.id}/plan`, {
+      revision: fetched.body.revision + 1,
+      summary: '归档后不应修改',
+      milestones: [],
+    }, 'PUT');
+    assert.equal(archivedPlan.status, 400);
+    assert.match(archivedPlan.body.error, /归档团队不能编辑计划/);
+  } finally {
+    await app.close();
+    fs.rmSync(s.dir, { recursive: true, force: true });
+  }
+});
+
 test('running tasks become interrupted after a restart; queued work remains queued', () => {
   const s = sandbox();
   let store = new Store(s.dataDir, s.workspace);
