@@ -669,6 +669,48 @@ test.describe('团队运营与协作回归', () => {
     ).toBeVisible();
   });
 
+  test('知识库明确标记过期版本，避免用户误以为仍会注入新任务', async ({
+    page,
+  }) => {
+    const teams = seedTeamKnowledge();
+    await page.goto('/');
+    const created = await page.evaluate(async (teamId) => {
+      const response = await fetch('/api/knowledge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: '已过期的发布约定',
+          content: '这条知识只能用于历史追溯。',
+          scope: 'team',
+          teamId,
+          state: 'confirmed',
+          source: '旧版运维评审',
+          expiresAt: '2000-01-01T00:00:00.000Z',
+        }),
+      });
+      return { status: response.status, body: await response.json() };
+    }, teams.development.id);
+    expect(created.status).toBe(200);
+    await openMobileSidebar(page);
+    await sidebarLocator(page)
+      .locator('button')
+      .filter({ hasText: teams.development.name })
+      .first()
+      .click({ force: true });
+    await expect(
+      page.getByRole('heading', { name: teams.development.name }),
+    ).toBeVisible();
+    await clickNavigation(page, '知识库');
+    const card = page
+      .locator('.knowledge-card-wrapper')
+      .filter({ hasText: '已过期的发布约定' });
+    await expect(card).toHaveCount(1);
+    await expect(
+      card.getByText('已过期 · 不会自动注入', { exact: true }),
+    ).toBeVisible();
+    await expect(card.getByText('v1', { exact: false })).toBeVisible();
+  });
+
   test('助手编辑器显示能力兼容状态和现有绑定范围', async ({ page }) => {
     const fixture = seedCapabilityBinding();
     await page.goto('/');

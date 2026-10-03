@@ -366,6 +366,66 @@ test('knowledge retrieval isolates role and project, preserves sources, and expo
   }
 });
 
+test('knowledge versions keep task references and expired entries out of new context', () => {
+  const s = sandbox();
+  const store = new Store(s.dataDir, s.workspace);
+  try {
+    const first = store.saveKnowledge({
+      title: '发布约定',
+      content: '先执行灰度发布。',
+      scope: 'project',
+      state: 'confirmed',
+      source: '运维评审',
+      expiresAt: '2999-01-01T00:00:00.000Z',
+    });
+    const oldTask = store.createTask({
+      role: 'developer',
+      prompt: '整理发布约定',
+      workspace: s.workspace,
+    });
+    store.prepareContext(oldTask);
+    const oldSnapshot = store.task(oldTask.id);
+    assert.equal(oldSnapshot.knowledgeRefs[0].version, 1);
+
+    const second = store.saveKnowledge(
+      {
+        ...first,
+        content: '先执行灰度发布，再验证回滚。',
+        expiresAt: '2999-02-01T00:00:00.000Z',
+      },
+      first.id,
+    );
+    assert.equal(second.version, 2);
+    assert.equal(store.task(oldTask.id).knowledgeRefs[0].version, 1);
+    const history = store.records
+      .list('knowledge-history')
+      .filter((entry) => entry.knowledgeId === first.id);
+    assert.deepEqual(history.map((entry) => entry.version), [2, 1]);
+
+    const expired = store.saveKnowledge({
+      title: '过期发布约定',
+      content: '这条不能进入新任务。',
+      scope: 'project',
+      state: 'confirmed',
+      source: '旧评审',
+      expiresAt: '2000-01-01T00:00:00.000Z',
+    });
+    assert.equal(expired.expired, true);
+    const freshTask = store.createTask({
+      role: 'developer',
+      prompt: '整理发布约定',
+      workspace: s.workspace,
+    });
+    const context = store.prepareContext(freshTask);
+    assert.match(context, /再验证回滚/);
+    assert.doesNotMatch(context, /这条不能进入新任务/);
+    assert.deepEqual(store.task(freshTask.id).knowledgeRefs.map((ref) => ref.version), [2]);
+  } finally {
+    store.close();
+    fs.rmSync(s.dir, { recursive: true, force: true });
+  }
+});
+
 test('team-scoped knowledge stays isolated when teams share a workspace', () => {
   const s = sandbox();
   const store = new Store(s.dataDir, s.workspace, { seedProjectManager: true });

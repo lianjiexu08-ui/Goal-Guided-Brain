@@ -3,6 +3,7 @@
 import {
   BookOpen,
   FileText,
+  CalendarClock,
   Pencil,
   Plus,
   Search,
@@ -18,6 +19,10 @@ export type KnowledgeRecord = {
   state: string;
   source: string;
   updatedAt: string;
+  version?: number;
+  expiresAt?: string | null;
+  expired?: boolean;
+  expiresSoon?: boolean;
   projectPath: string;
   teamId?: string | null;
 };
@@ -76,6 +81,12 @@ export function KnowledgeCollection({
         .toLowerCase()
         .includes(search.toLowerCase()),
     );
+  const expiryLabel = (item: KnowledgeRecord) => {
+    if (item.expired) return '已过期 · 不会自动注入';
+    if (item.expiresSoon && item.expiresAt)
+      return `即将过期 · ${formatTime(item.expiresAt)}`;
+    return item.expiresAt ? `复核至 ${formatTime(item.expiresAt)}` : '长期有效';
+  };
 
   return (
     <main className="collection-page">
@@ -185,7 +196,20 @@ export function KnowledgeCollection({
                   >
                     {item.state === 'confirmed' ? '已确认' : '待确认草稿'}
                   </span>
-                  <span>{formatTime(item.updatedAt)}</span>
+                  <span
+                    className={
+                      item.expired
+                        ? 'knowledge-expired'
+                        : item.expiresSoon
+                          ? 'knowledge-expiring'
+                          : ''
+                    }
+                  >
+                    <CalendarClock size={12} /> {expiryLabel(item)}
+                  </span>
+                  <span>
+                    v{item.version || 1} · {formatTime(item.updatedAt)}
+                  </span>
                 </footer>
               </button>
               <div className="knowledge-card-actions">

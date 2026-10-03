@@ -6,7 +6,13 @@
  */
 
 export function normalizeTaskRow(row) {
-  return row ? { ...row, knowledgeIds: JSON.parse(row.knowledgeIds) } : null;
+  return row
+    ? {
+        ...row,
+        knowledgeIds: JSON.parse(row.knowledgeIds || '[]'),
+        knowledgeRefs: JSON.parse(row.knowledgeRefs || '[]'),
+      }
+    : null;
 }
 
 export function normalizeTeamTemplate(template) {

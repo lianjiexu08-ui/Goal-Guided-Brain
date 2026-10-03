@@ -583,6 +583,18 @@
   border-top: 1px solid #f1f5f9;
   padding-top: 12px;
 }
+.knowledge-card-wrapper footer span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.knowledge-card-wrapper .knowledge-expiring {
+  color: #9a5b00;
+}
+.knowledge-card-wrapper .knowledge-expired {
+  color: #b42318;
+  font-weight: 700;
+}
 .collection-empty.compact {
   padding: 48px 24px;
 }

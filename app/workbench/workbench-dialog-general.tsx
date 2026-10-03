@@ -604,6 +604,28 @@ export function WorkbenchDialogGeneral({
               }
             />
           </label>
+          <label>
+            复核截止日期
+            <input
+              type="date"
+              value={
+                knowledgeForm.expiresAt
+                  ? knowledgeForm.expiresAt.slice(0, 10)
+                  : ''
+              }
+              onChange={(e) =>
+                setKnowledgeForm((f) => ({
+                  ...f,
+                  expiresAt: e.target.value
+                    ? `${e.target.value}T23:59:59.999Z`
+                    : null,
+                }))
+              }
+            />
+            <small className="field-help">
+              到期后保留在知识库和版本历史中，但不会再自动注入新任务；留空表示长期有效。
+            </small>
+          </label>
           <div className="manage-actions">
             <button className="primary-button" type="submit" disabled={busy}>
               <Check size={16} />

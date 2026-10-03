@@ -341,11 +341,21 @@ export function WorkbenchView({ context }: { context: WorkbenchContext }) {
           {taskDetail && (
             <p className="field-help">
               已引用知识：
-              {(taskDetail.knowledgeIds || [])
-                .map(
-                  (id) => data?.knowledge.find((k) => k.id === id)?.title || id,
-                )
-                .join('、') || '无'}
+              {taskDetail.knowledgeRefs?.length
+                ? taskDetail.knowledgeRefs
+                    .map((ref) => {
+                      const title =
+                        data?.knowledge.find((item) => item.id === ref.id)
+                          ?.title || ref.id;
+                      return `${title} v${ref.version}${ref.source ? ` · ${ref.source}` : ''}`;
+                    })
+                    .join('、')
+                : (taskDetail.knowledgeIds || [])
+                    .map(
+                      (id) =>
+                        data?.knowledge.find((k) => k.id === id)?.title || id,
+                    )
+                    .join('、') || '无'}
             </p>
           )}
         </DialogContent>

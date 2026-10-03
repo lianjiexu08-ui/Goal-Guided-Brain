@@ -856,6 +856,7 @@ export function createRequestHandler({
               typeof body.source === 'string'
                 ? body.source.slice(0, 2000)
                 : '手动添加',
+            expiresAt: body.expiresAt,
           },
           req.method === 'PUT' ? parts[2] : undefined,
         );

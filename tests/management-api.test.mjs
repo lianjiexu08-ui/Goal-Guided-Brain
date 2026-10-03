@@ -491,11 +491,12 @@ test('knowledge changes and deletion retain versioned source snapshots', async (
     scope: 'personal',
     state: 'confirmed',
     source: 'Owner',
+    expiresAt: '2099-01-01T00:00:00.000Z',
   };
   const created = await request('knowledge', original);
   await request(
     `knowledge/${created.body.id}`,
-    { ...original, content: 'Updated address' },
+    { ...original, content: 'Updated address', expiresAt: '2099-02-01T00:00:00.000Z' },
     'PUT',
   );
   let history = (await request(`knowledge/${created.body.id}/history`)).body;
@@ -503,6 +504,8 @@ test('knowledge changes and deletion retain versioned source snapshots', async (
     history.map((entry) => entry.snapshot.content),
     ['Updated address', 'First address'],
   );
+  assert.deepEqual(history.map((entry) => entry.version), [2, 1]);
+  assert.equal(history[0].snapshot.expiresAt, '2099-02-01T00:00:00.000Z');
   assert.equal(
     (await request(`knowledge/${created.body.id}`, {}, 'DELETE')).body.ok,
     true,
@@ -536,17 +539,32 @@ test('team knowledge is persisted with its team scope and rejects unknown teams'
     source: '团队确认',
   });
   assert.equal(created.status, 200);
-  assert.deepEqual(created.body, {
-    id: created.body.id,
-    title: '团队发布约定',
-    content: '发布前必须有回滚方案。',
-    scope: 'team',
-    teamId: team.id,
-    state: 'confirmed',
-    source: '团队确认',
-    projectPath: app.store.config.workspace,
-    updatedAt: created.body.updatedAt,
-  });
+  assert.deepEqual(
+    {
+      id: created.body.id,
+      title: created.body.title,
+      content: created.body.content,
+      scope: created.body.scope,
+      teamId: created.body.teamId,
+      state: created.body.state,
+      source: created.body.source,
+      projectPath: created.body.projectPath,
+      version: created.body.version,
+      expiresAt: created.body.expiresAt,
+    },
+    {
+      id: created.body.id,
+      title: '团队发布约定',
+      content: '发布前必须有回滚方案。',
+      scope: 'team',
+      teamId: team.id,
+      state: 'confirmed',
+      source: '团队确认',
+      projectPath: app.store.config.workspace,
+      version: 1,
+      expiresAt: null,
+    },
+  );
   const state = (await request('state')).body;
   assert.deepEqual(state.knowledge.find((item) => item.id === created.body.id), created.body);
   const invalid = await request('knowledge', {

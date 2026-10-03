@@ -30,6 +30,12 @@ export type Task = {
   currentRequirementVersion?: number | null;
   attachmentIds?: string[];
   attachments?: Attachment[];
+  knowledgeRefs?: Array<{
+    id: string;
+    version: number;
+    source?: string;
+    updatedAt?: string;
+  }>;
 };
 export type RouteCache = {
   spaceId?: string;
@@ -51,6 +57,11 @@ export type Knowledge = {
   state: string;
   source: string;
   updatedAt: string;
+  createdAt?: string;
+  version?: number;
+  expiresAt?: string | null;
+  expired?: boolean;
+  expiresSoon?: boolean;
   projectPath: string;
   teamId?: string | null;
 };
