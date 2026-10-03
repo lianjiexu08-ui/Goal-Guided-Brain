@@ -307,6 +307,9 @@ export function WorkbenchDialogTeam({
                     }
                   : payload,
               );
+              // Refresh before selecting a newly created team so mobile and
+              // desktop views can resolve the id from the same state snapshot.
+              if (!editingTeamId) await refresh();
               setSelectedSpaceId(saved.id);
               setRole(saved.pmRoleId);
               setModal(null);
