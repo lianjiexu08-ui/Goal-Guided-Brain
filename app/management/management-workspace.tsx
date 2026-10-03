@@ -50,6 +50,7 @@ import {
 import { ManagementDetailDialogs } from './management-detail-dialogs';
 import { ManagementSecondaryDialogs } from './management-secondary-dialogs';
 import { ManagementRowActions } from './management-row-actions';
+import { RiskInbox } from '../workbench/team-overview';
 import '../management.css';
 import '../styles/model-metrics.css';
 
@@ -83,9 +84,15 @@ const icons: Record<string, LucideIcon> = {
 export function Management({
   view,
   onChanged,
+  onOpenTeam,
+  onOpenTask,
+  onOpenKnowledge,
 }: {
   view: string;
   onChanged: () => Promise<void>;
+  onOpenTeam?: (teamId: string) => void;
+  onOpenTask?: (taskId: string) => void;
+  onOpenKnowledge?: (knowledgeId: string) => void;
 }) {
   const [data, setData] = useState<ManagementState | null>(null);
   const [loadError, setLoadError] = useState('');
@@ -366,9 +373,11 @@ export function Management({
         <div>
           <h1>{name}</h1>
           <p>
-            {collection === 'market'
-              ? 'Skill · MCP · Plugin'
-              : `${visibleItems.length} 条记录`}
+            {view === 'attention'
+              ? '通知、待处理事项与团队风险'
+              : collection === 'market'
+                ? 'Skill · MCP · Plugin'
+                : `${visibleItems.length} 条记录`}
           </p>
         </div>
         <div className="manage-actions">
@@ -446,6 +455,23 @@ export function Management({
           )}
         </div>
       </div>
+      {view === 'attention' && data && (
+        <RiskInbox
+          teams={(data.spaces || [])
+            .filter(
+              (space) =>
+                space.status !== 'archived' &&
+                space.recruitmentPhase === 'confirmed',
+            )
+            .map((space) => ({
+              id: String(space.id),
+              name: String(space.name || space.id),
+            }))}
+          onOpenTeam={onOpenTeam || (() => undefined)}
+          onOpenTask={onOpenTask || (() => undefined)}
+          onOpenKnowledge={onOpenKnowledge}
+        />
+      )}
       {!!tabs.length && (
         <div className="manage-tabs" role="tablist" aria-label={name}>
           {tabs.map((id) => (

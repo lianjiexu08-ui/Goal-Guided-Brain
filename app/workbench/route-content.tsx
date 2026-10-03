@@ -248,10 +248,27 @@ export function RouteContent({ context }: { context: WorkbenchContext }) {
     setRecruitmentApprovals,
     recruitmentSyncState,
   } = context;
+  const openKnowledgeById = (knowledgeId: string) => {
+    const item = knowledge.find((entry) => entry.id === knowledgeId);
+    if (item) {
+      openKnowledge(undefined, item);
+      return;
+    }
+    void api(`knowledge/${encodeURIComponent(knowledgeId)}`)
+      .then((remote) => openKnowledge(undefined, remote))
+      .catch(() => undefined);
+  };
   return (
     <>
       {managementNavigation.some((item) => item.id === view) ? (
-        <Management key={view} view={view} onChanged={refresh} />
+        <Management
+          key={view}
+          view={view}
+          onChanged={refresh}
+          onOpenTeam={openRiskTeam}
+          onOpenTask={openRiskTask}
+          onOpenKnowledge={openKnowledgeById}
+        />
       ) : view === 'team' ? (
         <TeamActivity
           teamSpace={teamSpace}
@@ -462,10 +479,7 @@ export function RouteContent({ context }: { context: WorkbenchContext }) {
             teams={confirmedSpaces}
             onOpenTeam={openRiskTeam}
             onOpenTask={openRiskTask}
-            onOpenKnowledge={(knowledgeId) => {
-              const item = knowledge.find((entry) => entry.id === knowledgeId);
-              if (item) openKnowledge(undefined, item);
-            }}
+            onOpenKnowledge={openKnowledgeById}
           />
           <Tabs
             value={taskFilter}

@@ -867,6 +867,11 @@ export function createRequestHandler({
         return send(200, item);
       }
       if (parts[1] === 'knowledge' && parts[2]) {
+        if (req.method === 'GET' && !parts[3]) {
+          const item = store.knowledge().find((entry) => entry.id === parts[2]);
+          if (!item) return send(404, { error: '知识不存在。' });
+          return send(200, item);
+        }
         if (req.method === 'GET' && parts[3] === 'history')
           return send(
             200,

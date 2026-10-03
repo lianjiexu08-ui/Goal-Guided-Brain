@@ -565,6 +565,9 @@ test('team knowledge freshness becomes an actionable risk and clears after revie
     const risks = await request(`risks?kind=knowledge&teamId=${team.id}`);
     assert.equal(risks.status, 200);
     assert.equal(risks.body.total, 2);
+    const fetched = await request(`knowledge/${expired.id}`);
+    assert.equal(fetched.status, 200);
+    assert.equal(fetched.body.id, expired.id);
     assert.deepEqual(
       risks.body.items
         .map((item) => item.knowledgeId)
