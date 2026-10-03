@@ -462,6 +462,10 @@ export function RouteContent({ context }: { context: WorkbenchContext }) {
             teams={confirmedSpaces}
             onOpenTeam={openRiskTeam}
             onOpenTask={openRiskTask}
+            onOpenKnowledge={(knowledgeId) => {
+              const item = knowledge.find((entry) => entry.id === knowledgeId);
+              if (item) openKnowledge(undefined, item);
+            }}
           />
           <Tabs
             value={taskFilter}

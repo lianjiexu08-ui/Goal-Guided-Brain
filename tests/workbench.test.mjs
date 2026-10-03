@@ -520,6 +520,76 @@ test('state exposes risk counts per confirmed team for workspace switching', asy
   }
 });
 
+test('team knowledge freshness becomes an actionable risk and clears after review', async () => {
+  const s = sandbox();
+  const app = createWorkbench({ ...s, requireCredential: false });
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  const request = async (route, body, method = 'GET') => {
+    const response = await fetch(
+      `http://127.0.0.1:${app.server.address().port}/api/${route}`,
+      {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      },
+    );
+    return { status: response.status, body: await response.json() };
+  };
+  try {
+    const team = app.store.saveTeamSpace({
+      name: '研发知识团队',
+      goal: '维护可复用的研发规范',
+      workspace: s.workspace,
+      pmRoleId: 'project_manager',
+      memberRoleIds: ['project_manager', 'developer'],
+      recruitment: { phase: 'confirmed' },
+    });
+    const expired = app.store.saveKnowledge({
+      title: '过期发布规范',
+      content: '发布前检查回滚。',
+      scope: 'team',
+      teamId: team.id,
+      state: 'confirmed',
+      source: '团队评审',
+      expiresAt: '2000-01-01T00:00:00.000Z',
+    });
+    app.store.saveKnowledge({
+      title: '即将复核规范',
+      content: '先运行自动化测试。',
+      scope: 'team',
+      teamId: team.id,
+      state: 'confirmed',
+      source: '团队评审',
+      expiresAt: new Date(Date.now() + 2 * 86400000).toISOString(),
+    });
+    const risks = await request(`risks?kind=knowledge&teamId=${team.id}`);
+    assert.equal(risks.status, 200);
+    assert.equal(risks.body.total, 2);
+    assert.deepEqual(
+      risks.body.items
+        .map((item) => item.knowledgeId)
+        .sort((a, b) => a.localeCompare(b)),
+      [
+        expired.id,
+        app.store.knowledge().find((item) => item.title === '即将复核规范').id,
+      ].sort((a, b) => a.localeCompare(b)),
+    );
+    assert.ok(risks.body.items.some((item) => item.status === 'expired'));
+    const state = await request('state');
+    assert.equal(state.body.teamRiskCounts[team.id], 2);
+    app.store.saveKnowledge({
+      ...expired,
+      expiresAt: null,
+    }, expired.id);
+    const refreshed = await request(`risks?kind=knowledge&teamId=${team.id}`);
+    assert.equal(refreshed.body.total, 1);
+    assert.equal((await request('state')).body.teamRiskCounts[team.id], 1);
+  } finally {
+    await app.close();
+    fs.rmSync(s.dir, { recursive: true, force: true });
+  }
+});
+
 test('running tasks become interrupted after a restart; queued work remains queued', () => {
   const s = sandbox();
   let store = new Store(s.dataDir, s.workspace);

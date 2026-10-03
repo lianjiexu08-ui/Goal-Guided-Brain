@@ -757,6 +757,54 @@ test.describe('团队运营与协作回归', () => {
     await expect(card.getByText('v1', { exact: false })).toBeVisible();
   });
 
+  test('知识复核风险可以从后台任务直接打开对应知识', async ({ page }) => {
+    const teams = seedTeamKnowledge();
+    await page.goto('/');
+    const created = await page.evaluate(async (teamId) => {
+      const response = await fetch('/api/knowledge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: '需要复核的团队规范',
+          content: '这条规范需要重新确认。',
+          scope: 'team',
+          teamId,
+          state: 'confirmed',
+          source: '风险入口 fixture',
+          expiresAt: '2000-01-01T00:00:00.000Z',
+        }),
+      });
+      return { status: response.status, body: await response.json() };
+    }, teams.development.id);
+    expect(created.status).toBe(200);
+    const sidebar = await openMobileSidebar(page);
+    await sidebar
+      .locator('button')
+      .filter({ hasText: teams.development.name })
+      .first()
+      .click({ force: true });
+    await expect(
+      page.getByRole('heading', { name: teams.development.name }),
+    ).toBeVisible();
+    await clickNavigation(page, '后台任务');
+    const inbox = page.getByRole('region', { name: '跨团队风险', exact: true });
+    await expect(inbox).toBeVisible();
+    await inbox
+      .getByRole('combobox', { name: '风险团队', exact: true })
+      .selectOption(teams.development.id);
+    await inbox
+      .getByRole('combobox', { name: '风险类型', exact: true })
+      .selectOption('knowledge');
+    const risk = inbox
+      .locator('.risk-inbox-item')
+      .filter({ hasText: '需要复核的团队规范' });
+    await expect(risk).toHaveCount(1);
+    await risk.click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByRole('heading', { name: '编辑知识' })).toBeVisible();
+    await expect(dialog.locator('input').first()).toHaveValue('需要复核的团队规范');
+  });
+
   test('助手编辑器显示能力兼容状态和现有绑定范围', async ({ page }) => {
     const fixture = seedCapabilityBinding();
     await page.goto('/');

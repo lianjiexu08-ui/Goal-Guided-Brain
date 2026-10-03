@@ -350,6 +350,27 @@ export function createWorkbench({
         attentionId: attention.id,
       });
     }
+    for (const item of store.knowledge()) {
+      if (item.scope !== 'team' || (!item.expired && !item.expiresSoon)) continue;
+      const team = teamsById.get(item.teamId || '');
+      if (!team) continue;
+      const expired = item.expired === true;
+      const expiresAt = item.expiresAt ? item.expiresAt.slice(0, 10) : '';
+      risks.push({
+        id: `knowledge:${item.id}`,
+        sourceType: 'knowledge',
+        kind: 'knowledge',
+        status: expired ? 'expired' : 'expires-soon',
+        title: `${expired ? '知识已过期' : '知识即将过期'}：${item.title}`,
+        detail: expired
+          ? `复核日期为 ${expiresAt}，已停止自动注入，请确认是否仍然有效。`
+          : `复核日期为 ${expiresAt}，建议提前检查并更新内容。`,
+        updatedAt: item.updatedAt || item.createdAt,
+        teamId: team.id,
+        teamName: team.name,
+        knowledgeId: item.id,
+      });
+    }
     const cursor = typeof before === 'string' && before.trim() ? before.split('|') : [];
     const beforeAt = cursor[0] || null;
     const beforeId = cursor.slice(1).join('|') || null;
@@ -394,6 +415,10 @@ export function createWorkbench({
       const task = attention.taskId ? store.task(attention.taskId) : null;
       const teamId = task ? scopeForTask(task) : (teams.has(attention.teamId || attention.spaceId) ? (attention.teamId || attention.spaceId) : null);
       if (teamId) counts[teamId] += 1;
+    }
+    for (const item of store.knowledge()) {
+      if (item.scope !== 'team' || (!item.expired && !item.expiresSoon)) continue;
+      if (teams.has(item.teamId)) counts[item.teamId] += 1;
     }
     return counts;
   };

@@ -15,6 +15,7 @@ type TeamRisk = {
   teamId: string;
   teamName: string;
   taskId?: string | null;
+  knowledgeId?: string | null;
 };
 type TeamRiskResponse = { items: TeamRisk[]; hasMore: boolean; total: number };
 type TimelineItem = {
@@ -60,6 +61,8 @@ const statusLabels: Record<string, string> = {
   rejected: '已退回复核',
   'pending-review': '待复核',
   verified: '已验收',
+  expired: '已过期',
+  'expires-soon': '即将过期',
 };
 const verificationLabels: Record<string, string> = {
   verified: '已验收',
@@ -83,10 +86,12 @@ export function RiskInbox({
   teams,
   onOpenTeam,
   onOpenTask,
+  onOpenKnowledge,
 }: {
   teams: TeamOption[];
   onOpenTeam: (teamId: string) => void;
   onOpenTask: (taskId: string) => void;
+  onOpenKnowledge?: (knowledgeId: string) => void;
 }) {
   const [teamFilter, setTeamFilter] = useState('all');
   const [kindFilter, setKindFilter] = useState('all');
@@ -100,6 +105,7 @@ export function RiskInbox({
     execution: '执行风险',
     delivery: '交付风险',
     attention: '待确认事项',
+    knowledge: '知识复核',
   };
   const loadFirstPage = useCallback(async () => {
     setLoading(true);
@@ -153,7 +159,7 @@ export function RiskInbox({
         <div>
           <span className="section-kicker">TEAM RISKS</span>
           <h2>跨团队风险</h2>
-          <p>把失败执行、交付复核和需要确认的事项放在一个入口。</p>
+          <p>把失败执行、交付复核、知识复核和需要确认的事项放在一个入口。</p>
         </div>
         <div className="risk-inbox-summary">
           <span className="count-pill needs-review">{total} 项待处理</span>
@@ -195,6 +201,7 @@ export function RiskInbox({
             <option value="execution">执行风险</option>
             <option value="delivery">交付风险</option>
             <option value="attention">待确认事项</option>
+            <option value="knowledge">知识复核</option>
           </select>
         </label>
       </div>
@@ -208,7 +215,11 @@ export function RiskInbox({
               key={item.id}
               aria-label={`打开风险 ${item.title}`}
               onClick={() =>
-                item.taskId ? onOpenTask(item.taskId) : onOpenTeam(item.teamId)
+                item.knowledgeId && onOpenKnowledge
+                  ? onOpenKnowledge(item.knowledgeId)
+                  : item.taskId
+                    ? onOpenTask(item.taskId)
+                    : onOpenTeam(item.teamId)
               }
             >
               <span className={`risk-inbox-icon ${item.kind}`}>
