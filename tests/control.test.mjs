@@ -100,6 +100,50 @@ test('node list and detail expose the same live status and active executions', a
   assert.equal(Object.hasOwn(revoked.body, 'tokenHash'), false);
 });
 
+test('node liveness transitions create deduplicated notifications and recover on heartbeat', async t => {
+  const { control, store, request, advance } = setup(t);
+  const paired = await pair(request);
+  advance(61000);
+
+  const first = control.reconcileNodes();
+  assert.equal(first.length, 1);
+  assert.equal(first[0].status, 'offline');
+  const offline = store.records.get('nodes', paired.node.id);
+  assert.equal(offline.status, 'offline');
+  assert.equal(offline.offlineSince, 1061000);
+  const attentionId = `node:${paired.node.id}:offline`;
+  const attention = store.records.get('attention', attentionId);
+  assert.equal(attention.kind, 'node-offline');
+  assert.equal(attention.status, 'open');
+  const notification = store.records.get('notifications', `attention:${attentionId}`);
+  assert.equal(notification.read, false);
+  assert.equal(store.records.list('attention').length, 1);
+  assert.equal(control.reconcileNodes().length, 0);
+  assert.equal(store.records.list('notifications').length, 1);
+
+  await request('nodes/heartbeat', { executions: [] }, paired.token);
+  const recovered = store.records.get('nodes', paired.node.id);
+  assert.equal(recovered.status, 'online');
+  assert.equal(recovered.offlineSince, null);
+  assert.equal(recovered.recoveredAt, 1061000);
+  assert.equal(store.records.get('attention', attentionId).status, 'resolved');
+  const resolvedNotification = store.records.get(
+    'notifications',
+    `attention:${attentionId}`,
+  );
+  assert.equal(resolvedNotification.read, true);
+  assert.ok(resolvedNotification.readAt);
+
+  advance(61000);
+  control.reconcileNodes();
+  assert.equal(store.records.get('attention', attentionId).status, 'open');
+  assert.equal(
+    store.records.get('notifications', `attention:${attentionId}`).read,
+    false,
+  );
+  assert.equal(store.records.list('notifications').length, 1);
+});
+
 test('remote leases claim once, reject wrong nodes, accept a result exactly once and reject late results', async t => {
   const { store, request, control, advance } = setup(t);
   const first = await pair(request), other = await pair(request);

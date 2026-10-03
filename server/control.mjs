@@ -16,6 +16,7 @@ import {
 } from './control/primitives.mjs';
 import { handleJobs } from './control/jobs.mjs';
 import { createOperation, saveScopedRecord } from './control/records.mjs';
+import { runAtomic } from './control/transactions.mjs';
 import {
   handleNodes,
   isMachineRequest,
@@ -23,6 +24,7 @@ import {
   nodeView,
   validateInstanceToken,
 } from './control/nodes.mjs';
+import { markNodeOnline, reconcileNodeLiveness } from './control/node-liveness.mjs';
 
 export class ControlPlane {
   constructor({ store, createTask = input => store.createTask(input), updateTask = (id, changes) => store.updateTask(id, changes),
@@ -32,21 +34,19 @@ export class ControlPlane {
     this.createTask = createTask;
     this.updateTask = updateTask;
     this.stopTask = stopTask;
-    this.buildAssignment = buildAssignment;
-    this.onEvent = onEvent;
+    this.buildAssignment = buildAssignment; this.onEvent = onEvent;
     this.onRemoteDone = onRemoteDone;
-    this.evaluateDecision = evaluateDecision;
-    this.now = now;
+    this.evaluateDecision = evaluateDecision; this.now = now;
     this.leaseMs = leaseMs;
   }
   atomic(fn) {
-    this.store.db.exec('BEGIN IMMEDIATE');
-    try { const result = fn(); this.store.db.exec('COMMIT'); return result; }
-    catch (error) { this.store.db.exec('ROLLBACK'); throw error; }
+    return runAtomic(this.store, fn);
   }
   isMachineRequest(input) { return isMachineRequest(input); }
   nodeFromToken(token) { return nodeFromToken(this, token); }
   nodeView(node) { return nodeView(this, node); }
+  reconcileNodes() { return reconcileNodeLiveness(this); }
+  markNodeOnline(node) { return markNodeOnline(this, node); }
   validateInstanceToken(token) { return validateInstanceToken(this, token); }
   taskGroup(taskId) {
     const meta = this.records.get('task-meta', taskId) || {};

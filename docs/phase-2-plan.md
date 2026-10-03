@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 181/181, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 186/186, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Cross-platform CI matrix runs lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
@@ -46,6 +46,13 @@ They are not sign-off for the separate real deployment gates below.
 - [ ] Real cloud continues scheduled work while the owner's computer is offline.
 
 ## Local Release Record
+
+Latest local regression on 2026-10-04: `npm test` 186/186 and Playwright
+desktop/mobile baseline 90/90 passed on macOS. `npm run lint`,
+`npm run typecheck`, `npm run quality:lines -- --json`, `npm run build` and
+`git diff --check` also passed. The UI and API smoke endpoints returned 200 and
+`{"ok":true}` respectively. This is local evidence only; the real Linux,
+Windows/WSL2, HTTPS and owner-offline gates below remain open.
 
 Validated on 2026-09-27 using macOS, Node.js 26.8.1 and DSH 0.1.2-rc.1.
 The current production service runs at `http://127.0.0.1:3088/`, with the API at
@@ -62,8 +69,8 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 181 passing tests. The repeatable
-Playwright baseline contains seventy-two passing desktop/mobile runs covering team
+The current deterministic suite contains 186 passing tests. The repeatable
+Playwright baseline contains ninety passing desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
 binary drag-and-drop attachments, Team Charter confirmation and high-risk

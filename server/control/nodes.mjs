@@ -137,11 +137,13 @@ export async function handleNodes(
   }
   if (method === 'POST' && ['claim', 'heartbeat', 'report'].includes(id)) {
     const node = nodeFromToken(control, bearer(req));
-    control.records.save(
-      'nodes',
-      { ...node, lastSeenAt: control.now(), status: 'online' },
-      node.id,
-    );
+    if (control.markNodeOnline) control.markNodeOnline(node);
+    else
+      control.records.save(
+        'nodes',
+        { ...node, lastSeenAt: control.now(), status: 'online' },
+        node.id,
+      );
     if (id === 'heartbeat') {
       if (!Array.isArray(body.executions) || body.executions.length > 100)
         throw fail('执行心跳格式错误。');
@@ -296,6 +298,7 @@ export async function handleNodes(
   }
   if (principal.type !== 'owner') throw fail('需要所有者权限。', 403);
   if (method === 'GET') {
+    if (control.reconcileNodes) control.reconcileNodes();
     if (id) {
       const node = control.records.get('nodes', id);
       if (!node) throw fail('节点不存在。', 404);

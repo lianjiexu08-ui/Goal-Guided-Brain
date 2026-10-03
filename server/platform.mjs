@@ -884,6 +884,7 @@ export function createPlatform({
     if (timer) return;
     timer = setInterval(() => {
       if (stopping) return;
+      control.reconcileNodes();
       checkPlanDeadlines({ store, control });
       for (const execution of control.reconcile()) {
         workspaces.finish(execution.taskId, 'quarantined');

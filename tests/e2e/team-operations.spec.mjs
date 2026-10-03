@@ -217,8 +217,33 @@ test.describe('团队运营与协作回归', () => {
     ).toBeVisible();
     await dialog.getByRole('button', { name: '刷新状态', exact: true }).click();
     await expect(dialog).toContainText('重新运行启动命令');
+    const offlineState = await page.evaluate(async () => {
+      const response = await fetch('/api/manage');
+      return response.json();
+    });
+    const offlineAttention = offlineState.attention.find(
+      (item) =>
+        item.kind === 'node-offline' && item.nodeId === 'e2e-offline-node',
+    );
+    expect(offlineAttention).toMatchObject({ status: 'open' });
+    const offlineNotification = offlineState.notifications.find(
+      (item) => item.attentionId === offlineAttention.id,
+    );
+    expect(offlineNotification).toMatchObject({ read: false });
     markNodeOnline('e2e-offline-node');
     await expect(dialog).toContainText('在线', { timeout: 7_000 });
+    const recoveredState = await page.evaluate(async () => {
+      const response = await fetch('/api/manage');
+      return response.json();
+    });
+    expect(
+      recoveredState.attention.find((item) => item.id === offlineAttention.id),
+    ).toMatchObject({ status: 'resolved' });
+    expect(
+      recoveredState.notifications.find(
+        (item) => item.attentionId === offlineAttention.id,
+      ),
+    ).toMatchObject({ read: true });
     await page.keyboard.press('Escape');
 
     const revoked = page.getByRole('button', {

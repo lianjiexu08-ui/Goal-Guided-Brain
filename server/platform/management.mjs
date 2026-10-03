@@ -13,6 +13,7 @@ export function createPlatformManagement({
   dataDir,
 }) {
   function manage() {
+    control.reconcileNodes();
     const roles = store.roles();
     const roleNames = new Map(roles.map((role) => [role.id, role.name]));
     const capabilityBindings = new Map();
