@@ -1,33 +1,28 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { bearer, hashToken } from './auth.mjs';
+import { hashToken } from './auth.mjs';
 import { SKILLS } from './roles.mjs';
 import { assessCapabilityRisk, capabilityFingerprint } from './capabilities.mjs';
-
-const terminal = new Set(['completed', 'failed', 'cancelled', 'interrupted', 'state_unknown']);
-const messageKinds = new Set(['task', 'question', 'reply', 'progress', 'blocked', 'handoff', 'notice']);
-const collections = new Set(['jobs', 'messages', 'checkpoints', 'artifacts', 'operations', 'attention', 'board']);
-const fail = (message, status = 400) => Object.assign(new Error(message), { status });
-const required = (value, label, max = 32000) => {
-  if (typeof value !== 'string' || !value.trim() || value.length > max) throw fail(`${label}不能为空，且不能超过 ${max} 字符。`);
-  return value.trim();
-};
-const publicRecord = record => {
-  if (!record) return record;
-  const { tokenHash: _tokenHash, ...safe } = record;
-  return safe;
-};
-const bounded = (items, query) => {
-  const limit = Math.max(1, Math.min(Number(query?.get?.('limit')) || 50, 100));
-  const offset = Math.max(0, Number(query?.get?.('offset')) || 0);
-  return { items: items.slice(offset, offset + limit), total: items.length, offset, limit };
-};
-const teamKey = team => team?.teamId || team?.id;
-const findTeam = (store, value) => {
-  const key = String(value || '').trim();
-  if (!key) return null;
-  return store.teamSpaces().find(team => team.id === key || team.teamId === key || team.chatId === key) || null;
-};
-const teamMeta = (store, taskId) => store.records.get('task-meta', taskId) || {};
+import {
+  bounded,
+  collections,
+  fail,
+  findTeam,
+  messageKinds,
+  publicRecord,
+  required,
+  teamKey,
+  teamMeta,
+  terminal,
+} from './control/primitives.mjs';
+import { handleJobs } from './control/jobs.mjs';
+import { createOperation, saveScopedRecord } from './control/records.mjs';
+import {
+  handleNodes,
+  isMachineRequest,
+  nodeFromToken,
+  nodeView,
+  validateInstanceToken,
+} from './control/nodes.mjs';
 
 export class ControlPlane {
   constructor({ store, createTask = input => store.createTask(input), updateTask = (id, changes) => store.updateTask(id, changes),
@@ -49,53 +44,10 @@ export class ControlPlane {
     try { const result = fn(); this.store.db.exec('COMMIT'); return result; }
     catch (error) { this.store.db.exec('ROLLBACK'); throw error; }
   }
-  isMachineRequest({ method, parts }) {
-    if (parts[0] === 'api') parts = parts.slice(1);
-    return method === 'POST' && parts[0] === 'nodes' && ['pair', 'claim', 'heartbeat', 'report'].includes(parts[1]);
-  }
-  nodeFromToken(token) {
-    if (!token) throw fail('缺少节点认证。', 401);
-    const node = this.records.list('nodes').find(item => item.tokenHash === hashToken(token));
-    if (!node || node.revokedAt) throw fail('节点凭据无效或已撤销。', 401);
-    return node;
-  }
-  nodeView(node) {
-    if (!node) return node;
-    const activeExecutions = this.records.list('executions')
-      .filter(execution => execution.nodeId === node.id && execution.status === 'running')
-      .map(execution => {
-        const task = this.store.task(execution.taskId);
-        return {
-          taskId: execution.taskId,
-          title: task?.title || task?.prompt || execution.taskId,
-          status: task?.status || execution.status,
-          startedAt: execution.startedAt || null,
-          expiresAt: execution.expiresAt || null,
-        };
-      });
-    return {
-      ...publicRecord(node),
-      status: node.revokedAt
-        ? 'revoked'
-        : this.now() - Number(node.lastSeenAt || 0) > this.leaseMs
-          ? 'offline'
-          : 'online',
-      activeExecutions,
-    };
-  }
-  validateInstanceToken(token) {
-    if (!token) throw fail('缺少执行实例认证。', 401);
-    const execution = this.records.list('executions').find(item => item.tokenHash === hashToken(token));
-    if (!execution || execution.status !== 'running' || execution.expiresAt <= this.now()) throw fail('执行实例已过期或被撤销。', 401);
-    const task = this.store.task(execution.taskId);
-    if (!task || task.role !== execution.agentId || terminal.has(task.status)) throw fail('执行实例已结束。', 401);
-    const meta = this.records.get('task-meta', task.id) || {};
-    const job = meta.jobId && this.records.get('jobs', meta.jobId);
-    if (job && (['paused', 'cancelled', 'budget-exceeded'].includes(job.status) || job.budgetExceeded)) throw fail('任务已暂停、取消或达到预算。', 403);
-    return { type: 'instance', taskId: task.id, agentId: task.role, jobId: meta.jobId,
-      groupId: execution.groupId, batchId: execution.batchId, epoch: execution.epoch,
-      permissions: execution.permissions || [], requirementVersion: execution.requirementVersion || job?.requirementVersion || 1 };
-  }
+  isMachineRequest(input) { return isMachineRequest(input); }
+  nodeFromToken(token) { return nodeFromToken(this, token); }
+  nodeView(node) { return nodeView(this, node); }
+  validateInstanceToken(token) { return validateInstanceToken(this, token); }
   taskGroup(taskId) {
     const meta = this.records.get('task-meta', taskId) || {};
     const job = meta.jobId && this.records.get('jobs', meta.jobId);
@@ -989,44 +941,10 @@ export class ControlPlane {
     return this.records.save('messages', { ...message, status: body.status, acknowledgedAt: this.now() }, id);
   }
   saveScoped(collection, body, principal, id) {
-    this.ensureCurrent(principal);
-    const taskId = principal.type === 'instance' ? principal.taskId : required(body.taskId, '执行实例', 150);
-    this.authorizeTask(principal, taskId);
-    const groupId = this.taskGroup(taskId);
-    const current = id && this.records.get(collection, id);
-    if (current && current.groupId !== groupId) throw fail('记录不属于当前任务组。', 403);
-    if (current && principal.type === 'instance' && current.taskId !== taskId && collection !== 'board') throw fail('不能修改其他实例的记录。', 403);
-    const input = { taskId, groupId, agentId: principal.agentId || 'owner',
-      title: required(body.title || body.kind || collection, '标题', 200),
-      content: String(body.content || body.detail || '').slice(0, 100000),
-      requirementVersion: body.requirementVersion || principal.requirementVersion || 1,
-    };
-    if (collection === 'checkpoints') Object.assign(input, { constraints: body.constraints || [], decisions: body.decisions || [],
-      artifacts: body.artifacts || [], operations: body.operations || [], nextSteps: body.nextSteps || [] });
-    if (collection === 'artifacts') Object.assign(input, { location: required(body.location, '产物位置', 3000),
-      commit: String(body.commit || '').slice(0, 150), evidence: String(body.evidence || '').slice(0, 100000), status: 'submitted' });
-    if (collection === 'artifacts') {
-      const meta = this.records.get('task-meta', taskId) || {};
-      const job = meta.jobId && this.records.get('jobs', meta.jobId);
-      if (job && input.requirementVersion < job.requirementVersion) input.status = 'needs-review';
-    }
-    if (collection === 'attention') Object.assign(input, { status: body.status === 'resolved' ? 'resolved' : 'open', kind: String(body.kind || 'decision') });
-    if (collection === 'board' && current && body.expectedRevision === undefined) throw fail('修改任务板需要提供 expectedRevision。', 409);
-    return this.records.save(collection, { ...current, ...input }, id, body.expectedRevision);
+    return saveScopedRecord(this, collection, body, principal, id);
   }
   operation(body, principal) {
-    this.ensureCurrent(principal);
-    const taskId = principal.type === 'instance' ? principal.taskId : body.taskId;
-    this.authorizeTask(principal, taskId);
-    const action = required(body.action, '操作类型', 100);
-    if (principal.type === 'instance' && !principal.permissions.includes(action)) throw fail('此实例没有该外部操作的授权。', 403);
-    const key = required(body.idempotencyKey, '操作幂等键', 200);
-    const id = hashToken(`${this.taskGroup(taskId)}:${action}:${key}`);
-    const existing = this.records.get('operations', id);
-    if (existing) return { ...existing, canExecute: false };
-    const operation = this.records.save('operations', { taskId, groupId: this.taskGroup(taskId), action,
-      title: String(body.title || action).slice(0, 200), status: 'pending', intent: required(body.intent, '操作意图'), key }, id);
-    return { ...operation, canExecute: true };
+    return createOperation(this, body, principal);
   }
   async handle({ method, parts, body = {}, req, principal = { type: 'owner' }, query }) {
     if (parts[0] === 'api') parts = parts.slice(1);
@@ -1054,125 +972,7 @@ export class ControlPlane {
         if (taskId) records = records.filter(item => (collection === 'messages' ? item.toTaskId : item.taskId) === taskId);
         return { status: 200, body: bounded(records, query) };
       }
-      if (collection === 'jobs') {
-        if (method === 'POST' && !id) return { status: 201, body: this.createJob(body, principal) };
-        const job = this.records.get('jobs', id);
-        if (!job) throw fail('任务不存在。', 404);
-        if (principal.type !== 'owner') throw fail('任务控制和需求修改由所有者执行。', 403);
-        if (method === 'POST' && action === 'archive') {
-          if (!terminal.has(job.status) || job.status === 'state_unknown')
-            throw fail('只有已结束且状态明确的任务才能归档。', 409);
-          const archived = typeof body.archived === 'boolean' ? body.archived : !job.archived;
-          return {
-            status: 200,
-            body: this.records.save('jobs', {
-              ...job,
-              archived,
-              archivedAt: archived ? new Date(this.now()).toISOString() : null,
-              archivedBy: archived ? 'owner' : null,
-            }, id),
-          };
-        }
-        if (job.archived) throw fail('任务已归档，请先恢复后再修改或执行操作。', 409);
-        if (method === 'PUT' && !action) {
-          const goal = required(body.goal || job.goal, '任务目标');
-          const changed = goal !== job.goal || (body.acceptance !== undefined && body.acceptance !== job.acceptance);
-          const groupJobs = this.records.list('jobs').filter(item => item.groupId === job.groupId);
-          const budgetChanged = body.budgetTokens !== undefined || body.maxDurationMinutes !== undefined;
-          if (budgetChanged && job.parentJobId) throw fail('请在主任务上调整整个任务组的预算和时限。');
-          const budgetTokens = body.budgetTokens ?? job.budgetTokens ?? 200000;
-          const maxDurationMinutes = body.maxDurationMinutes ?? job.maxDurationMinutes ?? 30;
-          if (!Number.isSafeInteger(budgetTokens) || budgetTokens < 1000 || budgetTokens > 100000000) throw fail('任务 Token 预算需要在 1000 至 100000000 之间。');
-          if (!Number.isFinite(maxDurationMinutes) || maxDurationMinutes < 1 || maxDurationMinutes > 1440) throw fail('任务时限需要在 1 至 1440 分钟之间。');
-          const spent = this.records.list('usage').filter(item => item.groupId === job.groupId ||
-            (item.taskId && this.taskGroup(item.taskId) === job.groupId)).reduce((sum, item) => sum +
-              (Number(item.totalTokens) || (Number(item.inputTokens) || 0) + (Number(item.outputTokens) || 0)), 0);
-          const budgetPatch = member => !budgetChanged ? {} : { budgetTokens, maxDurationMinutes, budgetExceeded: spent >= budgetTokens,
-            status: spent >= budgetTokens ? 'budget-exceeded' : member.budgetExceeded || member.status === 'budget-exceeded' ? 'paused' : member.status };
-          const version = changed ? Math.max(...groupJobs.map(item => item.requirementVersion || 1)) + 1 : job.requirementVersion;
-          const updated = this.records.save('jobs', { ...job, goal, acceptance: body.acceptance ?? job.acceptance,
-            ...budgetPatch(job), requirementVersion: version }, id, body.expectedRevision);
-          if (changed || budgetChanged) for (const member of groupJobs) if (member.id !== job.id) {
-            this.records.save('jobs', { ...member, ...budgetPatch(member), requirementVersion: version }, member.id);
-          }
-          if (budgetChanged && spent >= budgetTokens) {
-            for (const member of groupJobs) {
-              this.revokeExecution(member.taskId, 'budget-exceeded');
-              if (this.store.task(member.taskId)?.status === 'running') await this.stopTask?.(member.taskId);
-              const current = this.records.get('jobs', member.id);
-              this.records.save('jobs', { ...current, status: 'budget-exceeded', budgetExceeded: true }, member.id);
-            }
-            this.attention({ kind: 'budget', jobId: job.id, groupId: job.groupId, title: '任务组已达到用量预算',
-              detail: `已报告 ${spent} tokens，预算 ${budgetTokens}。` }, `budget:${job.id}`);
-          } else if (budgetChanged) {
-            const attention = this.records.get('attention', `budget:${job.id}`);
-            if (attention) this.records.save('attention', { ...attention, status: 'resolved' }, attention.id);
-          }
-          if (changed) {
-            for (const artifact of this.records.list('artifacts').filter(item => item.groupId === job.groupId)) {
-              this.records.save('artifacts', { ...artifact, status: 'needs-review' }, artifact.id);
-            }
-            for (const member of groupJobs) {
-              const acceptance = this.records.get('task-acceptance', member.taskId);
-              if (acceptance && Number(acceptance.requirementVersion || 1) < version) {
-                this.records.save('task-acceptance', {
-                  ...acceptance,
-                  status: 'stale',
-                  invalidatedAt: this.now(),
-                  invalidatedReason: `需求已更新至版本 ${version}。`,
-                }, acceptance.id);
-                const attentionId = `acceptance:${member.taskId}:${acceptance.requirementVersion || 1}`;
-                const attention = this.records.get('attention', attentionId);
-                if (attention && attention.status === 'open') {
-                  this.records.save('attention', {
-                    ...attention,
-                    status: 'resolved',
-                    resolution: `需求已更新至版本 ${version}，旧验收意见已失效。`,
-                    resolvedAt: this.now(),
-                  }, attentionId);
-                }
-              }
-            }
-            for (const execution of this.records.list('executions').filter(item => item.groupId === job.groupId && item.status === 'running')) {
-              this.sendMessage({ toTaskId: execution.taskId, content: `需求已更新至版本 ${updated.requirementVersion}：${goal}`,
-                kind: 'notice', requirementUpdate: true, requirementVersion: updated.requirementVersion, idempotencyKey: `requirement:${id}:${updated.requirementVersion}:${execution.id}` }, principal);
-            }
-          }
-          return { status: 200, body: this.records.get('jobs', updated.id) };
-        }
-        if (method === 'POST' && ['pause', 'cancel'].includes(action)) {
-          const all = this.records.list('jobs'), ids = new Set([id]);
-          for (let pass = 0; pass < 5; pass++) for (const item of all) if (ids.has(item.parentJobId)) ids.add(item.id);
-          const affected = all.filter(item => ids.has(item.id));
-          for (const target of affected) {
-            this.revokeExecution(target.taskId, action === 'pause' ? 'interrupted' : 'cancelled');
-            let stopped;
-            try { stopped = await this.stopTask?.(target.taskId); } catch { stopped = { status: 'state_unknown' }; }
-            const task = this.store.task(target.taskId);
-            if (task && !terminal.has(task.status)) this.updateTask(task.id, { status: stopped?.status || 'interrupted' });
-            this.records.save('jobs', { ...target, status: action === 'pause' ? 'paused' : 'cancelled' }, target.id);
-          }
-          return { status: 200, body: this.records.get('jobs', id) };
-        }
-        if (method === 'POST' && ['retry', 'resume'].includes(action)) {
-          if (!['paused', 'failed', 'cancelled', 'interrupted', 'state_unknown', 'blocked'].includes(job.status)) throw fail('当前任务不能恢复。', 409);
-          const previous = this.store.task(job.taskId);
-          const previousMeta = this.records.get('task-meta', job.taskId) || {};
-          const providerIds = body.providerIds ?? previousMeta.allowedProviderIds ?? previousMeta.providerIds;
-          if (providerIds !== undefined && (!Array.isArray(providerIds) || providerIds.some(value => typeof value !== 'string'))) throw fail('模型路由必须是供应商 ID 列表。');
-          const checkpoint = this.records.list('checkpoints').find(item => item.taskId === job.taskId);
-          const task = this.createTask({ role: job.role, prompt: job.goal, workspace: job.workspace, nodeId: job.nodeId,
-            workspaceKey: job.workspaceKey, workspaceMode: 'isolated', jobId: job.id, sourceTaskId: previous?.id,
-            spaceId: job.spaceId || undefined, teamId: job.teamId || job.spaceId || undefined, sourceMessageId: job.sourceMessageId || undefined,
-            providerIds, assistantSnapshot: previousMeta.assistantSnapshot, requirementVersion: job.requirementVersion,
-            contextExtra: checkpoint ? JSON.stringify(checkpoint) : '' });
-          this.records.save('task-meta', { ...this.records.get('task-meta', task.id), jobId: job.id, groupId: job.groupId,
-            batchId: randomUUID(), nodeId: job.nodeId, workspaceKey: job.workspaceKey, permissions: job.permissions,
-            requirementVersion: job.requirementVersion, spaceId: job.spaceId || null, teamId: job.teamId || job.spaceId || null,
-            sourceMessageId: job.sourceMessageId || null }, task.id);
-          return { status: 201, body: this.records.save('jobs', { ...job, taskId: task.id, status: 'queued' }, job.id) };
-        }
-      }
+      if (collection === 'jobs') return await handleJobs(this, { method, id, action, body, principal });
       if (collection === 'messages') {
         if (method === 'POST' && !id) return { status: 201, body: this.sendMessage(body, principal) };
         if (method === 'POST' && id === 'receive') return { status: 200, body: { items: this.readMessages(body.taskId || principal.taskId, principal) } };
@@ -1196,117 +996,5 @@ export class ControlPlane {
       return { status: 404, body: { error: '接口不存在。' } };
     } catch (error) { return { status: error.status || 400, body: { error: error.message } }; }
   }
-  async handleNodes({ method, id, action, body, req, principal, query }) {
-    if (method === 'POST' && id === 'pair') {
-      const code = required(body.code, '配对码', 100);
-      const name = required(body.name, '节点名称', 120);
-      const workspaces = Array.isArray(body.workspaces) ? body.workspaces.filter(value => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(value)) : [];
-      if (!workspaces.length || workspaces.length > 100) throw fail('至少声明一个有效的工作目录映射名称。');
-      return this.atomic(() => {
-        const pairing = this.records.get('node-pairings', hashToken(code));
-        if (!pairing || pairing.usedAt || pairing.expiresAt <= this.now()) throw fail('配对码已失效。', 401);
-        const token = randomBytes(32).toString('hex');
-        const node = this.records.save('nodes', { name, tokenHash: hashToken(token), workspaces,
-          platform: String(body.platform || '').slice(0, 100), lastSeenAt: this.now(), status: 'online' });
-        this.records.save('node-pairings', { ...pairing, usedAt: this.now(), nodeId: node.id }, pairing.id);
-        return { status: 201, body: { node: publicRecord(node), token, leaseMs: this.leaseMs, heartbeatMs: 10000 } };
-      });
-    }
-    if (method === 'POST' && ['claim', 'heartbeat', 'report'].includes(id)) {
-      const node = this.nodeFromToken(bearer(req));
-      this.records.save('nodes', { ...node, lastSeenAt: this.now(), status: 'online' }, node.id);
-      if (id === 'heartbeat') {
-        if (!Array.isArray(body.executions) || body.executions.length > 100) throw fail('执行心跳格式错误。');
-        const leases = body.executions.map(item => ({ taskId: item.taskId, epoch: item.epoch,
-          active: this.heartbeatLocal(item.taskId, item.epoch, node.id), expiresAt: this.records.get('executions', item.taskId)?.expiresAt }));
-        return { status: 200, body: { leases, serverTime: this.now() } };
-      }
-      if (id === 'report') {
-        const execution = this.records.get('executions', body.taskId);
-        if (!execution || execution.nodeId !== node.id) throw fail('任务不属于此节点。', 403);
-        if (body.kind === 'event') {
-          if (execution.status !== 'running' || execution.expiresAt <= this.now() || execution.epoch !== body.epoch) throw fail('租约已失效。', 409);
-          const eventId = required(body.eventId, '事件 ID', 250);
-          if (!body.event || typeof body.event !== 'object' || Array.isArray(body.event) || JSON.stringify(body.event).length > 64000) throw fail('运行事件格式无效或超过大小限制。');
-          const receiptId = hashToken(`${body.taskId}:${body.epoch}:${eventId}`);
-          if (this.records.get('node-event-receipts', receiptId)) return { status: 200, body: { accepted: true, duplicate: true } };
-          if (this.records.list('node-event-receipts').filter(item => item.taskId === body.taskId).length >= 2000) throw fail('当前执行实例的事件数量超过限制。', 409);
-          const task = this.store.task(body.taskId);
-          this.atomic(() => {
-            if (this.onEvent) this.onEvent(task, body.event);
-            else this.records.save('task-events', { taskId: body.taskId, ...body.event });
-            if (String(body.event.type || '').startsWith('tool/')) {
-              const meta = this.records.get('task-meta', body.taskId) || {};
-              this.records.save('task-meta', { ...meta, toolActivity: true }, body.taskId);
-            }
-            this.records.save('node-event-receipts', { taskId: body.taskId, eventId }, receiptId);
-          });
-          return { status: 200, body: { accepted: true, duplicate: false } };
-        }
-        if (body.kind === 'log') {
-          if (execution.status !== 'running' || execution.expiresAt <= this.now() || execution.epoch !== body.epoch) throw fail('租约已失效。', 409);
-          const sequence = Number(body.sequence);
-          if (!Number.isSafeInteger(sequence) || sequence < 1) throw fail('日志序号无效。');
-          if (sequence > (execution.logSequence || 0)) {
-            const task = this.store.task(body.taskId);
-            this.updateTask(task.id, { log: `${task.log || ''}${String(body.text || '').slice(0, 20000)}\n`.slice(-48000) });
-            this.records.save('executions', { ...execution, logSequence: sequence }, execution.id);
-          }
-          return { status: 200, body: { accepted: true } };
-        }
-        const result = this.finishLocal(body.taskId, body.epoch, body, node.id);
-        if (!result.duplicate && this.onRemoteDone) await this.onRemoteDone(this.store.task(body.taskId), body);
-        return { status: 200, body: result };
-      }
-      this.reconcile();
-      const active = this.records.list('executions').filter(execution => execution.status === 'running');
-      const maxConcurrent = this.store.config.maxConcurrent || 3;
-      if (active.length >= maxConcurrent) return { status: 200, body: { assignment: null } };
-      const task = this.store.tasks().reverse().find(item => {
-        const meta = this.records.get('task-meta', item.id) || {};
-        return this.eligible(item, node.id) && node.workspaces.includes(meta.workspaceKey || 'default');
-      });
-      if (!task) return { status: 200, body: { assignment: null } };
-      const claimed = this.claimLocal(task, node.id);
-      if (!claimed) return { status: 200, body: { assignment: null } };
-      try {
-        const meta = this.records.get('task-meta', task.id) || {};
-        const assignment = this.buildAssignment ? await this.buildAssignment({ task, node: publicRecord(node), ...claimed }) : {
-          task, assistant: this.store.role(task.role), config: { model: this.store.config.model, maxConcurrent },
-        };
-        return { status: 200, body: { assignment: { ...assignment, ...claimed, workspaceKey: meta.workspaceKey || 'default' }, serverTime: this.now() } };
-      } catch (error) {
-        this.finishLocal(task.id, claimed.execution.epoch, { status: 'failed', error: error.message }, node.id);
-        throw error;
-      }
-    }
-    if (principal.type !== 'owner') throw fail('需要所有者权限。', 403);
-    if (method === 'GET') {
-      if (id) {
-        const node = this.records.get('nodes', id);
-        if (!node) throw fail('节点不存在。', 404);
-        return { status: 200, body: this.nodeView(node) };
-      }
-      return { status: 200, body: bounded(this.records.list('nodes').map(node => this.nodeView(node)), query) };
-    }
-    if (method === 'POST' && id === 'pairing') {
-      const code = randomBytes(16).toString('hex');
-      const expiresAt = this.now() + 10 * 60_000;
-      for (const pairing of this.records.list('node-pairings')) if (pairing.expiresAt <= this.now()) this.records.remove('node-pairings', pairing.id);
-      this.records.save('node-pairings', { expiresAt }, hashToken(code));
-      return { status: 201, body: { code, expiresAt } };
-    }
-    if (method === 'POST' && action === 'revoke') {
-      const node = this.records.get('nodes', id);
-      if (!node) throw fail('节点不存在。', 404);
-      this.records.save('nodes', { ...node, revokedAt: this.now(), status: 'revoked', tokenHash: null }, id);
-      for (const execution of this.records.list('executions').filter(item => item.nodeId === id && item.status === 'running')) {
-        this.revokeExecution(execution.taskId, 'state_unknown');
-        this.updateTask(execution.taskId, { status: 'state_unknown', error: '节点已撤销，等待确认旧执行停止。' });
-        this.attention({ taskId: execution.taskId, title: '节点撤销后的任务需确认', kind: 'node-revoked' });
-      }
-      return { status: 200, body: { ok: true } };
-    }
-    return { status: 404, body: { error: '节点接口不存在。' } };
-  }
+  async handleNodes(input) { return handleNodes(this, input); }
 }

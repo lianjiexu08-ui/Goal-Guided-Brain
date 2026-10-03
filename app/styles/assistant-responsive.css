@@ -1,0 +1,95 @@
+/* Goal-Guided Brain assistant-responsive styles. */
+@media (max-width: 767px) {
+  .assistant-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .assistant-row-main {
+    flex-basis: 100%;
+  }
+  .assistant-row-actions {
+    margin-left: 60px;
+  }
+  .conversation-top {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .work-dialog.assistant-editor {
+    padding: 20px !important;
+  }
+  .editor-tabs {
+    gap: 16px;
+  }
+}
+
+/* Single-entry team recruitment navigation: roles stay available to the orchestrator,
+   while the user gets one clear place to start. */
+.chat-entry {
+  height: 76px !important;
+  margin: 2px 0 4px;
+  padding: 12px 11px !important;
+  border: 1px solid #37626a !important;
+  border-radius: 15px !important;
+  background: linear-gradient(125deg, #244b52, #1b353d) !important;
+  box-shadow: 0 10px 25px #07181b30;
+}
+
+.chat-entry:hover,
+.chat-entry[data-active='true'] {
+  border-color: #6bbba6 !important;
+  background: linear-gradient(125deg, #2c625f, #20434a) !important;
+}
+
+.chat-entry-icon {
+  color: #b8f0d8 !important;
+  background: #2d706b !important;
+  box-shadow: 0 6px 14px #081a1c35;
+}
+
+.chat-entry strong {
+  font-size: 14px;
+  letter-spacing: 0.1px;
+}
+
+.chat-entry small {
+  color: #9dc0bc !important;
+  white-space: nowrap;
+}
+
+.nav-caption {
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+}
+
+.sidebar-note p {
+  line-height: 1.5;
+}
+
+.conversation-top h1 {
+  max-width: 620px;
+  font-size: clamp(22px, 2.3vw, 30px);
+  letter-spacing: -1.2px;
+}
+
+.conversation-top h1 .quiet-badge {
+  vertical-align: 5px;
+  margin-left: 9px;
+  font-size: 10px;
+  letter-spacing: 0.2px;
+}
+
+.context-header span {
+  font-weight: 650;
+  letter-spacing: -0.1px;
+}
+
+@media (max-width: 767px) {
+  .chat-entry {
+    height: 68px !important;
+  }
+
+  .conversation-top h1 {
+    font-size: 22px;
+  }
+}

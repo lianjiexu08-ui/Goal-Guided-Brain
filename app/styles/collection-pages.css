@@ -1,0 +1,653 @@
+/* Collection pages: tasks, reviews, knowledge, and history.
+ * Kept separate from the application shell so page-specific styling can evolve
+ * without turning the global stylesheet into another component.
+ */
+.collection-page {
+  padding: 40px;
+  overflow: auto;
+  flex: 1;
+  background: #fbfcfd;
+}
+.page-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 25px;
+  margin-bottom: 35px;
+}
+.page-heading h1 {
+  font-size: 27px;
+}
+.page-heading p {
+  color: #8d9ca4;
+  font-size: 13px;
+  margin-top: 12px;
+  line-height: 1.8;
+}
+.count-pill {
+  font-size: 12px;
+  border: 1px solid #dfebe5;
+  border-radius: 20px;
+  padding: 7px 12px;
+  color: #608979;
+  background: #f2f8f4;
+}
+.page-heading-pills {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.count-pill.needs-review {
+  color: #9b6840;
+  border-color: #f0dfc7;
+  background: #fff8ed;
+}
+.risk-inbox {
+  margin: -10px 0 28px;
+  padding: 20px;
+  border: 1px solid #eadfd1;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #fffdf8, #fffaf2);
+  box-shadow: 0 10px 24px #7b5d3010;
+}
+.risk-inbox-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.risk-inbox-head h2 {
+  margin: 5px 0 4px;
+  color: #4b514d;
+  font-size: 19px;
+}
+.risk-inbox-head p {
+  margin: 0;
+  color: #8d9085;
+  font-size: 12px;
+}
+.risk-inbox-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.risk-inbox-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin: 16px 0 6px;
+}
+.risk-inbox-toolbar label {
+  display: grid;
+  gap: 5px;
+  color: #8a918a;
+  font-size: 10px;
+}
+.risk-inbox-toolbar select {
+  min-width: 150px;
+  padding: 7px 28px 7px 9px;
+  border: 1px solid #eadfce;
+  border-radius: 9px;
+  color: #58645d;
+  background: #fff;
+  font-size: 11px;
+}
+.risk-inbox-error {
+  padding: 10px 0;
+  color: #a45e4c;
+  font-size: 11px;
+}
+.risk-inbox-list {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid #f0e6d9;
+}
+.risk-inbox-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 2px;
+  border-bottom: 1px solid #f0e6d9;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+}
+.risk-inbox-item:hover {
+  background: #fff6e7;
+}
+.risk-inbox-icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 9px;
+  color: #a06a3e;
+  background: #ffedd8;
+}
+.risk-inbox-icon.delivery {
+  color: #966b3c;
+  background: #fff0d5;
+}
+.risk-inbox-icon.attention {
+  color: #9e5e4f;
+  background: #ffebe7;
+}
+.risk-inbox-copy {
+  min-width: 0;
+  flex: 1;
+}
+.risk-inbox-copy strong,
+.risk-inbox-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.risk-inbox-copy strong {
+  color: #59635e;
+  font-size: 12px;
+  font-weight: 650;
+}
+.risk-inbox-copy small {
+  margin-top: 3px;
+  color: #9a9c91;
+  font-size: 10px;
+}
+.risk-inbox-item em {
+  flex: 0 0 auto;
+  color: #a06a3e;
+  font-size: 10px;
+  font-style: normal;
+}
+.risk-inbox-more {
+  padding: 10px 0 2px;
+  color: #916943;
+  font-size: 11px;
+}
+.risk-inbox-more:hover:not(:disabled) {
+  color: #6f4b2b;
+  text-decoration: underline;
+}
+.risk-inbox-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 74px;
+  color: #9a9b92;
+  font-size: 11px;
+}
+.collection-page [data-slot='tabs-list'] {
+  gap: 24px;
+  margin-bottom: 16px;
+}
+.collection-page [data-slot='tabs-trigger'] {
+  font-size: 13px;
+  padding: 9px 0;
+  height: 40px;
+  gap: 8px;
+}
+.collection-page [data-slot='tabs-trigger'] span {
+  font-size: 11px;
+  color: #8299a5;
+}
+.task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+.batch-review-toolbar {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid #d9e9e1;
+  border-radius: 12px;
+  background: #f6fbf8;
+}
+.batch-review-toolbar-head,
+.batch-review-actions,
+.batch-review-buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.batch-review-toolbar-head {
+  justify-content: space-between;
+  color: #7f938d;
+  font-size: 11px;
+}
+.batch-review-select {
+  padding: 5px 9px;
+  border: 1px solid #c5ded3;
+  border-radius: 7px;
+  color: #367866;
+  background: #fff;
+  font-size: 11px;
+  cursor: pointer;
+}
+.batch-review-select:hover:not(:disabled) {
+  border-color: #8fc3ad;
+  background: #eef8f2;
+}
+.batch-review-actions {
+  align-items: flex-end;
+}
+.batch-review-actions textarea {
+  min-height: 48px;
+  flex: 1;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid #d8e7e1;
+  border-radius: 8px;
+  color: #46635d;
+  background: #fff;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.batch-review-actions textarea:focus {
+  outline: 2px solid #b9ddcc;
+  outline-offset: 1px;
+}
+.batch-review-buttons {
+  flex: 0 0 auto;
+  align-items: stretch;
+}
+.batch-review-buttons .primary-button,
+.batch-review-buttons .secondary-button {
+  white-space: nowrap;
+}
+.task-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: #fff;
+  padding: 20px;
+  border: 1px solid #e5ebed;
+  border-radius: 10px;
+  text-align: left;
+  width: 100%;
+}
+.task-card > div:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.task-card strong {
+  font-size: 14px;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 550;
+}
+.task-card > div > span {
+  display: block;
+  margin-top: 7px;
+  font-size: 11px;
+  color: #8e9da5;
+}
+.task-card-proof {
+  display: block;
+  margin-top: 5px;
+  color: #a17b44;
+  font-size: 11px;
+}
+.task-card-proof.accepted {
+  color: #39856f;
+}
+.task-card-proof.rejected,
+.task-card-proof.failed,
+.task-card-proof.needs-review {
+  color: #b35c4c;
+}
+.task-card > svg {
+  color: #b0bfc7;
+}
+.review-task-card {
+  gap: 12px;
+}
+.review-task-checkbox {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  accent-color: #2c8b73;
+  cursor: pointer;
+}
+.review-task-card.selected {
+  border-color: #9dceb9;
+  background: #fbfffc;
+  box-shadow: 0 0 0 2px #e5f5ec;
+}
+.task-card-open {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+.task-card-open:hover strong {
+  color: #2d806b;
+}
+.task-card-open strong,
+.task-card-open span,
+.task-card-open small {
+  display: block;
+}
+.task-card-open strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-card-open span {
+  margin-top: 7px;
+  font-size: 11px;
+  color: #8e9da5;
+}
+.status-icon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #f2f6f7;
+  color: #8399a3;
+}
+.status-icon svg {
+  width: 16px;
+}
+.status-icon.completed,
+.status-icon.running {
+  background: #edf7f1;
+  color: #579b80;
+}
+.collection-empty {
+  text-align: center;
+  padding: 90px 25px;
+  color: #82949d;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 18px;
+}
+.collection-empty > svg {
+  color: #a8bdc4;
+  margin-bottom: 6px;
+}
+.collection-empty h2 {
+  font-size: 21px;
+  font-weight: 550;
+  color: #4d6571;
+}
+.collection-empty p {
+  font-size: 13px;
+  line-height: 1.8;
+}
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 440px;
+  background: #fff;
+  border: 1px solid #e3e9ec;
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #8da0aa;
+  margin-bottom: 25px;
+}
+.search-field input {
+  flex: 1;
+  border: 0;
+  outline: 0;
+  font-size: 13px;
+  width: 100%;
+}
+.knowledge-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 18px;
+}
+.knowledge-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+.knowledge-toolbar .search-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.clear-search-btn {
+  position: absolute;
+  right: 12px;
+  background: transparent;
+  border: none;
+  color: #8fa0a9;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 50%;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+.clear-search-btn:hover {
+  background: #e2e8ea;
+  color: #334155;
+}
+.knowledge-filter-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.filter-pill {
+  border: 1px solid #dce4e8;
+  background: #f8fafb;
+  color: #64748b;
+  padding: 5px 14px;
+  border-radius: 16px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.filter-pill:hover {
+  background: #edf2f5;
+  color: #1e293b;
+  border-color: #cbd5e1;
+}
+.filter-pill.active {
+  background: #2c3e50;
+  color: #ffffff;
+  border-color: #2c3e50;
+  font-weight: 500;
+}
+.knowledge-card-wrapper {
+  position: relative;
+  background: white;
+  border: 1px solid #e1e9ec;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    border-color 0.15s ease;
+}
+.knowledge-card-wrapper:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
+  border-color: #cbd5e1;
+}
+.knowledge-card-clickable {
+  text-align: left;
+  padding: 22px;
+  background: transparent;
+  border: none;
+  width: 100%;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  flex: 1;
+}
+.knowledge-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  gap: 8px;
+}
+.knowledge-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #7b9aab;
+}
+.knowledge-card-actions {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0.5;
+  transition: opacity 0.15s ease;
+  z-index: 2;
+}
+.knowledge-card-wrapper:hover .knowledge-card-actions {
+  opacity: 1;
+}
+.card-action-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #64748b;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+.card-action-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+  border-color: #e2e8f0;
+}
+.card-action-btn.danger:hover {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+.knowledge-card-wrapper h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+.knowledge-card-wrapper p {
+  font-size: 12px;
+  line-height: 1.75;
+  color: #64748b;
+  margin-top: 10px;
+  margin-bottom: 14px;
+  height: 60px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+.knowledge-card-wrapper footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: #94a3b8;
+  border-top: 1px solid #f1f5f9;
+  padding-top: 12px;
+}
+.collection-empty.compact {
+  padding: 48px 24px;
+}
+.history-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.history-item-header h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.history-item-header p {
+  margin: 4px 0 0 0;
+  font-size: 11px;
+  color: #8a9ba6;
+}
+.compact-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.knowledge-card {
+  text-align: left;
+  padding: 23px;
+  background: white;
+  border: 1px solid #e1e9ec;
+  border-radius: 10px;
+}
+.knowledge-card > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #7b9aab;
+  margin-bottom: 25px;
+  gap: 10px;
+}
+.knowledge-card h3 {
+  font-size: 16px;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.knowledge-card p {
+  font-size: 12px;
+  line-height: 1.85;
+  color: #8a9ba6;
+  margin-top: 12px;
+  height: 66px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+.knowledge-card footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 22px;
+  font-size: 10px;
+  color: #a2afb6;
+}
+.confirmed {
+  color: #549e82;
+}
