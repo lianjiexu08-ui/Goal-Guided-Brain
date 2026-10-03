@@ -238,6 +238,49 @@
   background: #5da58d;
   transition: width .25s ease;
 }
+.team-plan-guardrails {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #e7efeb;
+  border-radius: 12px;
+  background: #f9fcfa;
+}
+.team-plan-guardrail-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  color: #718780;
+  font-size: 10px;
+}
+.team-plan-guardrail-row strong { color: #48645f; font-weight: 650; }
+.team-plan-guardrail-row .is-overdue { color: #a45e4c; }
+.team-plan-controls-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+  gap: 10px;
+}
+.team-plan-controls-form label {
+  display: grid;
+  gap: 5px;
+  color: #6f8580;
+  font-size: 10px;
+}
+.team-plan-controls-form input,
+.team-plan-controls-form select {
+  width: 100%;
+  min-height: 30px;
+  padding: 6px 8px;
+  border: 1px solid #d8e7e1;
+  border-radius: 8px;
+  color: #3f5954;
+  background: #fff;
+  font: inherit;
+  font-size: 11px;
+}
+.team-plan-controls-actions { display: flex; align-items: center; gap: 9px; }
+.team-plan-controls-actions .primary-button { min-height: 30px; padding: 5px 9px; font-size: 10px; }
 .team-plan-list {
   display: grid;
   gap: 0;
@@ -338,6 +381,8 @@
   .team-plan-head { gap: 10px; }
   .team-plan-head p { font-size: 11px; }
   .team-plan-progress strong { font-size: 19px; }
+  .team-plan-controls-form { grid-template-columns: 1fr; }
+  .team-plan-guardrail-row { display: grid; gap: 6px; }
 }
 .team-chat-panel,
 .team-roster-panel {

@@ -249,6 +249,28 @@ export type TeamSpace = {
   messages: TeamMessage[];
   timeline?: TeamTimelineItem[];
 };
+export type TeamPlan = {
+  id: string;
+  teamId: string;
+  summary: string;
+  status: 'active' | 'paused' | 'completed';
+  dueAt?: string | null;
+  riskPreference: 'conservative' | 'balanced' | 'aggressive';
+  budgetTokens?: number | null;
+  milestones: Array<{
+    id: string;
+    title: string;
+    description: string;
+    status: 'planned' | 'active' | 'blocked' | 'completed';
+    dueAt?: string | null;
+    ownerRoleId?: string | null;
+    order: number;
+    completedAt?: string | null;
+  }>;
+  revision: number;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
 export type TeamTemplate = {
   id: string;
   name: string;

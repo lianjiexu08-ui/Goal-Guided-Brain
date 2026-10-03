@@ -34,6 +34,18 @@ test.describe('团队目标计划回归', () => {
       .fill('保存检查报告和回滚记录。');
     await plan.getByRole('button', { name: '保存', exact: true }).click();
     await expect(plan).toContainText('完成健康检查和回滚演练');
+    await plan.getByRole('button', { name: '编辑计划边界' }).click();
+    await plan
+      .getByRole('textbox', { name: '计划截止日期' })
+      .fill('2030-12-31');
+    await plan
+      .getByRole('combobox', { name: '计划风险偏好' })
+      .selectOption('conservative');
+    await plan.getByRole('spinbutton', { name: '计划预算' }).fill('50000');
+    await plan.getByRole('button', { name: '保存边界', exact: true }).click();
+    await expect(plan).toContainText('2030-12-31');
+    await expect(plan).toContainText('稳健：优先控制风险');
+    await expect(plan).toContainText('计划上限 50,000');
     await plan
       .getByRole('button', { name: '完成健康检查和回滚演练：未开始' })
       .click();
@@ -51,6 +63,9 @@ test.describe('团队目标计划回归', () => {
       teams.development.id,
     );
     expect(saved.team.goal).toBe('把运维目标拆成可验收的阶段。');
+    expect(saved.plan.dueAt).toBe('2030-12-31');
+    expect(saved.plan.riskPreference).toBe('conservative');
+    expect(saved.plan.budgetTokens).toBe(50000);
     expect(saved.plan.milestones[0].status).toBe('completed');
   });
 });

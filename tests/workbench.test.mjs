@@ -621,9 +621,15 @@ test('team plan persists a goal and milestone progress per team', async () => {
     assert.equal(initial.status, 200);
     assert.equal(initial.body.teamId, team.id);
     assert.equal(initial.body.revision, 0);
+    assert.equal(initial.body.dueAt, null);
+    assert.equal(initial.body.riskPreference, 'balanced');
+    assert.equal(initial.body.budgetTokens, null);
     const saved = await request(`spaces/${team.id}/plan`, {
       revision: initial.body.revision,
       summary: '完成首个可验证交付',
+      dueAt: '2030-06-30',
+      riskPreference: 'conservative',
+      budgetTokens: 50000,
       milestones: [
         { id: 'spec', title: '明确验收标准', status: 'completed', order: 0 },
         { id: 'build', title: '完成实现与测试', status: 'active', order: 1 },
@@ -631,6 +637,9 @@ test('team plan persists a goal and milestone progress per team', async () => {
     }, 'PUT');
     assert.equal(saved.status, 200);
     assert.equal(saved.body.revision, 1);
+    assert.equal(saved.body.dueAt, '2030-06-30');
+    assert.equal(saved.body.riskPreference, 'conservative');
+    assert.equal(saved.body.budgetTokens, 50000);
     assert.equal(saved.body.milestones[0].completedAt !== null, true);
     assert.equal((await request(`spaces/${team.id}`, undefined, 'GET')).body.goal, '完成首个可验证交付');
     const conflict = await request(`spaces/${team.id}/plan`, {
@@ -643,6 +652,18 @@ test('team plan persists a goal and milestone progress per team', async () => {
     const fetched = await request(`spaces/${team.id}/plan`);
     assert.equal(fetched.body.summary, '完成首个可验证交付');
     assert.deepEqual(fetched.body.milestones.map((item) => item.status), ['completed', 'active']);
+    const invalidDate = await request(`spaces/${team.id}/plan`, {
+      revision: fetched.body.revision,
+      dueAt: '2030-02-31',
+    }, 'PUT');
+    assert.equal(invalidDate.status, 400);
+    assert.match(invalidDate.body.error, /有效的 YYYY-MM-DD/);
+    const excessiveBudget = await request(`spaces/${team.id}/plan`, {
+      revision: fetched.body.revision,
+      budgetTokens: team.autonomy.budgetTokens + 1,
+    }, 'PUT');
+    assert.equal(excessiveBudget.status, 400);
+    assert.match(excessiveBudget.body.error, /团队自治预算/);
     assert.equal((await request(`spaces/${team.id}/plan`, {
       revision: fetched.body.revision,
       status: 'completed',

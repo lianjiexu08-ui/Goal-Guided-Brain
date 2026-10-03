@@ -257,6 +257,9 @@ export class Store {
       version: 1,
       status: 'active',
       summary: space.goal,
+      dueAt: null,
+      riskPreference: 'balanced',
+      budgetTokens: null,
       milestones: [],
       revision: 0,
       createdAt: null,
@@ -265,7 +268,15 @@ export class Store {
   }
   teamPlan(spaceId) {
     if (!this.teamSpace(spaceId)) return null;
-    return this.records.get('team-plans', spaceId) || this.defaultTeamPlan(spaceId);
+    const saved = this.records.get('team-plans', spaceId);
+    if (!saved) return this.defaultTeamPlan(spaceId);
+    return {
+      ...this.defaultTeamPlan(spaceId),
+      ...saved,
+      dueAt: saved.dueAt ?? null,
+      riskPreference: saved.riskPreference ?? 'balanced',
+      budgetTokens: saved.budgetTokens ?? null,
+    };
   }
   saveTeamPlan(spaceId, input = {}) {
     const space = this.teamSpace(spaceId);
@@ -277,6 +288,31 @@ export class Store {
       throw new Error('团队计划状态无效。');
     const summary = String(input.summary ?? existing.summary ?? space.goal).trim();
     if (!summary || summary.length > 2000) throw new Error('团队计划说明无效。');
+    const dueAtValue = Object.hasOwn(input, 'dueAt')
+      ? input.dueAt
+      : (existing.dueAt ?? null);
+    let dueAt = null;
+    if (dueAtValue !== null && dueAtValue !== undefined && String(dueAtValue).trim()) {
+      dueAt = String(dueAtValue).trim();
+      const parsedDueAt = Date.parse(`${dueAt}T00:00:00Z`);
+      const date = new Date(parsedDueAt);
+      const validRoundTrip = !Number.isNaN(parsedDueAt) &&
+        date.toISOString().slice(0, 10) === dueAt;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dueAt) || !validRoundTrip)
+        throw new Error('计划截止日期必须是有效的 YYYY-MM-DD 日期。');
+    }
+    const riskPreference = input.riskPreference ?? existing.riskPreference ?? 'balanced';
+    if (!['conservative', 'balanced', 'aggressive'].includes(riskPreference))
+      throw new Error('计划风险偏好无效。');
+    const budgetValue = Object.hasOwn(input, 'budgetTokens')
+      ? input.budgetTokens
+      : (existing.budgetTokens ?? null);
+    const budgetTokens = budgetValue === null || budgetValue === undefined || budgetValue === ''
+      ? null
+      : Number(budgetValue);
+    const autonomyBudget = Number(space.autonomy?.budgetTokens) || 200000;
+    if (budgetTokens !== null && (!Number.isSafeInteger(budgetTokens) || budgetTokens < 1000 || budgetTokens > autonomyBudget))
+      throw new Error(`计划预算需要在 1000 至团队自治预算 ${autonomyBudget} tokens 之间。`);
     const source = Array.isArray(input.milestones)
       ? input.milestones
       : (Array.isArray(existing.milestones) ? existing.milestones : []);
@@ -320,6 +356,9 @@ export class Store {
       version: 1,
       status,
       summary,
+      dueAt,
+      riskPreference,
+      budgetTokens,
       milestones,
     }, spaceId, expectedRevision);
     if (summary !== space.goal) {

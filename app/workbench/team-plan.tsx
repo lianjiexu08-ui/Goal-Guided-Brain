@@ -30,6 +30,9 @@ type TeamPlanData = {
   teamId: string;
   summary: string;
   status: PlanStatus;
+  dueAt?: string | null;
+  riskPreference: 'conservative' | 'balanced' | 'aggressive';
+  budgetTokens?: number | null;
   milestones: Milestone[];
   revision: number;
 };
@@ -39,6 +42,11 @@ const statusLabels: Record<MilestoneStatus, string> = {
   active: '进行中',
   blocked: '受阻',
   completed: '已完成',
+};
+const riskLabels: Record<TeamPlanData['riskPreference'], string> = {
+  conservative: '稳健：优先控制风险',
+  balanced: '平衡：兼顾速度与风险',
+  aggressive: '进取：优先推进速度',
 };
 
 export function TeamPlan({
@@ -57,6 +65,12 @@ export function TeamPlan({
   const [adding, setAdding] = useState(false);
   const [editingSummary, setEditingSummary] = useState(false);
   const [draftSummary, setDraftSummary] = useState('');
+  const [editingControls, setEditingControls] = useState(false);
+  const [draftDueAt, setDraftDueAt] = useState('');
+  const [draftRiskPreference, setDraftRiskPreference] =
+    useState<TeamPlanData['riskPreference']>('balanced');
+  const [draftBudgetTokens, setDraftBudgetTokens] = useState('');
+  const [now] = useState(() => Date.now());
 
   useEffect(() => {
     let current = true;
@@ -166,6 +180,36 @@ export function TeamPlan({
     void save({ ...plan, summary: draftSummary.trim() });
   }
 
+  function beginControlsEdit() {
+    if (!plan) return;
+    setDraftDueAt(plan.dueAt || '');
+    setDraftRiskPreference(plan.riskPreference || 'balanced');
+    setDraftBudgetTokens(
+      plan.budgetTokens === null || plan.budgetTokens === undefined
+        ? ''
+        : String(plan.budgetTokens),
+    );
+    setEditingControls(true);
+  }
+
+  function saveControls() {
+    if (!plan) return;
+    setEditingControls(false);
+    void save({
+      ...plan,
+      dueAt: draftDueAt || null,
+      riskPreference: draftRiskPreference,
+      budgetTokens: draftBudgetTokens ? Number(draftBudgetTokens) : null,
+    });
+  }
+
+  const dueState = useMemo(() => {
+    if (!plan?.dueAt || plan.status === 'completed') return null;
+    const due = new Date(`${plan.dueAt}T23:59:59`);
+    if (Number.isNaN(due.getTime())) return null;
+    return due.getTime() < now ? 'overdue' : 'upcoming';
+  }, [now, plan]);
+
   if (!teamSpace || teamSpace.recruitment?.phase !== 'confirmed') return null;
   return (
     <section className="team-plan" aria-label="团队目标与里程碑">
@@ -212,6 +256,97 @@ export function TeamPlan({
             {completedCount}/{plan?.milestones.length || 0} 项完成
           </span>
         </div>
+      </div>
+      <div className="team-plan-guardrails">
+        {editingControls ? (
+          <div className="team-plan-controls-form">
+            <label>
+              截止日期
+              <input
+                aria-label="计划截止日期"
+                type="date"
+                value={draftDueAt}
+                onChange={(event) => setDraftDueAt(event.target.value)}
+              />
+            </label>
+            <label>
+              风险偏好
+              <select
+                aria-label="计划风险偏好"
+                value={draftRiskPreference}
+                onChange={(event) =>
+                  setDraftRiskPreference(
+                    event.target.value as TeamPlanData['riskPreference'],
+                  )
+                }
+              >
+                {Object.entries(riskLabels).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              计划预算（tokens）
+              <input
+                aria-label="计划预算"
+                type="number"
+                min={1000}
+                max={teamSpace.autonomy?.budgetTokens || 200000}
+                step={1000}
+                placeholder="跟随团队自治预算"
+                value={draftBudgetTokens}
+                onChange={(event) => setDraftBudgetTokens(event.target.value)}
+              />
+            </label>
+            <div className="team-plan-controls-actions">
+              <button
+                className="primary-button"
+                type="button"
+                disabled={saving}
+                onClick={saveControls}
+              >
+                <Save size={13} /> 保存边界
+              </button>
+              <button
+                className="text-button"
+                type="button"
+                onClick={() => setEditingControls(false)}
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="team-plan-guardrail-row">
+            <span className={dueState === 'overdue' ? 'is-overdue' : ''}>
+              <strong>截止</strong>{' '}
+              {plan?.dueAt
+                ? `${plan.dueAt}${dueState === 'overdue' ? ' · 已逾期' : ''}`
+                : '未设置'}
+            </span>
+            <span>
+              <strong>风险</strong>{' '}
+              {riskLabels[plan?.riskPreference || 'balanced']}
+            </span>
+            <span>
+              <strong>预算</strong>{' '}
+              {plan?.budgetTokens
+                ? `计划上限 ${plan.budgetTokens.toLocaleString()} · 自治上限 ${(teamSpace.autonomy?.budgetTokens || 200000).toLocaleString()} tokens`
+                : `跟随自治上限 ${(teamSpace.autonomy?.budgetTokens || 200000).toLocaleString()} tokens`}
+            </span>
+            <button
+              className="team-plan-edit"
+              type="button"
+              aria-label="编辑计划边界"
+              disabled={saving || !plan}
+              onClick={beginControlsEdit}
+            >
+              <Pencil size={12} /> 编辑边界
+            </button>
+          </div>
+        )}
       </div>
       <div className="team-plan-track" aria-label={`计划完成度 ${progress}%`}>
         <span style={{ width: `${progress}%` }} />
