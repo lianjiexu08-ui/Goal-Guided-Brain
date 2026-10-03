@@ -209,6 +209,8 @@ export type TeamSpace = {
   pmRoleId: string;
   memberRoleIds: string[];
   status: string;
+  archivedAt?: string | null;
+  archivedFromStatus?: string | null;
   model?: string | null;
   providerId?: string | null;
   workspaceMode?: 'shared' | 'isolated' | 'worktree' | 'snapshot';

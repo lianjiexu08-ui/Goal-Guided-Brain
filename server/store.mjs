@@ -8,6 +8,7 @@ import { Records } from './records.mjs';
 import { DEFAULT_PROFILE, validateProfile } from './profile.mjs';
 import { ROLES } from './store/roles.mjs';
 import { knowledgeMethods } from './store/knowledge.mjs';
+import { teamLifecycleMethods } from './store/team-lifecycle.mjs';
 export { ROLES } from './store/roles.mjs';
 import {
   buildRecruitmentPage,
@@ -523,6 +524,12 @@ export class Store {
       status,
       autonomy,
       collaboration,
+      archivedAt: status === 'archived'
+        ? input.archivedAt ?? existing?.archivedAt ?? new Date().toISOString()
+        : null,
+      archivedFromStatus: status === 'archived'
+        ? input.archivedFromStatus ?? existing?.archivedFromStatus ?? null
+        : null,
     }, spaceId);
   }
   teamMessages(spaceId) {
@@ -843,3 +850,4 @@ export class Store {
 }
 
 Object.assign(Store.prototype, knowledgeMethods);
+Object.assign(Store.prototype, teamLifecycleMethods);

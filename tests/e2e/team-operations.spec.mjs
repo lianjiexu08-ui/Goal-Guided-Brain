@@ -64,6 +64,52 @@ test.describe('团队运营与协作回归', () => {
     expect(resumed.status).toBe('active');
   });
 
+  test('团队动态可以归档和恢复团队并保留历史记录', async ({ page }) => {
+    const teams = seedConfirmedTeams();
+    await page.goto('/');
+    await openMobileSidebar(page);
+    await sidebarLocator(page)
+      .locator('button')
+      .filter({ hasText: teams.development.name })
+      .first()
+      .click({ force: true });
+    await clickNavigation(page, '团队动态');
+
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.getByRole('button', { name: '归档团队', exact: true }).click();
+    await openMobileSidebar(page);
+    await expect(
+      page.getByRole('button', {
+        name: `恢复团队 ${teams.development.name}`,
+        exact: true,
+      }),
+    ).toBeVisible();
+    const archived = await page.evaluate(
+      async (id) =>
+        fetch(`/api/teams/${id}`).then((response) => response.json()),
+      teams.development.id,
+    );
+    expect(archived.status).toBe('archived');
+    expect(archived.messages.length).toBeGreaterThan(0);
+
+    await page
+      .getByRole('button', {
+        name: `恢复团队 ${teams.development.name}`,
+        exact: true,
+      })
+      .click();
+    await expect(
+      page.getByRole('heading', { name: teams.development.name }),
+    ).toBeVisible();
+    const restored = await page.evaluate(
+      async (id) =>
+        fetch(`/api/teams/${id}`).then((response) => response.json()),
+      teams.development.id,
+    );
+    expect(restored.status).toBe('active');
+    expect(restored.archivedAt).toBeNull();
+  });
+
   test('团队设置可以配置自治拆解层级、活跃任务和 Token 预算', async ({
     page,
   }) => {

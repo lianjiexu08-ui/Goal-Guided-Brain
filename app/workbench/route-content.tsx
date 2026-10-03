@@ -150,6 +150,7 @@ export function RouteContent({ context }: { context: WorkbenchContext }) {
     openTeamRename,
     openTeamSettings,
     toggleTeamAutonomy,
+    archiveTeam,
     openSaveTeamTemplate,
     openCreateTeam,
     startRecruitment,
@@ -264,6 +265,7 @@ export function RouteContent({ context }: { context: WorkbenchContext }) {
           openTeamRename={openTeamRename}
           openTeamSettings={openTeamSettings}
           toggleTeamAutonomy={toggleTeamAutonomy}
+          archiveTeam={archiveTeam}
           rosterReady={rosterReady}
           teamMembers={teamMembers}
           recruitment={recruitment}

@@ -477,6 +477,56 @@ export function createWorkbenchActions(deps: Record<string, any>) {
       );
     });
   }
+  async function archiveTeam() {
+    if (!teamSpace || teamSpace.recruitment?.phase !== 'confirmed') return;
+    if (teamSpace.status === 'archived') return;
+    const activeTaskCount = tasks.filter(
+      (task) =>
+        task.spaceId === teamSpace.id &&
+        ['queued', 'running', 'state_unknown'].includes(task.status),
+    ).length;
+    if (activeTaskCount) {
+      setNotice(
+        `团队还有 ${activeTaskCount} 项进行中的任务，请完成、停止或暂停后再归档。`,
+      );
+      return;
+    }
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm(
+        `归档团队“${teamSpace.name}”？历史消息、任务和交付证据会保留，归档后不会再接收新任务。`,
+      )
+    )
+      return;
+    const currentId = teamSpace.id;
+    const fallback = confirmedSpaces.find((space) => space.id !== currentId);
+    await action(async () => {
+      await api<TeamSpace>(`spaces/${currentId}/archive`, 'POST');
+      if (fallback) {
+        setSelectedSpaceId(fallback.id);
+        setRole(fallback.pmRoleId);
+        setView('team');
+      } else {
+        setSelectedSpaceId('');
+        setRole('project_manager');
+        setView('recruitment');
+      }
+      if (isMobile) setOpenMobile(false);
+      setNotice(`团队“${teamSpace.name}”已归档，历史记录仍可恢复。`);
+    });
+  }
+  async function restoreTeam(teamId: string) {
+    const archived = data?.spaces?.find((space) => space.id === teamId);
+    if (!archived || archived.status !== 'archived') return;
+    await action(async () => {
+      const saved = await api<TeamSpace>(`spaces/${teamId}/restore`, 'POST');
+      setSelectedSpaceId(saved.id);
+      setRole(saved.pmRoleId);
+      setView('team');
+      if (isMobile) setOpenMobile(false);
+      setNotice(`团队“${saved.name}”已恢复，可以继续接收新任务。`);
+    });
+  }
   function openSaveTeamTemplate() {
     if (!teamSpace || teamSpace.recruitment?.phase !== 'confirmed') return;
     setTeamTemplateForm({
@@ -610,7 +660,7 @@ export function createWorkbenchActions(deps: Record<string, any>) {
   }
   function selectTeam(id: string) {
     const next = data?.spaces?.find((space) => space.id === id);
-    if (!next) return;
+    if (!next || next.status === 'archived') return;
     setModal(null);
     // Execution records belong to the selected team. Never leave an open
     // inspector from Team A visible while the user is browsing Team B.
@@ -670,6 +720,8 @@ export function createWorkbenchActions(deps: Record<string, any>) {
     openTeamRename,
     openTeamSettings,
     toggleTeamAutonomy,
+    archiveTeam,
+    restoreTeam,
     openSaveTeamTemplate,
     openCreateTeam,
     startRecruitment,

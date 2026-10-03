@@ -321,6 +321,37 @@ p {
   background: #293d44 !important;
   box-shadow: inset 2px 0 #83cdb6;
 }
+.team-archived-list {
+  margin-top: 9px;
+  padding-top: 2px;
+  border-top: 1px solid rgb(48 64 73 / 62%);
+}
+.team-nav-archived-head {
+  padding-top: 12px;
+  color: #71858d;
+}
+.team-nav-archived-head svg {
+  color: #8d9da1;
+}
+.team-nav-item.archived {
+  color: #98a8ab !important;
+  background: rgb(38 57 64 / 48%) !important;
+}
+.team-nav-item.archived:hover {
+  color: #d0dddd !important;
+  background: #294147 !important;
+}
+.team-nav-item.archived strong {
+  color: #b8c7c8;
+}
+.team-nav-item.archived small {
+  color: #81969b;
+}
+.team-nav-item.archived .team-nav-dot {
+  color: #9aa9ab;
+  border-color: #52666b;
+  background: #314248;
+}
 .team-nav-dot {
   display: grid;
   width: 27px;

@@ -3,6 +3,7 @@
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import {
   ArrowRight,
+  Archive,
   Copy,
   History,
   ListChecks,
@@ -47,6 +48,7 @@ export type TeamActivityProps = {
   openTeamRename: () => void;
   openTeamSettings: () => void;
   toggleTeamAutonomy: () => Promise<void>;
+  archiveTeam: () => Promise<void>;
   rosterReady: boolean;
   teamMembers: TeamMember[];
   recruitment?: { phase: string };
@@ -91,6 +93,7 @@ export function TeamActivity({
   openTeamRename,
   openTeamSettings,
   toggleTeamAutonomy,
+  archiveTeam,
   rosterReady,
   teamMembers,
   recruitment,
@@ -200,6 +203,16 @@ export function TeamActivity({
                 <Pause size={14} />
               )}
               {teamSpace.status === 'paused' ? '恢复自治' : '暂停自治'}
+            </button>
+          )}
+          {teamSpace?.recruitment?.phase === 'confirmed' && (
+            <button
+              className="text-button team-archive-action"
+              type="button"
+              disabled={busy}
+              onClick={() => void archiveTeam()}
+            >
+              <Archive size={13} /> 归档团队
             </button>
           )}
           <div

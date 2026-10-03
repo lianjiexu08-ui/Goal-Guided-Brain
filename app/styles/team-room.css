@@ -55,6 +55,12 @@
   color: #936438;
   background: #fffaf1;
 }
+.team-archive-action {
+  color: #a76658;
+}
+.team-archive-action:hover {
+  color: #8c493f;
+}
 .team-autonomy-summary {
   display: flex;
   flex-wrap: wrap;

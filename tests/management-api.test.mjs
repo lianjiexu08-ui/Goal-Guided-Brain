@@ -436,6 +436,56 @@ test('management capability records expose assistant and team bindings', async (
   assert.equal(capability.boundTeamCount, 1);
 });
 
+test('team lifecycle archives and restores history while blocking active work', async (t) => {
+  const { app, request, workspace } = await fixture(t);
+  const created = await request('teams', {
+    name: '生命周期团队',
+    goal: '验证团队可以安全归档和恢复。',
+    purpose: '保留历史记录，避免长期团队列表膨胀。',
+    workspace,
+    pmRoleId: 'project_manager',
+    memberRoleIds: ['project_manager'],
+    recruitment: { phase: 'confirmed' },
+  });
+  assert.equal(created.status, 201);
+  const id = created.body.id;
+
+  const archived = await request(`teams/${id}/archive`, {}, 'POST');
+  assert.equal(archived.status, 200, JSON.stringify(archived));
+  assert.equal(archived.body.status, 'archived');
+  assert.ok(archived.body.archivedAt);
+  assert.equal(archived.body.archivedFromStatus, 'active');
+  const directUpdate = await request(
+    `teams/${id}`,
+    { status: 'active' },
+    'PUT',
+  );
+  assert.equal(directUpdate.status, 409);
+
+  const restored = await request(`teams/${id}/restore`, {}, 'POST');
+  assert.equal(restored.status, 200, JSON.stringify(restored));
+  assert.equal(restored.body.status, 'active');
+  assert.equal(restored.body.archivedAt, null);
+
+  const task = app.store.createTask({
+    role: 'project_manager',
+    prompt: '验证归档会保护进行中的任务。',
+    workspace,
+  });
+  app.store.records.save('task-meta', { teamId: id, spaceId: id }, task.id);
+  const blocked = await request(`teams/${id}/archive`, {}, 'POST');
+  assert.equal(blocked.status, 409);
+  assert.match(blocked.body.error, /进行中的任务/);
+
+  app.store.updateTask(task.id, { status: 'failed', error: 'fixture' });
+  const archivedAgain = await request(`teams/${id}/archive`, {}, 'POST');
+  assert.equal(archivedAgain.status, 200);
+  assert.equal(archivedAgain.body.status, 'archived');
+  const restoredAgain = await request(`teams/${id}/restore`, {}, 'POST');
+  assert.equal(restoredAgain.status, 200);
+  assert.equal(restoredAgain.body.status, 'active');
+});
+
 test('high-risk capability binding and enablement require explicit owner confirmation and leave an audit trail', async (t) => {
   const { app, request } = await fixture(t);
   const created = await request('capabilities', {

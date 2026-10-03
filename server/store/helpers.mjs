@@ -70,6 +70,8 @@ export function normalizeTeamSpace(space) {
     chatId: space.id,
     model: null,
     providerId: null,
+    archivedAt: null,
+    archivedFromStatus: null,
     responsibilities: {},
     memberSettings: {},
     ...space,

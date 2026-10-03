@@ -49,6 +49,10 @@ export function deriveWorkbenchState(input: Record<string, any>) {
     (space) =>
       space.status !== 'archived' && space.recruitment?.phase === 'confirmed',
   );
+  const archivedSpaces = spaces.filter(
+    (space) =>
+      space.status === 'archived' && space.recruitment?.phase === 'confirmed',
+  );
   const mobileTeamMatches = confirmedSpaces.filter((space) => {
     const query = mobileTeamQuery.trim().toLowerCase();
     if (!query) return true;
@@ -63,7 +67,9 @@ export function deriveWorkbenchState(input: Record<string, any>) {
     recruitmentSpaces[0];
   const primarySpace = confirmedSpaces[0] || recruitmentSpaces[0] || spaces[0];
   const teamSpace =
-    spaces.find((space) => space.id === selectedSpaceId) || primarySpace;
+    spaces.find(
+      (space) => space.id === selectedSpaceId && space.status !== 'archived',
+    ) || primarySpace;
   const isRecruitmentView = view === 'recruitment';
   const isConversationView = view === 'workspace' || isRecruitmentView;
   const isTeamConversation = teamSpace?.pmRoleId === role;
@@ -274,6 +280,7 @@ export function deriveWorkbenchState(input: Record<string, any>) {
     allReviewTasksSelected,
     spaces,
     confirmedSpaces,
+    archivedSpaces,
     mobileTeamMatches,
     recruitmentSpaces,
     recruitmentSpace,

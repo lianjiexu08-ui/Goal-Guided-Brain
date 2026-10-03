@@ -87,6 +87,7 @@ export function WorkbenchSidebar({ context }: { context: WorkbenchContext }) {
     allReviewTasksSelected,
     spaces,
     confirmedSpaces,
+    archivedSpaces,
     mobileTeamMatches,
     recruitmentSpaces,
     recruitmentSpace,
@@ -148,6 +149,8 @@ export function WorkbenchSidebar({ context }: { context: WorkbenchContext }) {
     openTeamRename,
     openTeamSettings,
     toggleTeamAutonomy,
+    archiveTeam,
+    restoreTeam,
     openSaveTeamTemplate,
     openCreateTeam,
     startRecruitment,
@@ -358,6 +361,35 @@ export function WorkbenchSidebar({ context }: { context: WorkbenchContext }) {
             </SidebarMenuItem>
           )}
         </SidebarMenu>
+        {archivedSpaces.length > 0 && (
+          <div className="team-archived-list" aria-label="已归档团队">
+            <div className="team-nav-head team-nav-archived-head">
+              <span>已归档团队</span>
+              <Archive size={13} />
+            </div>
+            <SidebarMenu className="team-nav-list">
+              {archivedSpaces.map((space) => (
+                <SidebarMenuItem key={space.id}>
+                  <SidebarMenuButton
+                    className="team-nav-item archived"
+                    aria-label={`恢复团队 ${space.name}`}
+                    onClick={() => void restoreTeam(space.id)}
+                    disabled={busy}
+                  >
+                    <span className="team-nav-dot">
+                      <Archive size={14} />
+                    </span>
+                    <span>
+                      <strong>{space.name}</strong>
+                      <small>已归档 · 点击恢复</small>
+                    </span>
+                    <Undo2 className="nav-icon" size={14} />
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </div>
+        )}
         <div className="nav-divider" />
         <div className="nav-caption">工作空间</div>
         <SidebarMenu>

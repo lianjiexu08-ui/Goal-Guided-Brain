@@ -409,7 +409,11 @@ export function createRequestHandler({
               platform.control.setTeamStatus(space.id, nextStatus),
             );
           }
+          if (req.method === 'POST' && ['archive', 'restore'].includes(parts[3]))
+            return send(200, store.archiveTeamSpace(space.id, parts[3] === 'archive'));
           if (req.method === 'PUT' && !parts[3]) {
+            if (body.status !== undefined && body.status !== space.status && (body.status === 'archived' || space.status === 'archived'))
+              throw Object.assign(new Error('团队归档和恢复必须通过生命周期接口完成。'), { status: 409 });
             const requestedRecruitment = body.recruitment;
             if (
               requestedRecruitment &&
