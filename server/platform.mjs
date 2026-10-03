@@ -23,8 +23,10 @@ import { createPlatformHandler } from './platform/handler.mjs';
 import { createPlatformManagement } from './platform/management.mjs';
 import { createPlatformReady } from './platform/ready.mjs';
 import { createContextFor } from './platform/context.mjs';
+import { checkPlanDeadlines } from './platform/plan-deadlines.mjs';
 
 const nowIso = () => new Date().toISOString();
+
 export function createPlatform({
   store,
   dataDir,
@@ -882,6 +884,7 @@ export function createPlatform({
     if (timer) return;
     timer = setInterval(() => {
       if (stopping) return;
+      checkPlanDeadlines({ store, control });
       for (const execution of control.reconcile()) {
         workspaces.finish(execution.taskId, 'quarantined');
         const run = runs.get(execution.taskId);
@@ -950,6 +953,13 @@ export function createPlatform({
     newTask,
     stopTask,
     schedule,
+    checkPlanDeadlines: (now) => checkPlanDeadlines({
+      store,
+      control,
+      ...(now !== undefined
+        ? { now: typeof now === 'function' ? now : () => now }
+        : {}),
+    }),
     start,
     handle,
     manage,

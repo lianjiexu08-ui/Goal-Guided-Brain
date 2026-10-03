@@ -153,6 +153,9 @@ test.describe('团队运营与协作：时间线与协作', () => {
       .getByRole('combobox', { name: '风险类型', exact: true })
       .selectOption('attention');
     await expect(
+      inbox.getByRole('option', { name: '计划逾期', exact: true }),
+    ).toBeAttached();
+    await expect(
       inbox.getByText('运维团队需要确认', { exact: true }),
     ).toBeVisible();
     await inbox

@@ -63,6 +63,7 @@ const statusLabels: Record<string, string> = {
   verified: '已验收',
   expired: '已过期',
   'expires-soon': '即将过期',
+  overdue: '已逾期',
 };
 const verificationLabels: Record<string, string> = {
   verified: '已验收',
@@ -106,6 +107,7 @@ export function RiskInbox({
     delivery: '交付风险',
     attention: '待确认事项',
     knowledge: '知识复核',
+    plan: '计划逾期',
   };
   const loadFirstPage = useCallback(async () => {
     setLoading(true);
@@ -159,7 +161,9 @@ export function RiskInbox({
         <div>
           <span className="section-kicker">TEAM RISKS</span>
           <h2>跨团队风险</h2>
-          <p>把失败执行、交付复核、知识复核和需要确认的事项放在一个入口。</p>
+          <p>
+            把失败执行、交付复核、计划逾期、知识复核和需要确认的事项放在一个入口。
+          </p>
         </div>
         <div className="risk-inbox-summary">
           <span className="count-pill needs-review">{total} 项待处理</span>
@@ -202,6 +206,7 @@ export function RiskInbox({
             <option value="delivery">交付风险</option>
             <option value="attention">待确认事项</option>
             <option value="knowledge">知识复核</option>
+            <option value="plan">计划逾期</option>
           </select>
         </label>
       </div>

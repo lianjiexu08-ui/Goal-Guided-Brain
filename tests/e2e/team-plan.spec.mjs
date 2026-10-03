@@ -46,6 +46,12 @@ test.describe('团队目标计划回归', () => {
     await expect(plan).toContainText('2030-12-31');
     await expect(plan).toContainText('稳健：优先控制风险');
     await expect(plan).toContainText('计划上限 50,000');
+    await plan.getByRole('button', { name: '编辑计划边界' }).click();
+    await plan
+      .getByRole('textbox', { name: '计划截止日期' })
+      .fill('2020-01-01');
+    await plan.getByRole('button', { name: '保存边界', exact: true }).click();
+    await expect(plan).toContainText('2020-01-01 · 已逾期');
     await plan
       .getByRole('button', { name: '完成健康检查和回滚演练：未开始' })
       .click();
@@ -63,7 +69,7 @@ test.describe('团队目标计划回归', () => {
       teams.development.id,
     );
     expect(saved.team.goal).toBe('把运维目标拆成可验收的阶段。');
-    expect(saved.plan.dueAt).toBe('2030-12-31');
+    expect(saved.plan.dueAt).toBe('2020-01-01');
     expect(saved.plan.riskPreference).toBe('conservative');
     expect(saved.plan.budgetTokens).toBe(50000);
     expect(saved.plan.milestones[0].status).toBe('completed');

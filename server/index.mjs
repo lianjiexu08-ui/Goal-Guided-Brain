@@ -334,10 +334,12 @@ export function createWorkbench({
         job: attention.jobId ? store.records.get('jobs', attention.jobId) : null,
       };
       if (!scope.team) continue;
+      const kind = attention.kind === 'plan-overdue' ? 'plan' : 'attention';
       risks.push({
         id: `attention:${attention.id}`,
         sourceType: 'attention',
-        kind: 'attention',
+        kind,
+        sourceKind: attention.kind || 'attention',
         status: attention.status || 'open',
         title: attention.title || '需要你处理',
         detail: attention.detail || '团队有一项需要确认的事项。',
