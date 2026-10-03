@@ -10,6 +10,8 @@ import {
   managementNavigation,
 } from './management';
 import { api, entityList, entityText, type Entity } from './workbench-api';
+import { MAX_ATTACHMENTS, type Attachment } from './drafts/model';
+import { useDraftSync } from './drafts/use-draft-sync';
 import {
   AssistantEditor,
   assistantIcons,
@@ -109,48 +111,6 @@ type Task = {
   currentRequirementVersion?: number | null;
   attachmentIds?: string[];
   attachments?: Attachment[];
-};
-type Attachment = {
-  id: string;
-  name: string;
-  mime: string;
-  size: number;
-};
-type DraftCache = {
-  drafts?: Record<string, string>;
-  attachments?: Record<string, Attachment[]>;
-  updatedAt?: Record<string, string>;
-  revisions?: Record<string, number>;
-  bases?: Record<string, DraftBase>;
-};
-type DraftBase = {
-  content: string;
-  attachmentIds: string[];
-};
-type DraftTextChange = {
-  start: number;
-  end: number;
-  replacement: string;
-};
-type DraftConflict = {
-  key: string;
-  spaceId: string | null;
-  roleId: string;
-  localContent: string;
-  remoteContent: string;
-  localAttachments: Attachment[];
-  remoteAttachments: Attachment[];
-  remoteRevision?: number;
-  remoteUpdatedAt?: string;
-};
-type ServerDraft = {
-  spaceId: string | null;
-  roleId: string;
-  content: string;
-  attachmentIds: string[];
-  attachments: Attachment[];
-  revision?: number;
-  updatedAt?: string;
 };
 type RouteCache = {
   spaceId?: string;
@@ -523,7 +483,6 @@ const formatBytes = (bytes: number) =>
   bytes < 1024 * 1024
     ? `${Math.max(1, Math.round(bytes / 1024))} KB`
     : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-const DRAFT_CACHE_KEY = 'ggb.composer-drafts.v1';
 const ROUTE_CACHE_KEY = 'ggb.workspace-route.v1';
 const ROUTE_VIEWS = new Set([
   'workspace',
@@ -542,92 +501,6 @@ const ROUTE_VIEWS = new Set([
   'backups',
 ]);
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
-const MAX_ATTACHMENTS = 20;
-function readDraftCache(): DraftCache {
-  if (typeof window === 'undefined') return {};
-  try {
-    const value = JSON.parse(window.localStorage.getItem(DRAFT_CACHE_KEY) || '{}') as DraftCache;
-    const drafts = value?.drafts && typeof value.drafts === 'object' && !Array.isArray(value.drafts)
-      ? Object.fromEntries(Object.entries(value.drafts).filter(([, draft]) => typeof draft === 'string'))
-      : {};
-    const attachments = value?.attachments && typeof value.attachments === 'object' && !Array.isArray(value.attachments)
-      ? Object.fromEntries(Object.entries(value.attachments).map(([key, items]) => [
-          key,
-          Array.isArray(items)
-            ? items.filter((item): item is Attachment =>
-                !!item && typeof item === 'object' &&
-                typeof item.id === 'string' && typeof item.name === 'string' &&
-                typeof item.mime === 'string' && Number.isFinite(item.size),
-              ).slice(0, MAX_ATTACHMENTS)
-            : [],
-        ]))
-      : {};
-    const updatedAt = value?.updatedAt && typeof value.updatedAt === 'object' && !Array.isArray(value.updatedAt)
-      ? Object.fromEntries(Object.entries(value.updatedAt).filter(([, timestamp]) => typeof timestamp === 'string'))
-      : {};
-    const revisions = value?.revisions && typeof value.revisions === 'object' && !Array.isArray(value.revisions)
-      ? Object.fromEntries(Object.entries(value.revisions).filter(([, revision]) => Number.isSafeInteger(revision)))
-      : {};
-    const bases = value?.bases && typeof value.bases === 'object' && !Array.isArray(value.bases)
-      ? Object.fromEntries(Object.entries(value.bases).filter(([, base]) =>
-          !!base && typeof base === 'object' && !Array.isArray(base) &&
-          typeof (base as DraftBase).content === 'string' &&
-          Array.isArray((base as DraftBase).attachmentIds) &&
-          (base as DraftBase).attachmentIds.every((id) => typeof id === 'string'),
-        ).map(([key, base]) => [key, {
-          content: (base as DraftBase).content,
-          attachmentIds: (base as DraftBase).attachmentIds.slice(0, MAX_ATTACHMENTS),
-        }]))
-      : {};
-    return { drafts, attachments, updatedAt, revisions, bases };
-  } catch {
-    return {};
-  }
-}
-
-function draftChangeFromBase(base: string, next: string): DraftTextChange | null {
-  if (base === next) return null;
-  let start = 0;
-  while (start < base.length && start < next.length && base[start] === next[start]) start += 1;
-  let baseEnd = base.length;
-  let nextEnd = next.length;
-  while (baseEnd > start && nextEnd > start && base[baseEnd - 1] === next[nextEnd - 1]) {
-    baseEnd -= 1;
-    nextEnd -= 1;
-  }
-  return { start, end: baseEnd, replacement: next.slice(start, nextEnd) };
-}
-
-function draftRangesOverlap(a: DraftTextChange, b: DraftTextChange) {
-  if (a.start === a.end && b.start === b.end) return a.start === b.start;
-  if (a.start === a.end) return a.start >= b.start && a.start <= b.end;
-  if (b.start === b.end) return b.start >= a.start && b.start <= a.end;
-  return a.start < b.end && b.start < a.end;
-}
-
-function mergeDraftText(base: string, local: string, remote: string) {
-  if (local === remote) return { content: local, conflict: false };
-  if (local === base) return { content: remote, conflict: false };
-  if (remote === base) return { content: local, conflict: false };
-  const localChange = draftChangeFromBase(base, local);
-  const remoteChange = draftChangeFromBase(base, remote);
-  if (!localChange || !remoteChange) return { content: localChange ? local : remote, conflict: false };
-  if (localChange.start === remoteChange.start && localChange.end === remoteChange.end &&
-      localChange.replacement === remoteChange.replacement) {
-    return { content: local, conflict: false };
-  }
-  if (draftRangesOverlap(localChange, remoteChange)) return { content: local, conflict: true };
-  const changes = [localChange, remoteChange].sort((a, b) => b.start - a.start);
-  let content = base;
-  for (const change of changes) content = content.slice(0, change.start) + change.replacement + content.slice(change.end);
-  return { content, conflict: false };
-}
-
-function mergeDraftAttachments(local: Attachment[], remote: Attachment[]) {
-  const merged = new Map<string, Attachment>();
-  for (const attachment of [...local, ...remote]) merged.set(attachment.id, attachment);
-  return [...merged.values()].slice(0, MAX_ATTACHMENTS);
-}
 function readRouteCache(): RouteCache {
   if (typeof window === 'undefined') return {};
   try {
@@ -1270,7 +1143,7 @@ export default function Home() {
   );
 }
 function Workbench() {
-  const { isMobile, setOpenMobile } = useSidebar();
+  const { isMobile, openMobile, setOpenMobile } = useSidebar();
   // 团队招募是主入口。工作空间载入后默认选中项目经理，具体角色由团队招募过程决定。
   const [role, setRole] = useState<RoleId>('__router__');
   const [view, setView] = useState('workspace');
@@ -1279,8 +1152,6 @@ function Workbench() {
   const [selected, setSelected] = useState<Partial<Record<RoleId, string>>>({});
   const [selectedSpaceId, setSelectedSpaceId] = useState('');
   const [modelOverrides, setModelOverrides] = useState<Record<string, string>>({});
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [draftAttachments, setDraftAttachments] = useState<Record<string, Attachment[]>>({});
   const [draggingFiles, setDraggingFiles] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
@@ -1366,22 +1237,11 @@ function Workbench() {
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const routeInitialized = useRef(false);
-  const draftCacheHydrated = useRef(false);
-  const [draftCacheReady, setDraftCacheReady] = useState(false);
-  const draftDirtyRef = useRef<Set<string>>(new Set());
-  const draftRevisionRef = useRef<Record<string, number>>({});
-  const draftUpdatedAtRef = useRef<Record<string, string>>({});
-  const draftBaseRef = useRef<Record<string, DraftBase>>({});
-  const draftVersionRef = useRef<Record<string, number>>({});
-  const draftTimersRef = useRef<Record<string, number>>({});
-  const teamEventRefreshTimerRef = useRef<number | null>(null);
-  const activeDraftKeyRef = useRef('');
-  const draftsRef = useRef<Record<string, string>>({});
-  const draftAttachmentsRef = useRef<Record<string, Attachment[]>>({});
-  const [draftSyncState, setDraftSyncState] = useState<'idle' | 'saving' | 'saved' | 'offline' | 'conflict'>('idle');
-  const [draftConflict, setDraftConflict] = useState<DraftConflict | null>(null);
   const [recruitmentSyncState, setRecruitmentSyncState] = useState<'idle' | 'syncing' | 'synced' | 'offline'>('idle');
+  const teamEventRefreshTimerRef = useRef<number | null>(null);
   const recruitmentCursorRef = useRef<Record<string, string>>({});
+  const overlayHistoryActiveRef = useRef(false);
+  const closingOverlayFromPopRef = useRef(false);
   const roles = data?.roles || [];
   const activeRoles = roles.filter((r) => !r.archived);
   const teamTemplates = data?.teamTemplates || [];
@@ -1571,10 +1431,72 @@ function Workbench() {
       })),
     );
   const modelOverrideKey = `${teamSpace?.id || 'standalone'}:${role}`;
+  const dataReady = !!data;
   const draftKey = `${teamSpace?.id || 'standalone'}:${role}`;
   const attachmentDraftKey = draftKey;
+  const draftSync = useDraftSync({
+    key: draftKey,
+    scope: { spaceId: teamSpace?.id || null, roleId: role },
+    ready: dataReady && role !== '__router__',
+  });
+  const {
+    drafts,
+    setDrafts,
+    draftAttachments,
+    setDraftAttachments,
+    draftSyncState,
+    draftConflict,
+    setDraftConflict,
+    markDraftDirty,
+    clearServerDraft,
+    resolveDraftConflict,
+    draftVersionRef,
+  } = draftSync;
+  const hasMobileOverlay = isMobile && Boolean(
+    openMobile || modal || editingAssistant || taskDetail || quickRenameKnowledge || knowledgeToDelete,
+  );
+
+  useEffect(() => {
+    if (!isMobile || typeof window === 'undefined') return undefined;
+
+    const handlePopState = () => {
+      if (!overlayHistoryActiveRef.current) return;
+      overlayHistoryActiveRef.current = false;
+      closingOverlayFromPopRef.current = true;
+      setOpenMobile(false);
+      setModal(null);
+      setEditingAssistant(null);
+      setTaskDetail(null);
+      setQuickRenameKnowledge(null);
+      setKnowledgeToDelete(null);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [isMobile, setOpenMobile]);
+
+  useEffect(() => {
+    if (!isMobile || typeof window === 'undefined') {
+      overlayHistoryActiveRef.current = false;
+      closingOverlayFromPopRef.current = false;
+      return;
+    }
+    if (hasMobileOverlay && !overlayHistoryActiveRef.current) {
+      window.history.pushState({ ggbOverlay: true }, '', window.location.href);
+      overlayHistoryActiveRef.current = true;
+      return;
+    }
+    if (!hasMobileOverlay && overlayHistoryActiveRef.current) {
+      if (closingOverlayFromPopRef.current) {
+        closingOverlayFromPopRef.current = false;
+        return;
+      }
+      overlayHistoryActiveRef.current = false;
+      window.history.back();
+    }
+  }, [hasMobileOverlay, isMobile]);
+
   const currentMemberSettings = teamSpace?.memberSettings?.[role];
-  const dataReady = !!data;
   const isTeamMember = !!teamSpace?.memberRoleIds.includes(role);
   const mobileContextTitle = isRecruitmentView
     ? '团队招募'
@@ -1654,238 +1576,6 @@ function Workbench() {
       (k.projectPath === conversationWorkspace &&
         ['project', role].includes(k.scope)),
   );
-  function draftQuery(spaceId: string | null, roleId: string) {
-    const query = new URLSearchParams({ role: roleId });
-    if (spaceId) query.set('spaceId', spaceId);
-    return `drafts?${query.toString()}`;
-  }
-  async function loadServerDraft(spaceId: string | null, roleId: string) {
-    return api<ServerDraft>(draftQuery(spaceId, roleId));
-  }
-  function setDraftSyncStateFor(key: string, state: 'idle' | 'saving' | 'saved' | 'offline' | 'conflict') {
-    if (activeDraftKeyRef.current === key) setDraftSyncState(state);
-  }
-  function markDraftDirty(key: string) {
-    draftDirtyRef.current.add(key);
-    draftVersionRef.current[key] = (draftVersionRef.current[key] || 0) + 1;
-    draftUpdatedAtRef.current[key] = new Date().toISOString();
-    setDraftSyncStateFor(key, 'saving');
-  }
-  function clearDraftTimer(key: string) {
-    const timer = draftTimersRef.current[key];
-    if (timer !== undefined && typeof window !== 'undefined') window.clearTimeout(timer);
-    delete draftTimersRef.current[key];
-  }
-  function queueDraftSync(
-    key: string,
-    spaceId: string | null,
-    roleId: string,
-    content: string,
-    attachmentIds: string[],
-    delay = 650,
-  ) {
-    if (typeof window === 'undefined' || !draftDirtyRef.current.has(key)) return;
-    clearDraftTimer(key);
-    const version = draftVersionRef.current[key] || 0;
-    draftTimersRef.current[key] = window.setTimeout(() => {
-      delete draftTimersRef.current[key];
-      void persistDraft(key, spaceId, roleId, content, attachmentIds, version);
-    }, delay);
-  }
-  async function persistDraft(
-    key: string,
-    spaceId: string | null,
-    roleId: string,
-    content: string,
-    attachmentIds: string[],
-    version: number,
-  ) {
-    if (!draftDirtyRef.current.has(key) || draftVersionRef.current[key] !== version) return;
-    setDraftSyncStateFor(key, 'saving');
-    const revision = draftRevisionRef.current[key];
-    try {
-      const saved = await api<ServerDraft>('drafts', 'PUT', {
-        spaceId,
-        roleId,
-        content,
-        attachmentIds,
-        ...(revision !== undefined ? { revision } : {}),
-      });
-      if (saved.revision !== undefined) draftRevisionRef.current[key] = saved.revision;
-      else delete draftRevisionRef.current[key];
-      draftBaseRef.current[key] = {
-        content: saved.content,
-        attachmentIds: saved.attachmentIds || attachmentIds,
-      };
-      if (draftVersionRef.current[key] !== version || !draftDirtyRef.current.has(key)) return;
-      draftDirtyRef.current.delete(key);
-      draftUpdatedAtRef.current[key] = saved.updatedAt || draftUpdatedAtRef.current[key] || new Date().toISOString();
-      setDraftConflict((current) => current?.key === key ? null : current);
-      setDraftSyncStateFor(key, 'saved');
-    } catch (rawError) {
-      const error = rawError as Error & { status?: number };
-      if (error.status === 409) {
-        try {
-          const latest = await loadServerDraft(spaceId, roleId);
-          const remoteAttachments = Array.isArray(latest.attachments)
-            ? latest.attachments.filter((item): item is Attachment =>
-                !!item && typeof item.id === 'string' && typeof item.name === 'string' &&
-                typeof item.mime === 'string' && Number.isFinite(item.size),
-              ).slice(0, MAX_ATTACHMENTS)
-            : [];
-          if (latest.revision !== undefined) draftRevisionRef.current[key] = latest.revision;
-          const localContent = draftsRef.current[key] || content;
-          const localAttachments = draftAttachmentsRef.current[key] || [];
-          const remoteContent = typeof latest.content === 'string' ? latest.content : '';
-          const remoteBase: DraftBase = {
-            content: remoteContent,
-            attachmentIds: latest.attachmentIds || remoteAttachments.map((item) => item.id),
-          };
-          const base = draftBaseRef.current[key];
-          const mergedText = base
-            ? mergeDraftText(base.content, localContent, remoteContent)
-            : { content: localContent, conflict: true };
-          if (!mergedText.conflict) {
-            const mergedAttachments = mergeDraftAttachments(localAttachments, remoteAttachments);
-            draftBaseRef.current[key] = remoteBase;
-            draftsRef.current[key] = mergedText.content;
-            draftAttachmentsRef.current[key] = mergedAttachments;
-            setDrafts((current) => ({ ...current, [key]: mergedText.content }));
-            setDraftAttachments((current) => ({ ...current, [key]: mergedAttachments }));
-            markDraftDirty(key);
-            queueDraftSync(
-              key,
-              spaceId,
-              roleId,
-              mergedText.content,
-              mergedAttachments.map((item) => item.id),
-              80,
-            );
-          } else {
-            setDraftConflict({
-              key,
-              spaceId,
-              roleId,
-              localContent,
-              remoteContent,
-              localAttachments,
-              remoteAttachments,
-              remoteRevision: latest.revision,
-              remoteUpdatedAt: latest.updatedAt,
-            });
-            setDraftSyncStateFor(key, 'conflict');
-          }
-          return;
-        } catch {
-          // Keep the local draft dirty when the remote version cannot be read.
-        }
-      }
-      setDraftSyncStateFor(key, 'offline');
-    }
-  }
-
-  function resolveDraftConflict(choice: 'local' | 'remote') {
-    const conflict = draftConflict;
-    if (!conflict) return;
-    const { key } = conflict;
-    clearDraftTimer(key);
-    if (choice === 'remote') {
-      draftsRef.current[key] = conflict.remoteContent;
-      draftAttachmentsRef.current[key] = conflict.remoteAttachments;
-      setDrafts((current) => ({ ...current, [key]: conflict.remoteContent }));
-      setDraftAttachments((current) => ({ ...current, [key]: conflict.remoteAttachments }));
-      draftBaseRef.current[key] = {
-        content: conflict.remoteContent,
-        attachmentIds: conflict.remoteAttachments.map((item) => item.id),
-      };
-      draftUpdatedAtRef.current[key] = conflict.remoteUpdatedAt || new Date().toISOString();
-      draftDirtyRef.current.delete(key);
-      setDraftConflict(null);
-      setDraftSyncStateFor(key, 'saved');
-      return;
-    }
-    const localContent = draftsRef.current[key] ?? conflict.localContent;
-    const localAttachments = draftAttachmentsRef.current[key] ?? conflict.localAttachments;
-    draftBaseRef.current[key] = {
-      content: conflict.remoteContent,
-      attachmentIds: conflict.remoteAttachments.map((item) => item.id),
-    };
-    if (conflict.remoteRevision !== undefined) draftRevisionRef.current[key] = conflict.remoteRevision;
-    draftsRef.current[key] = localContent;
-    draftAttachmentsRef.current[key] = localAttachments;
-    setDraftConflict(null);
-    markDraftDirty(key);
-    queueDraftSync(
-      key,
-      conflict.spaceId,
-      conflict.roleId,
-      localContent,
-      localAttachments.map((item) => item.id),
-      80,
-    );
-  }
-  async function clearServerDraft(
-    key: string,
-    spaceId: string | null,
-    roleId: string,
-    sentContent = '',
-    sentAttachmentIds: string[] = [],
-  ) {
-    clearDraftTimer(key);
-    try {
-      let revision = draftRevisionRef.current[key];
-      // A user can send before the 650 ms debounce finishes. Read the remote
-      // record first so the successful send does not leave the just-sent text
-      // queued for restoration on the next visit. Preserve a different remote
-      // draft owned by another window, including an optimistic-concurrency
-      // conflict discovered while saving this draft.
-      try {
-        const latest = await loadServerDraft(spaceId, roleId);
-        if (!latest.revision) {
-          delete draftRevisionRef.current[key];
-          delete draftUpdatedAtRef.current[key];
-          delete draftBaseRef.current[key];
-          draftDirtyRef.current.delete(key);
-          setDraftSyncStateFor(key, 'saved');
-          return;
-        }
-        const sameContent = latest.content.trim() === sentContent.trim() &&
-          JSON.stringify(latest.attachmentIds || []) === JSON.stringify(sentAttachmentIds);
-        if (!sameContent) {
-          delete draftRevisionRef.current[key];
-          delete draftUpdatedAtRef.current[key];
-          delete draftBaseRef.current[key];
-          draftDirtyRef.current.delete(key);
-          setDraftSyncStateFor(key, 'saved');
-          return;
-        }
-        revision = latest.revision;
-      } catch (error) {
-        if (revision === undefined) throw error;
-      }
-      await api('drafts', 'DELETE', {
-        spaceId,
-        roleId,
-        revision,
-      });
-      delete draftRevisionRef.current[key];
-      delete draftUpdatedAtRef.current[key];
-      delete draftBaseRef.current[key];
-      draftDirtyRef.current.delete(key);
-      setDraftConflict((current) => current?.key === key ? null : current);
-      setDraftSyncStateFor(key, 'saved');
-    } catch (rawError) {
-      const error = rawError as Error & { status?: number };
-      // Sending succeeded, so clear the local composer even if a stale remote
-      // draft could not be removed. A 409 means another window owns a newer
-      // revision; preserving it is safer than deleting that user's text.
-      draftDirtyRef.current.delete(key);
-      delete draftRevisionRef.current[key];
-      delete draftUpdatedAtRef.current[key];
-      delete draftBaseRef.current[key];
-      setDraftSyncStateFor(key, error.status === 409 ? 'saved' : 'offline');
-    }
-  }
   const syncRecruitment = useCallback(async (spaceId: string) => {
     const cursor = recruitmentCursorRef.current[spaceId] || '';
     const query = new URLSearchParams({ limit: '100' });
@@ -2016,144 +1706,6 @@ function Workbench() {
       }
     };
   }, [isConversationView, teamSpace?.id, view]);
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const cached = readDraftCache();
-      setDrafts((current) => ({ ...cached.drafts, ...current }));
-      setDraftAttachments((current) => ({ ...cached.attachments, ...current }));
-      draftUpdatedAtRef.current = cached.updatedAt || {};
-      draftRevisionRef.current = cached.revisions || {};
-      draftBaseRef.current = cached.bases || {};
-      draftCacheHydrated.current = true;
-      setDraftCacheReady(true);
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, []);
-  useEffect(() => {
-    if (!draftCacheHydrated.current) return;
-    try {
-      window.localStorage.setItem(
-        DRAFT_CACHE_KEY,
-        JSON.stringify({
-          drafts,
-          attachments: draftAttachments,
-          updatedAt: draftUpdatedAtRef.current,
-          revisions: draftRevisionRef.current,
-          bases: draftBaseRef.current,
-        } satisfies DraftCache),
-      );
-    } catch {
-      // Storage quotas and private browsing restrictions are both recoverable.
-    }
-  }, [drafts, draftAttachments, draftSyncState]);
-  useEffect(() => {
-    activeDraftKeyRef.current = draftKey;
-  }, [draftKey]);
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setDraftConflict((current) => current && current.key !== draftKey ? null : current);
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [draftKey]);
-  useEffect(() => {
-    draftsRef.current = drafts;
-    draftAttachmentsRef.current = draftAttachments;
-  }, [drafts, draftAttachments]);
-  useEffect(() => {
-    if (!draftCacheReady || !dataReady || !role || role === '__router__') return;
-    const key = draftKey;
-    const spaceId = teamSpace?.id || null;
-    let cancelled = false;
-    const restore = async () => {
-      try {
-        const remote = await loadServerDraft(spaceId, role);
-        if (cancelled) return;
-        const remoteAttachments = Array.isArray(remote.attachments)
-          ? remote.attachments.filter((item): item is Attachment =>
-              !!item && typeof item.id === 'string' && typeof item.name === 'string' &&
-              typeof item.mime === 'string' && Number.isFinite(item.size),
-            ).slice(0, MAX_ATTACHMENTS)
-            : [];
-        const remoteContent = typeof remote.content === 'string' ? remote.content : '';
-        const remoteBase: DraftBase = {
-          content: remoteContent,
-          attachmentIds: remote.attachmentIds || remoteAttachments.map((item) => item.id),
-        };
-        const hadBase = !!draftBaseRef.current[key];
-        if (!hadBase) draftBaseRef.current[key] = remoteBase;
-        if (remote.revision !== undefined) draftRevisionRef.current[key] = remote.revision;
-        else delete draftRevisionRef.current[key];
-        if (draftDirtyRef.current.has(key)) return;
-        const localContent = draftsRef.current[key] || '';
-        const localAttachments = draftAttachmentsRef.current[key] || [];
-        const remoteHasContent = !!remoteContent.trim() || remoteAttachments.length > 0;
-        const localHasContent = !!localContent.trim() || localAttachments.length > 0;
-        const localUpdatedAt = draftUpdatedAtRef.current[key];
-        const remoteUpdatedAt = typeof remote.updatedAt === 'string' ? remote.updatedAt : '';
-        const remoteIsNewer = remoteHasContent && (
-          !localHasContent ||
-          (!!remoteUpdatedAt && (!localUpdatedAt || remoteUpdatedAt > localUpdatedAt))
-        );
-        const localIsNewer = localHasContent && (
-          !remoteHasContent ||
-          (!!localUpdatedAt && !!remoteUpdatedAt && localUpdatedAt > remoteUpdatedAt)
-        );
-        const attachmentsDiffer = JSON.stringify(localAttachments.map((item) => item.id)) !==
-          JSON.stringify(remoteBase.attachmentIds);
-        const unknownBaseConflict = !hadBase && localHasContent && remoteHasContent &&
-          (localContent !== remoteContent || attachmentsDiffer);
-        if (unknownBaseConflict) {
-          setDraftConflict({
-            key,
-            spaceId,
-            roleId: role,
-            localContent,
-            remoteContent,
-            localAttachments,
-            remoteAttachments,
-            remoteRevision: remote.revision,
-            remoteUpdatedAt,
-          });
-          setDraftSyncStateFor(key, 'conflict');
-        } else if (remoteIsNewer) {
-          setDrafts((current) => ({ ...current, [key]: remoteContent }));
-          setDraftAttachments((current) => ({ ...current, [key]: remoteAttachments }));
-          draftBaseRef.current[key] = remoteBase;
-          draftUpdatedAtRef.current[key] = remoteUpdatedAt || new Date().toISOString();
-          setDraftSyncStateFor(key, 'saved');
-        } else if (localIsNewer) {
-          markDraftDirty(key);
-          queueDraftSync(
-            key,
-            spaceId,
-            role,
-            localContent,
-            localAttachments.map((item) => item.id),
-          );
-        } else if (!localHasContent && !remoteHasContent) {
-          draftBaseRef.current[key] = remoteBase;
-          setDraftSyncStateFor(key, 'idle');
-        }
-      } catch {
-        if (!cancelled) setDraftSyncStateFor(key, 'offline');
-      }
-    };
-    void restore();
-    return () => {
-      cancelled = true;
-      clearDraftTimer(key);
-    };
-  }, [dataReady, draftCacheReady, draftKey, role, teamSpace?.id]);
-  useEffect(() => {
-    if (!draftCacheReady || !draftDirtyRef.current.has(draftKey)) return;
-    queueDraftSync(
-      draftKey,
-      teamSpace?.id || null,
-      role,
-      draftsRef.current[draftKey] || '',
-      (draftAttachmentsRef.current[attachmentDraftKey] || []).map((item) => item.id),
-    );
-  }, [attachmentDraftKey, draftCacheReady, draftKey, role, teamSpace?.id, drafts, draftAttachments]);
   useEffect(() => {
     if (!selectedSpaceId) return;
     try {
@@ -2382,7 +1934,7 @@ function Workbench() {
           setSelected((s) => ({ ...s, [sessionSelectionKey]: message.sessionId }));
         }
         if (draftVersionRef.current[draftKey] === sentVersion) {
-          await clearServerDraft(draftKey, teamSpace?.id || null, role, content, attachmentIds);
+          await clearServerDraft(draftKey, { spaceId: teamSpace?.id || null, roleId: role }, content, attachmentIds);
           setDrafts((s) => ({ ...s, [draftKey]: '' }));
           setDraftAttachments((s) => ({ ...s, [attachmentDraftKey]: [] }));
         }
@@ -2409,7 +1961,7 @@ function Workbench() {
         [task.spaceId ? `${task.spaceId}:${task.role}` : sessionSelectionKey]: task.sessionId,
       }));
       if (draftVersionRef.current[draftKey] === sentVersion) {
-        await clearServerDraft(draftKey, teamSpace?.id || null, role, content, attachmentIds);
+        await clearServerDraft(draftKey, { spaceId: teamSpace?.id || null, roleId: role }, content, attachmentIds);
         setDrafts((s) => ({ ...s, [draftKey]: '' }));
         setDraftAttachments((s) => ({ ...s, [attachmentDraftKey]: [] }));
       }
