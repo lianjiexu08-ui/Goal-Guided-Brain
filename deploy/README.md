@@ -48,6 +48,13 @@ The HTTP proxy must preserve the request Host and Origin. Do not trust arbitrary
    ggb node --config /etc/dsh-node.json --pair YOUR_ONE_TIME_CODE --name my-node
    ```
 
+   Before starting the worker, validate the same file and fail fast on a bad
+   control URL, missing workspace, or unwritable data directory:
+
+   ```sh
+   ggb doctor --node-config /etc/dsh-node.json --strict --json
+   ```
+
 4. Pairing codes expire after ten minutes and can be used once. Pairing starts the node worker. Stop this foreground process before starting the installed service. The node saves its identity in `node-identity.json` with mode `0600`; do not share this file or include it in public diagnostics.
 5. On Linux, install `dsh-node.service` after adjusting its paths and account. Start it with `systemctl enable --now dsh-node`. On macOS, run the command in a managed terminal or configure a user LaunchAgent with the actual Node.js path.
 6. Choose the registered node and its workspace mapping when creating a task. An absolute workspace path sent by the controller never replaces the node's local mapping. Every development attempt receives its own managed worktree or snapshot and temporary directory.

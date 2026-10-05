@@ -178,6 +178,57 @@ test('CLI doctor strict mode returns a gateable status for deployment checks', a
   assert.equal(JSON.parse(unhealthy.stdout).strictOk, false);
 });
 
+test('CLI doctor validates a node config without exposing identity data', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cli-node-doctor-'));
+  const workspace = path.join(directory, 'project');
+  const configPath = path.join(directory, 'node.json');
+  fs.mkdirSync(workspace);
+  fs.writeFileSync(configPath, JSON.stringify({
+    controlUrl: 'https://workbench.example.test',
+    dataDir: path.join(directory, 'node-data'),
+    workspaces: { project: workspace },
+    token: 'node-secret-fixture',
+  }));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const api = http.createServer((_req, res) => {
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ status: 'ok' }));
+  });
+  const ui = http.createServer((_req, res) => {
+    res.setHeader('content-type', 'text/html');
+    res.end('<!doctype html><title>fixture</title>');
+  });
+  await Promise.all([
+    new Promise(resolve => api.listen(0, '127.0.0.1', resolve)),
+    new Promise(resolve => ui.listen(0, '127.0.0.1', resolve)),
+  ]);
+  t.after(() => { api.close(); ui.close(); });
+  const healthy = await runDoctor([
+    '--node-config', configPath,
+    '--api-url', `http://127.0.0.1:${api.address().port}/api/health`,
+    '--ui-url', `http://127.0.0.1:${ui.address().port}/`,
+    '--strict', '--json',
+  ], { DSH_SESSION_DIR: path.join(directory, 'sessions'), DEEPSEEK_API_KEY: 'doctor-node-key' });
+  assert.equal(healthy.code, 0, healthy.stderr);
+  const report = JSON.parse(healthy.stdout);
+  assert.equal(report.checks.find(check => check.id === 'node-config').status, 'pass');
+  assert.equal(healthy.stdout.includes('node-secret-fixture'), false);
+
+  fs.writeFileSync(configPath, JSON.stringify({
+    controlUrl: 'https://workbench.example.test',
+    dataDir: path.join(directory, 'node-data'),
+    workspaces: { project: path.join(directory, 'missing') },
+  }));
+  const unhealthy = await runDoctor([
+    '--node-config', configPath,
+    '--api-url', `http://127.0.0.1:${api.address().port}/api/health`,
+    '--ui-url', `http://127.0.0.1:${ui.address().port}/`,
+    '--strict', '--json',
+  ], { DSH_SESSION_DIR: path.join(directory, 'sessions'), DEEPSEEK_API_KEY: 'doctor-node-key' });
+  assert.equal(unhealthy.code, 1);
+  assert.equal(JSON.parse(unhealthy.stdout).checks.find(check => check.id === 'node-config').status, 'fail');
+});
+
 test('CLI doctor identifies a WSL2 environment from standard process variables', async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cli-wsl-doctor-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));

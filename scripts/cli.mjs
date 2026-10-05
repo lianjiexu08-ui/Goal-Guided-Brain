@@ -35,7 +35,7 @@ const CLI_NAME = 'ggb';
 
 const usage = `用法：
   ggb providers
-  ggb doctor [--api-url http://127.0.0.1:3089/api/health] [--ui-url http://127.0.0.1:3088/] [--strict] [--json]
+  ggb doctor [--api-url http://127.0.0.1:3089/api/health] [--ui-url http://127.0.0.1:3088/] [--node-config <path>] [--strict] [--json]
   ggb events <task-id> [--api-url http://127.0.0.1:3089/api] [--after <cursor>] [--once] [--json]
   ggb events --team <team-id> [--api-url http://127.0.0.1:3089/api] [--after <cursor>] [--once] [--json]
   ggb run --provider gemini --model gemini-2.5-flash "解释这段代码"
@@ -133,6 +133,59 @@ function gitCheck() {
   }
 }
 
+function portableAbsolutePath(value) {
+  return typeof value === 'string' && Boolean(
+    path.isAbsolute(value) || path.posix.isAbsolute(value) || path.win32.isAbsolute(value),
+  );
+}
+
+function expandHome(value) {
+  if (value === '~') return os.homedir();
+  if (typeof value === 'string' && value.startsWith('~/'))
+    return path.join(os.homedir(), value.slice(2));
+  return value;
+}
+
+function nodeConfigCheck(configPath) {
+  try {
+    if (!configPath) throw new Error('未提供节点配置路径。');
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    if (!config || typeof config !== 'object' || Array.isArray(config))
+      throw new Error('节点配置必须是 JSON 对象。');
+    const controlUrl = new URL(config.controlUrl);
+    if (
+      controlUrl.username ||
+      controlUrl.password ||
+      controlUrl.search ||
+      controlUrl.hash ||
+      !['http:', 'https:'].includes(controlUrl.protocol) ||
+      (controlUrl.protocol !== 'https:' &&
+        !['localhost', '127.0.0.1', '[::1]', '::1'].includes(controlUrl.hostname))
+    )
+      throw new Error('控制端必须使用 HTTPS；仅本机回环地址可以使用 HTTP。');
+    const workspaces = config.workspaces;
+    if (!workspaces || typeof workspaces !== 'object' || Array.isArray(workspaces))
+      throw new Error('节点配置缺少工作目录映射。');
+    const entries = Object.entries(workspaces);
+    if (!entries.length || entries.length > 100)
+      throw new Error('节点至少需要一个工作目录映射，最多 100 个。');
+    for (const [name, directory] of entries) {
+      if (!/^[a-zA-Z0-9_-]{1,100}$/.test(name) || !portableAbsolutePath(directory))
+        throw new Error('工作目录映射名称或路径无效。');
+      if (!fs.existsSync(directory) || !fs.statSync(directory).isDirectory())
+        throw new Error('工作目录映射必须指向本机已存在的文件夹。');
+    }
+    const dataDir = path.resolve(expandHome(config.dataDir || path.join(os.homedir(), '.dsh-workbench-node')));
+    fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+    const probe = path.join(dataDir, `.doctor-node-${process.pid}-${randomUUID()}.tmp`);
+    fs.writeFileSync(probe, 'ok', { mode: 0o600 });
+    fs.rmSync(probe, { force: true });
+    return doctorCheck('node-config', '执行节点配置', 'pass', `控制端地址有效，${entries.length} 个工作目录映射可用，节点数据目录可写`);
+  } catch (error) {
+    return doctorCheck('node-config', '执行节点配置', 'fail', error?.message || '节点配置不可用。');
+  }
+}
+
 async function doctor(args) {
   const apiUrl = valueAfter(args, '--api-url', process.env.DSH_API_HEALTH_URL || 'http://127.0.0.1:3089/api/health');
   const uiUrl = valueAfter(args, '--ui-url', process.env.DSH_UI_URL || 'http://127.0.0.1:3088/');
@@ -148,6 +201,7 @@ async function doctor(args) {
     await checkReachable('api', '工作台 API', apiUrl),
     await checkReachable('ui', '工作台网页', uiUrl),
   ];
+  if (args.includes('--node-config')) checks.push(nodeConfigCheck(valueAfter(args, '--node-config', '')));
   const strict = has(args, '--strict');
   const strictOk = checks.every(check => check.status !== 'fail' && check.status !== 'warn');
   const result = {

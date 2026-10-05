@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 186/186, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 187/187, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Cross-platform CI matrix runs lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
@@ -47,7 +47,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Local Release Record
 
-Latest local regression on 2026-10-04: `npm test` 186/186 and Playwright
+Latest local regression on 2026-10-05: `npm test` 187/187 and Playwright
 desktop/mobile baseline 90/90 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines -- --json`, `npm run build` and
 `git diff --check` also passed. The UI and API smoke endpoints returned 200 and
@@ -69,7 +69,7 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 186 passing tests. The repeatable
+The current deterministic suite contains 187 passing tests. The repeatable
 Playwright baseline contains ninety passing desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
@@ -96,7 +96,10 @@ now informs automatic routing while explicit model choices remain available. A
 second real task explicitly selected the Gemini candidate, received the
 upstream 405, recorded a `routing/fallback` event, and completed through
 DeepSeek with the result `OK`; the original failed attempt remains preserved
-for audit. Broader multi-turn model quality and cross-platform environment
+for audit. `ggb doctor --node-config <path> --strict --json` now validates a
+portable node configuration (HTTPS or local loopback control URL, existing
+workspace mappings and a writable node data directory) without exposing node
+identity or token fields. Broader multi-turn model quality and cross-platform environment
 gates remain open.
 
 ## Remaining Compatibility And Release Gates
