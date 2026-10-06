@@ -77,6 +77,80 @@
   color: #718089;
   font-size: 11px;
 }
+.model-evidence-quality {
+  border: 1px solid #dfeae5;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.78);
+  padding: 14px;
+  margin: 0 0 18px;
+}
+.model-evidence-quality-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  color: #718089;
+  font-size: 11px;
+}
+.model-evidence-quality-heading div {
+  display: grid;
+  gap: 4px;
+}
+.model-evidence-quality-heading strong {
+  color: #294c45;
+  font-size: 13px;
+  font-weight: 650;
+}
+.model-evidence-quality-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.model-evidence-quality-grid div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  border-radius: 7px;
+  background: #f5faf8;
+}
+.model-evidence-quality-grid strong {
+  color: #1d6657;
+  font-size: 18px;
+  font-weight: 650;
+}
+.model-evidence-quality-grid span {
+  color: #4e6965;
+  font-size: 11px;
+}
+.model-evidence-quality-grid small {
+  color: #80908f;
+  font-size: 10px;
+  line-height: 1.35;
+}
+.model-evidence-quality-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  color: #72827f;
+  font-size: 11px;
+  margin-top: 11px;
+}
+.model-evidence-quality-teams {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  border-top: 1px solid #e8f0ed;
+  color: #71827f;
+  font-size: 11px;
+  margin-top: 10px;
+  padding-top: 9px;
+}
+.model-evidence-quality-teams span:first-child {
+  color: #4e6965;
+  font-weight: 600;
+}
 .model-metrics-table-wrap {
   overflow-x: auto;
 }
@@ -127,6 +201,9 @@
   .model-metrics-summary div:nth-child(-n + 3) {
     border-bottom: 1px solid #e4ece9;
   }
+  .model-evidence-quality-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 @media (max-width: 560px) {
   .model-metrics {
@@ -141,6 +218,13 @@
   }
   .model-metrics-filters,
   .model-metrics-summary {
+    grid-template-columns: 1fr;
+  }
+  .model-evidence-quality-heading {
+    display: grid;
+    gap: 5px;
+  }
+  .model-evidence-quality-grid {
     grid-template-columns: 1fr;
   }
   .model-metrics-summary div,

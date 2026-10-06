@@ -108,13 +108,40 @@ type ModelMetricsResponse = {
     avgLatencyMs: number | null;
     p50LatencyMs: number | null;
   };
+  evidenceQuality?: EvidenceQuality;
   items: ModelMetricItem[];
+};
+
+type EvidenceQuality = {
+  completedTasks: number;
+  withVerification: number;
+  currentVerified: number;
+  missingCurrentEvidence: number;
+  staleEvidence: number;
+  failedEvidence: number;
+  pendingVerification: number;
+  accepted: number;
+  rejected: number;
+  awaitingOwner: number;
+  coverageRate: number | null;
+  verificationPassRate: number | null;
+  ownerDecisionRate: number | null;
+  acceptanceRate: number | null;
+  byTeam: Array<{
+    teamId: string | null;
+    teamName: string;
+    completedTasks: number;
+    currentVerified: number;
+    coverageRate: number | null;
+  }>;
 };
 
 const metricNumber = (value: number | null | undefined) =>
   typeof value === 'number' && Number.isFinite(value)
     ? value.toLocaleString('zh-CN')
     : '-';
+const metricRate = (value: number | null | undefined) =>
+  typeof value === 'number' && Number.isFinite(value) ? `${value}%` : '-';
 const metricRouteExplanation = (
   item: ModelMetricItem,
   statusLabels: Record<string, string>,
@@ -173,6 +200,7 @@ export function ModelMetricsPanel({
   const updateFilter = (key: keyof typeof filters, value: string) =>
     setFilters((current) => ({ ...current, [key]: value }));
   const totals = metrics?.totals;
+  const quality = metrics?.evidenceQuality;
   return (
     <section
       className="model-metrics"
@@ -285,6 +313,72 @@ export function ModelMetricsPanel({
             <span>费用</span>
           </div>
         </div>
+      )}
+      {quality && (
+        <section
+          className="model-evidence-quality"
+          aria-label="验收证据质量"
+          data-testid="model-evidence-quality"
+        >
+          <div className="model-evidence-quality-heading">
+            <div>
+              <strong>验收证据质量</strong>
+              <span>仅统计当前筛选范围内已完成的逻辑任务</span>
+            </div>
+            <span>{metricNumber(quality.completedTasks)} 个已完成任务</span>
+          </div>
+          <div className="model-evidence-quality-grid">
+            <div>
+              <strong>{metricRate(quality.coverageRate)}</strong>
+              <span>当前证据覆盖率</span>
+              <small>
+                {metricNumber(quality.currentVerified)} /{' '}
+                {metricNumber(quality.completedTasks)} 有效验证
+              </small>
+            </div>
+            <div>
+              <strong>{metricRate(quality.verificationPassRate)}</strong>
+              <span>验证通过率</span>
+              <small>
+                {metricNumber(quality.currentVerified)} /{' '}
+                {metricNumber(quality.withVerification)} 有验证记录
+              </small>
+            </div>
+            <div>
+              <strong>{metricRate(quality.ownerDecisionRate)}</strong>
+              <span>所有者决策率</span>
+              <small>
+                {metricNumber(quality.accepted + quality.rejected)} /{' '}
+                {metricNumber(quality.currentVerified)} 已决定
+              </small>
+            </div>
+            <div>
+              <strong>{metricRate(quality.acceptanceRate)}</strong>
+              <span>验收通过率</span>
+              <small>
+                {metricNumber(quality.accepted)} 通过 ·{' '}
+                {metricNumber(quality.rejected)} 退回
+              </small>
+            </div>
+          </div>
+          <div className="model-evidence-quality-breakdown">
+            <span>待补证据 {metricNumber(quality.missingCurrentEvidence)}</span>
+            <span>过期 {metricNumber(quality.staleEvidence)}</span>
+            <span>验证失败 {metricNumber(quality.failedEvidence)}</span>
+            <span>待验证 {metricNumber(quality.pendingVerification)}</span>
+            <span>待所有者 {metricNumber(quality.awaitingOwner)}</span>
+          </div>
+          {quality.byTeam.length > 1 && (
+            <div className="model-evidence-quality-teams" aria-label="按团队查看证据质量">
+              <span>团队覆盖率</span>
+              {quality.byTeam.map((team) => (
+                <span key={team.teamId || team.teamName}>
+                  {team.teamName} {metricRate(team.coverageRate)}
+                </span>
+              ))}
+            </div>
+          )}
+        </section>
       )}
       {loading && !metrics ? (
         <Empty busy text="正在载入模型指标" />

@@ -81,6 +81,45 @@ function saveAttempt(app, {
   app.store.updateTask(task.id, { status, result: status === 'completed' ? '完成' : '', error: status === 'failed' ? '模型不可用' : '' });
 }
 
+function saveQualityOnlyTask(app, {
+  id,
+  teamId,
+  requirementVersion = 1,
+  verification,
+}) {
+  const task = app.store.createTask({
+    id,
+    role: 'developer',
+    prompt: `验收证据质量 ${id}`,
+    workspace: app.store.config.workspace,
+  });
+  app.store.records.save(
+    'task-meta',
+    {
+      teamId,
+      spaceId: teamId,
+      groupId: id,
+      requirementVersion,
+    },
+    task.id,
+  );
+  if (verification)
+    app.store.records.save(
+      'artifacts',
+      {
+        taskId: task.id,
+        groupId: id,
+        requirementVersion: verification.requirementVersion ?? requirementVersion,
+        kind: 'verification',
+        status: verification.status,
+        verified: verification.status === 'verified',
+        finishedAt: new Date(7000).toISOString(),
+      },
+      `${id}-verification`,
+    );
+  app.store.updateTask(task.id, { status: 'completed', result: '完成' });
+}
+
 test('model metrics aggregate retries by attempt and logical task, preserve unknown cost, and support filters', async (t) => {
   const { app, request } = await fixture(t);
   const alpha = app.platform.providers.save({
@@ -222,6 +261,22 @@ test('model metrics aggregate retries by attempt and logical task, preserve unkn
     outputTokens: 10,
     cost: null,
   });
+  saveQualityOnlyTask(app, {
+    id: 'metrics-stale-evidence',
+    teamId: team.id,
+    requirementVersion: 2,
+    verification: { requirementVersion: 1, status: 'verified' },
+  });
+  saveQualityOnlyTask(app, {
+    id: 'metrics-failed-evidence',
+    teamId: team.id,
+    verification: { status: 'failed' },
+  });
+  saveQualityOnlyTask(app, {
+    id: 'metrics-awaiting-owner',
+    teamId: team.id,
+    verification: { status: 'verified' },
+  });
 
   const result = await request('metrics/models');
   assert.equal(result.status, 200);
@@ -233,6 +288,42 @@ test('model metrics aggregate retries by attempt and logical task, preserve unkn
   assert.equal(result.body.totals.totalTokens, 460);
   assert.equal(result.body.totals.costKnown, false);
   assert.equal(result.body.totals.cost, null);
+  assert.deepEqual(result.body.evidenceQuality, {
+    completedTasks: 5,
+    withVerification: 4,
+    currentVerified: 2,
+    missingCurrentEvidence: 3,
+    staleEvidence: 1,
+    failedEvidence: 1,
+    pendingVerification: 1,
+    accepted: 1,
+    rejected: 0,
+    awaitingOwner: 1,
+    coverageRate: 40,
+    verificationPassRate: 50,
+    ownerDecisionRate: 50,
+    acceptanceRate: 100,
+    byTeam: [
+      {
+        teamId: team.id,
+        teamName: team.name,
+        completedTasks: 5,
+        withVerification: 4,
+        currentVerified: 2,
+        missingCurrentEvidence: 3,
+        staleEvidence: 1,
+        failedEvidence: 1,
+        pendingVerification: 1,
+        accepted: 1,
+        rejected: 0,
+        awaitingOwner: 1,
+        coverageRate: 40,
+        verificationPassRate: 50,
+        ownerDecisionRate: 50,
+        acceptanceRate: 100,
+      },
+    ],
+  });
   const alphaItem = result.body.items.find((item) => item.model === 'metrics-alpha');
   const betaItem = result.body.items.find((item) => item.model === 'metrics-beta');
   assert.ok(alphaItem);
@@ -257,6 +348,10 @@ test('model metrics aggregate retries by attempt and logical task, preserve unkn
   assert.equal(filtered.body.items.length, 1);
   assert.equal(filtered.body.items[0].model, 'metrics-beta');
   assert.equal(filtered.body.items[0].roleId, 'project_manager');
+  assert.equal(filtered.body.evidenceQuality.completedTasks, 1);
+  assert.equal(filtered.body.evidenceQuality.currentVerified, 0);
+  assert.equal(filtered.body.evidenceQuality.coverageRate, 0);
+  assert.equal(filtered.body.evidenceQuality.verificationPassRate, null);
 });
 
 test('model metrics reject an invalid time window', async (t) => {

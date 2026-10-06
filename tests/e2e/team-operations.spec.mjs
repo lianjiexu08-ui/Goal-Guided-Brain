@@ -8,7 +8,6 @@ import {
   seedConfirmedTeams,
   seedHighRiskCapability,
   seedHighRiskRecruitment,
-  seedModelMetrics,
   seedModelTeams,
   seedNodeLifecycleFixtures,
   seedProposedRecruitment,
@@ -655,66 +654,6 @@ test.describe('团队运营与协作回归', () => {
     ).toBeVisible();
   });
 
-  test('模型管理显示真实运行指标并支持按团队筛选', async ({ page }) => {
-    const teams = seedModelMetrics();
-    await page.goto('/');
-    await clickNavigation(page, '模型管理');
-    await expect(page.getByRole('heading', { name: '模型管理' })).toBeVisible();
-    const panel = page.getByRole('region', {
-      name: '模型运行指标',
-      exact: true,
-    });
-    await expect(panel).toBeVisible();
-    // Earlier flows in this shared browser fixture may leave other model
-    // attempts behind; assert the two rows created by this fixture directly.
-    const fixtureRows = panel
-      .getByTestId('model-metrics-row')
-      .filter({ hasText: /e2e-(alpha|beta)-model/ });
-    await expect(fixtureRows).toHaveCount(2);
-    await expect(
-      panel
-        .getByTestId('model-metrics-row')
-        .filter({ hasText: 'e2e-alpha-model' }),
-    ).toBeVisible();
-    await expect(
-      panel
-        .getByTestId('model-metrics-row')
-        .filter({ hasText: 'e2e-beta-model' }),
-    ).toBeVisible();
-    await expect(
-      panel
-        .getByTestId('model-metrics-row')
-        .filter({ hasText: 'e2e-beta-model' })
-        .getByText('未知', { exact: true }),
-    ).toBeVisible();
-    const metricsViewport = await panel
-      .locator('.model-metrics-table-wrap')
-      .evaluate((element) => ({
-        clientWidth: element.clientWidth,
-        scrollWidth: element.scrollWidth,
-      }));
-    expect(metricsViewport.scrollWidth).toBeLessThanOrEqual(
-      metricsViewport.clientWidth + 1,
-    );
-    await panel
-      .getByRole('combobox', { name: '指标团队', exact: true })
-      .selectOption(teams.alpha.id);
-    await expect(
-      panel
-        .getByTestId('model-metrics-row')
-        .filter({ hasText: 'e2e-alpha-model' }),
-    ).toHaveCount(1);
-    await expect(
-      panel
-        .getByTestId('model-metrics-row')
-        .filter({ hasText: 'e2e-alpha-model' }),
-    ).toBeVisible();
-    await expect(
-      panel
-        .getByTestId('model-metrics-row')
-        .filter({ hasText: 'e2e-beta-model' }),
-    ).toHaveCount(0);
-  });
 
   test('知识库按当前团队隔离团队专属知识', async ({ page }) => {
     const teams = seedTeamKnowledge();

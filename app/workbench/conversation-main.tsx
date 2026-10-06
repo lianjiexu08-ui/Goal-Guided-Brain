@@ -3,6 +3,7 @@
 'use client';
 // Focused presentation modules receive a controller context assembled by Workbench.
 /* oxlint-disable no-explicit-any, no-unused-vars */
+import { useEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import { api, entityList, entityText } from '../workbench-api';
 import {
@@ -150,8 +151,78 @@ export function ConversationMain({ context }: { context: WorkbenchContext }) {
     setRecruitmentApprovals,
     recruitmentSyncState,
   } = context;
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const conversationRef = useRef<HTMLElement>(null);
+  const messageAreaRef = useRef<HTMLDivElement>(null);
+  const shouldStickToLatestRef = useRef(true);
+  const previousConversationKeyRef = useRef('');
+  const conversationKey = `${teamSpace?.id || recruitmentSpace?.id || 'standalone'}:${role}`;
+  const currentTaskVersion = currentTasks
+    .map((task) => `${task.id}:${task.updatedAt || ''}:${task.status}`)
+    .join('|');
+
+  useEffect(() => {
+    const messageArea = messageAreaRef.current;
+    if (!messageArea) return undefined;
+    const updateScrollState = () => {
+      const distanceFromLatest =
+        messageArea.scrollHeight -
+        messageArea.scrollTop -
+        messageArea.clientHeight;
+      const nearLatest = distanceFromLatest <= 80;
+      shouldStickToLatestRef.current = nearLatest;
+      setShowJumpToLatest(!nearLatest);
+    };
+    updateScrollState();
+    messageArea.addEventListener('scroll', updateScrollState, {
+      passive: true,
+    });
+    return () => messageArea.removeEventListener('scroll', updateScrollState);
+  }, []);
+
+  useEffect(() => {
+    const conversation = conversationRef.current;
+    const composer = conversation?.querySelector('.composer-area');
+    if (!conversation || !composer || typeof ResizeObserver === 'undefined')
+      return undefined;
+    const syncComposerHeight = () => {
+      conversation.style.setProperty(
+        '--ggb-composer-height',
+        `${Math.ceil(composer.getBoundingClientRect().height)}px`,
+      );
+    };
+    syncComposerHeight();
+    const observer = new ResizeObserver(syncComposerHeight);
+    observer.observe(composer);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const conversationChanged =
+      previousConversationKeyRef.current !== conversationKey;
+    previousConversationKeyRef.current = conversationKey;
+    if (conversationChanged) {
+      shouldStickToLatestRef.current = true;
+      setShowJumpToLatest(false);
+    }
+    if (!currentTasks.length || !shouldStickToLatestRef.current) {
+      if (!shouldStickToLatestRef.current && currentTasks.length > 0) {
+        setShowJumpToLatest(true);
+      }
+      return;
+    }
+    requestAnimationFrame(() =>
+      endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }),
+    );
+  }, [conversationKey, currentTaskVersion, endRef]);
+
+  const jumpToLatest = () => {
+    shouldStickToLatestRef.current = true;
+    setShowJumpToLatest(false);
+    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  };
   return (
-    <section className="conversation">
+    <section className="conversation" ref={conversationRef}>
       <div className="conversation-top">
         <div>
           <span className="section-kicker">
@@ -580,7 +651,11 @@ export function ConversationMain({ context }: { context: WorkbenchContext }) {
           )}
         </section>
       )}
-      <div className="message-area">
+      <div
+        className="message-area"
+        data-testid="message-area"
+        ref={messageAreaRef}
+      >
         {currentTasks.length === 0 ? (
           <div className="welcome">
             <div
@@ -749,6 +824,17 @@ export function ConversationMain({ context }: { context: WorkbenchContext }) {
         )}
         <div ref={endRef} />
       </div>
+      {showJumpToLatest && (
+        <button
+          type="button"
+          className="jump-latest-button"
+          aria-label="回到最新消息"
+          onClick={jumpToLatest}
+        >
+          <ArrowDownToLine size={15} />
+          回到最新
+        </button>
+      )}
       <ConversationComposer context={context} />
     </section>
   );

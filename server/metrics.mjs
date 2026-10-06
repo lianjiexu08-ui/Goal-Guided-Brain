@@ -177,6 +177,81 @@ const publicBucket = (bucket) => {
   };
 };
 
+const percentage = (numerator, denominator) =>
+  denominator ? Math.round((numerator / denominator) * 1000) / 10 : null;
+
+const evidenceQualityCounts = (rows, store) => {
+  const completedRows = rows.filter((row) => row.task.status === 'completed');
+  const counts = {
+    completedTasks: completedRows.length,
+    withVerification: 0,
+    currentVerified: 0,
+    missingCurrentEvidence: 0,
+    staleEvidence: 0,
+    failedEvidence: 0,
+    pendingVerification: 0,
+    accepted: 0,
+    rejected: 0,
+    awaitingOwner: 0,
+  };
+  for (const row of completedRows) {
+    const delivery = store.taskDelivery(row.task);
+    const hasStaleEvidence = Boolean(
+      delivery.hasVerificationEvidence &&
+        delivery.verificationRequirementVersion !==
+          delivery.currentRequirementVersion,
+    );
+    const failedEvidence = delivery.acceptanceStatus === 'failed';
+    const currentVerified = delivery.hasCurrentVerificationEvidence;
+    if (delivery.hasVerificationEvidence) counts.withVerification += 1;
+    if (currentVerified) counts.currentVerified += 1;
+    if (!currentVerified) counts.missingCurrentEvidence += 1;
+    if (hasStaleEvidence) counts.staleEvidence += 1;
+    if (failedEvidence) counts.failedEvidence += 1;
+    if (!currentVerified && !hasStaleEvidence && !failedEvidence)
+      counts.pendingVerification += 1;
+    if (delivery.acceptanceDecision === 'accepted') counts.accepted += 1;
+    if (delivery.acceptanceDecision === 'rejected') counts.rejected += 1;
+    if (delivery.deliveryStatus === 'awaiting-owner') counts.awaitingOwner += 1;
+  }
+  const decisions = counts.accepted + counts.rejected;
+  return {
+    ...counts,
+    coverageRate: percentage(counts.currentVerified, counts.completedTasks),
+    verificationPassRate: percentage(
+      counts.currentVerified,
+      counts.withVerification,
+    ),
+    ownerDecisionRate: percentage(decisions, counts.currentVerified),
+    acceptanceRate: percentage(counts.accepted, decisions),
+  };
+};
+
+const evidenceQuality = (rows, store) => {
+  const overall = evidenceQualityCounts(rows, store);
+  const byTeam = new Map();
+  for (const row of rows) {
+    const teamId = row.context.teamId || null;
+    const key = teamId || 'unassigned';
+    if (!byTeam.has(key))
+      byTeam.set(key, { teamId, teamName: row.context.teamName, rows: [] });
+    byTeam.get(key).rows.push(row);
+  }
+  return {
+    ...overall,
+    byTeam: [...byTeam.values()]
+      .map(({ rows: teamRows, ...team }) => ({
+        ...team,
+        ...evidenceQualityCounts(teamRows, store),
+      }))
+      .sort(
+        (a, b) =>
+          b.completedTasks - a.completedTasks ||
+          String(a.teamName).localeCompare(String(b.teamName), 'zh-CN'),
+      ),
+  };
+};
+
 /**
  * Aggregate durable execution evidence. Every task is one execution attempt;
  * groupId is the logical task identity shared by retries and model fallbacks.
@@ -195,6 +270,7 @@ export function modelMetrics(store, query) {
   const teamById = new Map(teams.map((team) => [team.id, team]));
   const buckets = new Map();
   const groups = new Map();
+  const allTaskRows = [];
   const taskRows = [];
   const selectedTaskIds = new Set();
   const selectedFinalGroups = new Set();
@@ -235,7 +311,6 @@ export function modelMetrics(store, query) {
       const dimensions = routeDimensions(route, context);
       usageGroups.set(routeKey(dimensions), { dimensions, rows: [] });
     }
-    if (!usageGroups.size) continue;
     const groupId = asTaskGroup(task, meta, job);
     const execution = store.records.get('executions', task.id);
     const started = timestampMs(execution?.startedAt);
@@ -244,6 +319,8 @@ export function modelMetrics(store, query) {
       ? finished - started
       : null;
     const row = { task, meta, job, context, groupId, execution, latency, route, usageGroups };
+    allTaskRows.push(row);
+    if (!usageGroups.size) continue;
     taskRows.push(row);
     if (!groups.has(groupId)) groups.set(groupId, []);
     groups.get(groupId).push(row);
@@ -257,6 +334,41 @@ export function modelMetrics(store, query) {
       String(a.task.id).localeCompare(String(b.task.id)),
     ).at(-1);
     if (final) finalRows.set(groupId, final);
+  }
+
+  const qualityGroups = new Map();
+  for (const row of allTaskRows) {
+    if (!qualityGroups.has(row.groupId)) qualityGroups.set(row.groupId, []);
+    qualityGroups.get(row.groupId).push(row);
+  }
+  const qualityFinalRows = [];
+  for (const rows of qualityGroups.values()) {
+    const jobCurrent = rows.find(
+      (row) => row.job?.taskId && row.job.taskId === row.task.id,
+    );
+    const final =
+      jobCurrent ||
+      [...rows].sort(
+        (a, b) =>
+          String(a.task.createdAt || '').localeCompare(
+            String(b.task.createdAt || ''),
+          ) || String(a.task.id).localeCompare(String(b.task.id)),
+      ).at(-1);
+    if (!final) continue;
+    const routeDimensionsFor = (row) => [
+      ...row.usageGroups.values(),
+    ].map((entry) => entry.dimensions);
+    const finalRoutes = routeDimensionsFor(final);
+    if (final.route?.providerId || final.route?.model)
+      finalRoutes.push(routeDimensions(final.route, final.context));
+    const matchesModelFilters =
+      (!providerFilter && !modelFilter) ||
+      finalRoutes.some(
+        (dimensions) =>
+          (!providerFilter || dimensions.providerId === providerFilter) &&
+          (!modelFilter || dimensions.model === modelFilter),
+      );
+    if (matchesModelFilters) qualityFinalRows.push(final);
   }
 
   for (const row of taskRows) {
@@ -344,6 +456,7 @@ export function modelMetrics(store, query) {
   const finalGroupRows = [...finalRows.entries()]
     .filter(([groupId]) => selectedFinalGroups.has(groupId))
     .map(([, row]) => row);
+  const quality = evidenceQuality(qualityFinalRows, store);
   const matchingUsage = (dimensions) =>
     (!providerFilter || dimensions.providerId === providerFilter) &&
     (!modelFilter || dimensions.model === modelFilter);
@@ -384,6 +497,7 @@ export function modelMetrics(store, query) {
       avgLatencyMs: totalLatency.length ? Math.round(totalLatency.reduce((sum, value) => sum + value, 0) / totalLatency.length) : null,
       p50LatencyMs: p50(totalLatency),
     },
+    evidenceQuality: quality,
     items,
   };
 }

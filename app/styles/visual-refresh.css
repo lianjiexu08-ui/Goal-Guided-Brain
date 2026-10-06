@@ -126,6 +126,7 @@ body {
 }
 
 .conversation {
+  position: relative;
   overflow: hidden;
   border: 1px solid #dce8e4;
   border-radius: 22px;
@@ -177,6 +178,36 @@ h1 {
   padding: 0 36px 18px;
   background:
     radial-gradient(circle at 51% 34%, #f2faf7 0, transparent 37%), #fff;
+}
+
+.jump-latest-button {
+  position: absolute;
+  right: 34px;
+  bottom: calc(var(--ggb-composer-height, 180px) + 12px);
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 36px;
+  margin: 0;
+  padding: 0 12px;
+  border: 1px solid #b8dcd0;
+  border-radius: 999px;
+  color: #287461;
+  background: rgba(249, 255, 252, 0.96);
+  box-shadow: 0 6px 16px #205f4a1c;
+  font-size: 12px;
+  font-weight: 650;
+  backdrop-filter: blur(8px);
+}
+
+.jump-latest-button:hover {
+  border-color: #74b99f;
+  background: #effaf5;
+}
+
+.jump-latest-button:active {
+  transform: scale(0.97);
 }
 
 .welcome {
@@ -596,6 +627,14 @@ h1 {
   .session-picker {
     padding-left: 20px;
     padding-right: 20px;
+  }
+  .jump-latest-button {
+    right: 0;
+    position: absolute;
+    bottom: calc(var(--ggb-composer-height, 230px) + 10px);
+    z-index: 4;
+    min-height: 44px;
+    padding: 0 14px;
   }
   .suggestions {
     grid-template-columns: 1fr;

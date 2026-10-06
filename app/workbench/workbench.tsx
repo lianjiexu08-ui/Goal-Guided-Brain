@@ -647,11 +647,6 @@ export function Workbench() {
       delete root.dataset.keyboardOpen;
     };
   }, [isMobile]);
-  useEffect(() => {
-    if (currentTasks.length > 0) {
-      endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    }
-  }, [currentTasks.length, role, teamSpace?.id]);
   const {
     action,
     toggleReviewTask,
