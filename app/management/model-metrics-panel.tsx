@@ -86,6 +86,10 @@ type ModelMetricItem = {
 };
 type ModelMetricsResponse = {
   generatedAt: string;
+  window?: {
+    since: string | null;
+    until: string | null;
+  };
   options?: {
     teams?: ModelMetricOption[];
     roles?: ModelMetricOption[];
@@ -155,6 +159,24 @@ const metricRouteExplanation = (
     })
     .join(' · ');
 
+type MetricsTimeWindow = 'all' | '7d' | '30d';
+
+const timeWindowOptions: Array<{ value: MetricsTimeWindow; label: string }> = [
+  { value: 'all', label: '全部时间' },
+  { value: '7d', label: '最近 7 天' },
+  { value: '30d', label: '最近 30 天' },
+];
+
+const timeWindowLabel = (value: MetricsTimeWindow) =>
+  timeWindowOptions.find((option) => option.value === value)?.label ||
+  '全部时间';
+
+const timeWindowSince = (value: MetricsTimeWindow) => {
+  if (value === 'all') return null;
+  const days = value === '7d' ? 7 : 30;
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+};
+
 export function ModelMetricsPanel({
   labels: statusLabels = labels,
 }: {
@@ -167,6 +189,7 @@ export function ModelMetricsPanel({
     providerId: '',
     model: '',
   });
+  const [timeWindow, setTimeWindow] = useState<MetricsTimeWindow>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const refresh = useCallback(async () => {
@@ -175,6 +198,8 @@ export function ModelMetricsPanel({
       const params = new URLSearchParams();
       for (const [key, value] of Object.entries(filters))
         if (value) params.set(key, value);
+      const since = timeWindowSince(timeWindow);
+      if (since) params.set('since', since);
       const suffix = params.toString();
       setMetrics(
         await api<ModelMetricsResponse>(
@@ -187,7 +212,7 @@ export function ModelMetricsPanel({
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [filters, timeWindow]);
   useEffect(() => {
     const initial = setTimeout(() => void refresh(), 0);
     const timer = setInterval(() => void refresh(), 8000);
@@ -221,6 +246,22 @@ export function ModelMetricsPanel({
       </div>
       <ErrorMessage error={error} />
       <div className="model-metrics-filters" aria-label="模型指标筛选">
+        <label>
+          时间范围
+          <select
+            aria-label="指标时间范围"
+            value={timeWindow}
+            onChange={(event) =>
+              setTimeWindow(event.target.value as MetricsTimeWindow)
+            }
+          >
+            {timeWindowOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <label>
           团队
           <select
@@ -323,7 +364,9 @@ export function ModelMetricsPanel({
           <div className="model-evidence-quality-heading">
             <div>
               <strong>验收证据质量</strong>
-              <span>仅统计当前筛选范围内已完成的逻辑任务</span>
+              <span>
+                {timeWindowLabel(timeWindow)} · 仅统计当前筛选范围内已完成的逻辑任务
+              </span>
             </div>
             <span>{metricNumber(quality.completedTasks)} 个已完成任务</span>
           </div>

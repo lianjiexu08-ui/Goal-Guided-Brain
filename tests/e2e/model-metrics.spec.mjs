@@ -44,6 +44,21 @@ test.describe('模型运行指标回归', () => {
         .filter({ hasText: 'e2e-beta-model' })
         .getByText('未知', { exact: true }),
     ).toBeVisible();
+    const timeWindow = panel.getByRole('combobox', {
+      name: '指标时间范围',
+      exact: true,
+    });
+    await expect(timeWindow).toHaveValue('all');
+    const sevenDayRequest = page.waitForRequest(
+      (request) =>
+        request.url().includes('/api/metrics/models') &&
+        Boolean(new URL(request.url()).searchParams.get('since')),
+    );
+    await timeWindow.selectOption('7d');
+    const request = await sevenDayRequest;
+    expect(new URL(request.url()).searchParams.get('since')).toBeTruthy();
+    await expect(timeWindow).toHaveValue('7d');
+    await expect(evidenceQuality).toContainText('最近 7 天');
     const metricsViewport = await panel
       .locator('.model-metrics-table-wrap')
       .evaluate((element) => ({
