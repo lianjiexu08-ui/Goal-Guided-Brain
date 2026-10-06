@@ -314,6 +314,44 @@ test('model metrics aggregate retries by attempt and logical task, preserve unkn
         coverageRate: 40,
       },
     ],
+    byTaskType: [
+      {
+        taskType: 'development',
+        taskTypeName: '开发',
+        completedTasks: 4,
+        withVerification: 4,
+        currentVerified: 2,
+        missingCurrentEvidence: 2,
+        staleEvidence: 1,
+        failedEvidence: 1,
+        pendingVerification: 0,
+        accepted: 1,
+        rejected: 0,
+        awaitingOwner: 1,
+        coverageRate: 50,
+        verificationPassRate: 50,
+        ownerDecisionRate: 50,
+        acceptanceRate: 100,
+      },
+      {
+        taskType: 'planning',
+        taskTypeName: '规划',
+        completedTasks: 1,
+        withVerification: 0,
+        currentVerified: 0,
+        missingCurrentEvidence: 1,
+        staleEvidence: 0,
+        failedEvidence: 0,
+        pendingVerification: 1,
+        accepted: 0,
+        rejected: 0,
+        awaitingOwner: 0,
+        coverageRate: 0,
+        verificationPassRate: null,
+        ownerDecisionRate: null,
+        acceptanceRate: null,
+      },
+    ],
     byTeam: [
       {
         teamId: team.id,
@@ -363,6 +401,7 @@ test('model metrics aggregate retries by attempt and logical task, preserve unkn
   assert.equal(filtered.body.evidenceQuality.currentVerified, 0);
   assert.equal(filtered.body.evidenceQuality.coverageRate, 0);
   assert.equal(filtered.body.evidenceQuality.verificationPassRate, null);
+  assert.equal(filtered.body.filters.taskType, null);
   assert.deepEqual(filtered.body.evidenceQuality.trend, [
     {
       date: today,
@@ -372,6 +411,11 @@ test('model metrics aggregate retries by attempt and logical task, preserve unkn
       coverageRate: 0,
     },
   ]);
+  const development = await request('metrics/models?taskType=development');
+  assert.equal(development.status, 200);
+  assert.equal(development.body.filters.taskType, 'development');
+  assert.equal(development.body.evidenceQuality.completedTasks, 4);
+  assert.deepEqual(development.body.evidenceQuality.byTaskType.map((item) => item.taskType), ['development']);
 });
 
 test('model metrics evidence trend follows date and filters', async (t) => {
@@ -428,6 +472,40 @@ test('model metrics evidence trend follows date and filters', async (t) => {
       coverageRate: 0,
     },
   ]);
+});
+
+test('task types persist on jobs, task metadata, and child tasks', async (t) => {
+  const { app, request } = await fixture(t);
+  const parent = app.platform.control.createJob({
+    role: 'developer',
+    prompt: '整理产品需求并落地功能',
+    taskType: 'product',
+  });
+  assert.equal(parent.taskType, 'product');
+  assert.equal(
+    app.store.records.get('task-meta', parent.taskId).taskType,
+    'product',
+  );
+  const child = app.platform.control.createJob({
+    role: 'developer',
+    prompt: '实现已确认的功能',
+    parentJobId: parent.id,
+  });
+  assert.equal(child.taskType, 'product');
+  assert.equal(
+    app.store.records.get('task-meta', child.taskId).taskType,
+    'product',
+  );
+  const direct = await request('tasks', {
+    role: 'developer',
+    prompt: '检查运行环境并处理部署问题',
+    taskType: 'operations',
+  });
+  assert.equal(direct.status, 201);
+  assert.equal(
+    app.store.records.get('task-meta', direct.body.id).taskType,
+    'operations',
+  );
 });
 
 test('model metrics reject an invalid time window', async (t) => {

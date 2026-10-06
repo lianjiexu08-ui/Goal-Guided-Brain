@@ -95,6 +95,7 @@ type ModelMetricsResponse = {
     roles?: ModelMetricOption[];
     providers?: ModelMetricOption[];
     models?: ModelMetricOption[];
+    taskTypes?: ModelMetricOption[];
   };
   totals: {
     attempts: number;
@@ -134,6 +135,13 @@ type EvidenceQuality = {
   byTeam: Array<{
     teamId: string | null;
     teamName: string;
+    completedTasks: number;
+    currentVerified: number;
+    coverageRate: number | null;
+  }>;
+  byTaskType: Array<{
+    taskType: string;
+    taskTypeName: string;
     completedTasks: number;
     currentVerified: number;
     coverageRate: number | null;
@@ -195,6 +203,7 @@ export function ModelMetricsPanel({
     roleId: '',
     providerId: '',
     model: '',
+    taskType: '',
   });
   const [timeWindow, setTimeWindow] = useState<MetricsTimeWindow>('all');
   const [loading, setLoading] = useState(true);
@@ -329,6 +338,21 @@ export function ModelMetricsPanel({
             ))}
           </select>
         </label>
+        <label>
+          任务类型
+          <select
+            aria-label="指标任务类型"
+            value={filters.taskType}
+            onChange={(event) => updateFilter('taskType', event.target.value)}
+          >
+            <option value="">全部类型</option>
+            {(options.taskTypes || []).map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name || item.id}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
       {totals && (
         <div className="model-metrics-summary">
@@ -424,6 +448,19 @@ export function ModelMetricsPanel({
               {quality.byTeam.map((team) => (
                 <span key={team.teamId || team.teamName}>
                   {team.teamName} {metricRate(team.coverageRate)}
+                </span>
+              ))}
+            </div>
+          )}
+          {quality.byTaskType.length > 1 && (
+            <div
+              className="model-evidence-quality-teams"
+              aria-label="按任务类型查看证据质量"
+            >
+              <span>任务类型覆盖率</span>
+              {quality.byTaskType.map((item) => (
+                <span key={item.taskType}>
+                  {item.taskTypeName} {metricRate(item.coverageRate)}
                 </span>
               ))}
             </div>

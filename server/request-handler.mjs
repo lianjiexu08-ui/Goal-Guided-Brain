@@ -903,6 +903,7 @@ export function createRequestHandler({
             providerIds: body.providerIds,
             providerId: body.providerId,
             model: body.model,
+            taskType: body.taskType,
             allowModelWithoutTools: body.allowModelWithoutTools === true,
             attachmentIds: body.attachmentIds,
             budgetTokens: body.budgetTokens,

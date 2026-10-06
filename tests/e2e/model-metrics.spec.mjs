@@ -65,6 +65,18 @@ test.describe('模型运行指标回归', () => {
     expect(new URL(request.url()).searchParams.get('since')).toBeTruthy();
     await expect(timeWindow).toHaveValue('7d');
     await expect(evidenceQuality).toContainText('最近 7 天');
+    const taskType = panel.getByRole('combobox', {
+      name: '指标任务类型',
+      exact: true,
+    });
+    const taskTypeRequest = page.waitForRequest(
+      (request) =>
+        request.url().includes('/api/metrics/models') &&
+        new URL(request.url()).searchParams.get('taskType') === 'planning',
+    );
+    await taskType.selectOption('planning');
+    await taskTypeRequest;
+    await expect(taskType).toHaveValue('planning');
     const metricsViewport = await panel
       .locator('.model-metrics-table-wrap')
       .evaluate((element) => ({

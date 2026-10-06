@@ -1,3 +1,10 @@
+import {
+  TASK_TYPES,
+  inferTaskType,
+  isTaskType,
+  taskTypeName,
+} from './task-types.mjs';
+
 const numberOrNull = (value) => {
   if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
@@ -261,12 +268,16 @@ const evidenceQualityTrend = (rows, store) => {
 const evidenceQuality = (rows, store) => {
   const overall = evidenceQualityCounts(rows, store);
   const byTeam = new Map();
+  const byTaskType = new Map();
   for (const row of rows) {
     const teamId = row.context.teamId || null;
     const key = teamId || 'unassigned';
     if (!byTeam.has(key))
       byTeam.set(key, { teamId, teamName: row.context.teamName, rows: [] });
     byTeam.get(key).rows.push(row);
+    const taskType = row.context.taskType || 'general';
+    if (!byTaskType.has(taskType)) byTaskType.set(taskType, []);
+    byTaskType.get(taskType).push(row);
   }
   return {
     ...overall,
@@ -280,6 +291,17 @@ const evidenceQuality = (rows, store) => {
         (a, b) =>
           b.completedTasks - a.completedTasks ||
           String(a.teamName).localeCompare(String(b.teamName), 'zh-CN'),
+      ),
+    byTaskType: [...byTaskType.entries()]
+      .map(([taskType, taskRows]) => ({
+        taskType,
+        taskTypeName: taskTypeName(taskType),
+        ...evidenceQualityCounts(taskRows, store),
+      }))
+      .sort(
+        (a, b) =>
+          b.completedTasks - a.completedTasks ||
+          a.taskType.localeCompare(b.taskType),
       ),
   };
 };
@@ -296,6 +318,9 @@ export function modelMetrics(store, query) {
   const roleFilter = query?.get?.('roleId') || '';
   const providerFilter = query?.get?.('providerId') || '';
   const modelFilter = query?.get?.('model') || '';
+  const taskTypeFilter = query?.get?.('taskType') || '';
+  if (taskTypeFilter && !isTaskType(taskTypeFilter))
+    throw new Error('taskType 必须是有效的任务类型。');
   const teams = store.teamSpaces();
   const roles = store.roles().filter((role) => !role.archived);
   const providers = store.records.list('providers');
@@ -322,6 +347,15 @@ export function modelMetrics(store, query) {
     const role = roles.find((item) => item.id === task.role);
     if (teamFilter && teamId !== teamFilter) continue;
     if (roleFilter && task.role !== roleFilter) continue;
+    const taskType = inferTaskType({
+      taskType: meta.taskType || job?.taskType,
+      role: task.role,
+      check: meta.check,
+      summary: meta.summary,
+      parentTaskType: meta.parentTaskType,
+      capabilityCommand: meta.capabilityCommand,
+    });
+    if (taskTypeFilter && taskType !== taskTypeFilter) continue;
     const snapshot = store.records.get('runtime-snapshots', task.id) || {};
     const route = snapshot.route || null;
     const taskUsages = usageByTask.get(task.id) || [];
@@ -330,6 +364,7 @@ export function modelMetrics(store, query) {
       teamName: team?.name || teamId || '未归属团队',
       roleId: task.role,
       roleName: role?.name || task.role,
+      taskType,
     };
     const usageGroups = new Map();
     for (const usage of taskUsages) {
@@ -504,12 +539,13 @@ export function modelMetrics(store, query) {
   return {
     generatedAt: new Date().toISOString(),
     window: { since: window.sinceIso, until: window.untilIso },
-    filters: { teamId: teamFilter || null, roleId: roleFilter || null, providerId: providerFilter || null, model: modelFilter || null },
+    filters: { teamId: teamFilter || null, roleId: roleFilter || null, providerId: providerFilter || null, model: modelFilter || null, taskType: taskTypeFilter || null },
     options: {
       teams: teams.filter((team) => team.status !== 'archived').map((team) => ({ id: team.id, name: team.name })),
       roles: roles.map((role) => ({ id: role.id, name: role.name })),
       providers: providers.map((provider) => ({ id: provider.id, name: provider.name })),
       models: [...new Set(providers.flatMap((provider) => (Array.isArray(provider.models) ? provider.models : []).map((model) => model.id).filter(Boolean)))].map((model) => ({ id: model, name: model })),
+      taskTypes: TASK_TYPES,
     },
     totals: {
       attempts: selectedTaskIds.size,

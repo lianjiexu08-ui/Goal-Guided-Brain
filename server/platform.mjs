@@ -24,7 +24,7 @@ import { createPlatformManagement } from './platform/management.mjs';
 import { createPlatformReady } from './platform/ready.mjs';
 import { createContextFor } from './platform/context.mjs';
 import { checkPlanDeadlines } from './platform/plan-deadlines.mjs';
-
+import { taskTypeForTask } from './task-types.mjs';
 const nowIso = () => new Date().toISOString();
 
 export function createPlatform({
@@ -208,6 +208,7 @@ export function createPlatform({
       ? store.teamSpace(teamId)?.workspaceMode
       : null;
     const jobId = input.jobId || randomUUID();
+    const taskType = taskTypeForTask(input, records, jobId);
     const groupId =
       input.groupId ||
       input.batchId ||
@@ -266,6 +267,7 @@ export function createPlatform({
           goal: task.prompt,
           acceptance,
           role: task.role,
+          taskType,
           groupId,
           batchId,
           status: 'queued',
@@ -309,6 +311,7 @@ export function createPlatform({
         scheduleId: input.scheduleId || null,
         check: input.check || null,
         requirementVersion: input.requirementVersion || 1,
+        taskType,
         contextExtra: input.contextExtra || '',
         acceptance,
         attachmentIds,

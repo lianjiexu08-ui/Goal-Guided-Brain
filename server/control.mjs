@@ -25,7 +25,7 @@ import {
   validateInstanceToken,
 } from './control/nodes.mjs';
 import { markNodeOnline, reconcileNodeLiveness } from './control/node-liveness.mjs';
-
+import { inferTaskType } from './task-types.mjs';
 export class ControlPlane {
   constructor({ store, createTask = input => store.createTask(input), updateTask = (id, changes) => store.updateTask(id, changes),
     stopTask, buildAssignment, onEvent, onRemoteDone, evaluateDecision = async () => { throw fail('TypeSafe 决策服务未配置。'); }, now = () => Date.now(), leaseMs = 60000 } = {}) {
@@ -282,7 +282,7 @@ export class ControlPlane {
       spaceId: job.spaceId || undefined,
       teamId: job.teamId || job.spaceId || undefined,
       sourceMessageId: job.sourceMessageId || undefined,
-      sourceTaskId: job.taskId, contextExtra, requirementVersion: job.requirementVersion,
+      sourceTaskId: job.taskId, contextExtra, requirementVersion: job.requirementVersion, taskType: 'review',
       model: parentMeta.modelOverride || undefined,
       providerIds: parentMeta.allowedProviderIds || parentMeta.providerIds,
       assistantSnapshot: parentMeta.assistantSnapshot });
@@ -358,7 +358,7 @@ export class ControlPlane {
     if (!Number.isFinite(maxDurationMinutes) || maxDurationMinutes < 1 || maxDurationMinutes > 1440) throw fail('任务时限需要在 1 至 1440 分钟之间。');
     const job = this.records.save('jobs', { title: String(body.title || prompt.slice(0, 65)), goal: prompt, role,
       parentJobId: parent?.id || null, groupId, batchId: parent?.batchId || randomUUID(),
-      depth: (parent?.depth ?? -1) + 1, dependencies, requirementVersion: parent?.requirementVersion || 1,
+      depth: (parent?.depth ?? -1) + 1, dependencies, requirementVersion: parent?.requirementVersion || 1, taskType: inferTaskType({ taskType: body.taskType, role, parentTaskType: parent?.taskType, capabilityCommand: body.capabilityCommand }),
       acceptance: String(body.acceptance || '').slice(0, 20000), status: 'queued', permissions,
       budgetTokens, maxDurationMinutes,
       nodeId: parent?.nodeId || body.nodeId || 'local', workspaceKey: parent?.workspaceKey || body.workspaceKey || 'default',
