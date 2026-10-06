@@ -138,6 +138,13 @@ type EvidenceQuality = {
     currentVerified: number;
     coverageRate: number | null;
   }>;
+  trend: Array<{
+    date: string;
+    completedTasks: number;
+    currentVerified: number;
+    missingCurrentEvidence: number;
+    coverageRate: number | null;
+  }>;
 };
 
 const metricNumber = (value: number | null | undefined) =>
@@ -419,6 +426,50 @@ export function ModelMetricsPanel({
                   {team.teamName} {metricRate(team.coverageRate)}
                 </span>
               ))}
+            </div>
+          )}
+          {quality.trend.length > 0 && (
+            <div
+              className="model-evidence-quality-trend"
+              aria-label="按日查看证据质量趋势"
+              data-testid="model-evidence-trend"
+            >
+              <div className="model-evidence-quality-trend-heading">
+                <span>按日趋势</span>
+                <small>完成任务 · 当前证据覆盖率</small>
+              </div>
+              <div className="model-evidence-quality-trend-list">
+                {quality.trend.slice(-14).map((day) => {
+                  const maxCompleted = Math.max(
+                    ...quality.trend.map((item) => item.completedTasks),
+                    1,
+                  );
+                  const width = Math.max(
+                    (day.completedTasks / maxCompleted) * 100,
+                    3,
+                  );
+                  return (
+                    <div
+                      className="model-evidence-quality-trend-row"
+                      key={day.date}
+                      data-testid="model-evidence-trend-row"
+                    >
+                      <time dateTime={day.date}>{day.date.slice(5)}</time>
+                      <span
+                        className="model-evidence-quality-trend-track"
+                        aria-hidden="true"
+                      >
+                        <span style={{ width: `${width}%` }} />
+                      </span>
+                      <strong>{metricRate(day.coverageRate)}</strong>
+                      <small>
+                        {metricNumber(day.currentVerified)} /{' '}
+                        {metricNumber(day.completedTasks)}
+                      </small>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </section>

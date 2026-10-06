@@ -118,6 +118,7 @@ function saveQualityOnlyTask(app, {
       `${id}-verification`,
     );
   app.store.updateTask(task.id, { status: 'completed', result: '完成' });
+  return task;
 }
 
 test('model metrics aggregate retries by attempt and logical task, preserve unknown cost, and support filters', async (t) => {
@@ -288,6 +289,7 @@ test('model metrics aggregate retries by attempt and logical task, preserve unkn
   assert.equal(result.body.totals.totalTokens, 460);
   assert.equal(result.body.totals.costKnown, false);
   assert.equal(result.body.totals.cost, null);
+  const today = new Date().toISOString().slice(0, 10);
   assert.deepEqual(result.body.evidenceQuality, {
     completedTasks: 5,
     withVerification: 4,
@@ -303,6 +305,15 @@ test('model metrics aggregate retries by attempt and logical task, preserve unkn
     verificationPassRate: 50,
     ownerDecisionRate: 50,
     acceptanceRate: 100,
+    trend: [
+      {
+        date: today,
+        completedTasks: 5,
+        currentVerified: 2,
+        missingCurrentEvidence: 3,
+        coverageRate: 40,
+      },
+    ],
     byTeam: [
       {
         teamId: team.id,
@@ -352,6 +363,71 @@ test('model metrics aggregate retries by attempt and logical task, preserve unkn
   assert.equal(filtered.body.evidenceQuality.currentVerified, 0);
   assert.equal(filtered.body.evidenceQuality.coverageRate, 0);
   assert.equal(filtered.body.evidenceQuality.verificationPassRate, null);
+  assert.deepEqual(filtered.body.evidenceQuality.trend, [
+    {
+      date: today,
+      completedTasks: 1,
+      currentVerified: 0,
+      missingCurrentEvidence: 1,
+      coverageRate: 0,
+    },
+  ]);
+});
+
+test('model metrics evidence trend follows date and filters', async (t) => {
+  const { app, request } = await fixture(t);
+  const team = app.store.saveTeamSpace({
+    id: 'trend-team',
+    name: '趋势团队',
+    goal: '验证按日趋势。',
+    purpose: '验证按日趋势。',
+    memberRoleIds: ['project_manager', 'developer'],
+    pmRoleId: 'project_manager',
+  });
+  const current = saveQualityOnlyTask(app, {
+    id: 'trend-current',
+    teamId: team.id,
+    verification: { status: 'verified' },
+  });
+  const missing = saveQualityOnlyTask(app, {
+    id: 'trend-missing',
+    teamId: team.id,
+  });
+  app.store.db
+    .prepare('UPDATE tasks SET createdAt=?,updatedAt=? WHERE id=?')
+    .run(
+      '2026-01-02T12:00:00.000Z',
+      '2026-01-02T12:00:00.000Z',
+      current.id,
+    );
+  app.store.db
+    .prepare('UPDATE tasks SET createdAt=?,updatedAt=? WHERE id=?')
+    .run(
+      '2026-01-03T12:00:00.000Z',
+      '2026-01-03T12:00:00.000Z',
+      missing.id,
+    );
+
+  const result = await request(
+    'metrics/models?teamId=trend-team&since=2026-01-01T00:00:00.000Z&until=2026-01-04T00:00:00.000Z',
+  );
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.evidenceQuality.trend, [
+    {
+      date: '2026-01-02',
+      completedTasks: 1,
+      currentVerified: 1,
+      missingCurrentEvidence: 0,
+      coverageRate: 100,
+    },
+    {
+      date: '2026-01-03',
+      completedTasks: 1,
+      currentVerified: 0,
+      missingCurrentEvidence: 1,
+      coverageRate: 0,
+    },
+  ]);
 });
 
 test('model metrics reject an invalid time window', async (t) => {

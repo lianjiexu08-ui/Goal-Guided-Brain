@@ -227,6 +227,37 @@ const evidenceQualityCounts = (rows, store) => {
   };
 };
 
+const evidenceQualityTrend = (rows, store) => {
+  const byDate = new Map();
+  for (const row of rows) {
+    if (row.task.status !== 'completed') continue;
+    const at = timestampMs(row.task.createdAt) ?? timestampMs(row.task.updatedAt);
+    if (at === null) continue;
+    const date = new Date(at).toISOString().slice(0, 10);
+    if (!byDate.has(date))
+      byDate.set(date, {
+        date,
+        completedTasks: 0,
+        currentVerified: 0,
+        missingCurrentEvidence: 0,
+      });
+    const bucket = byDate.get(date);
+    const delivery = store.taskDelivery(row.task);
+    bucket.completedTasks += 1;
+    if (delivery.hasCurrentVerificationEvidence) bucket.currentVerified += 1;
+    else bucket.missingCurrentEvidence += 1;
+  }
+  return [...byDate.values()]
+    .map((bucket) => ({
+      ...bucket,
+      coverageRate: percentage(
+        bucket.currentVerified,
+        bucket.completedTasks,
+      ),
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+};
+
 const evidenceQuality = (rows, store) => {
   const overall = evidenceQualityCounts(rows, store);
   const byTeam = new Map();
@@ -239,6 +270,7 @@ const evidenceQuality = (rows, store) => {
   }
   return {
     ...overall,
+    trend: evidenceQualityTrend(rows, store),
     byTeam: [...byTeam.values()]
       .map(({ rows: teamRows, ...team }) => ({
         ...team,

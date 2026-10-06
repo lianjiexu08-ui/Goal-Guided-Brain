@@ -38,6 +38,12 @@ test.describe('模型运行指标回归', () => {
     await expect(evidenceQuality).toContainText('待补证据');
     await expect(evidenceQuality).toContainText('Alpha 模型团队');
     await expect(evidenceQuality).toContainText('Beta 模型团队');
+    const evidenceTrend = panel.getByTestId('model-evidence-trend');
+    await expect(evidenceTrend).toBeVisible();
+    await expect(evidenceTrend).toContainText('按日趋势');
+    await expect(
+      evidenceTrend.getByTestId('model-evidence-trend-row').first(),
+    ).toBeVisible();
     await expect(
       panel
         .getByTestId('model-metrics-row')
