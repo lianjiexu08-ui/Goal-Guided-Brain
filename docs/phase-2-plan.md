@@ -47,11 +47,12 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Local Release Record
 
-Latest local regression on 2026-10-06: `npm test` 189/189 and Playwright
+Latest local regression on 2026-10-07: `npm test` 189/189 and Playwright
 desktop/mobile baseline 96/96 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines -- --json`, `npm run build` and
-`git diff --check` also passed. The UI and API smoke endpoints returned 200 and
-`{"ok":true}` respectively. This is local evidence only; the real Linux,
+`git diff --check` also passed. The model metrics regression includes task-type
+runtime comparisons and alias filtering. The UI and API smoke endpoints returned
+200 and `{"ok":true}` respectively. This is local evidence only; the real Linux,
 Windows/WSL2, HTTPS and owner-offline gates below remain open.
 
 Validated on 2026-09-27 using macOS, Node.js 26.8.1 and DSH 0.1.2-rc.1.

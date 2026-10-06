@@ -38,6 +38,11 @@ test.describe('模型运行指标回归', () => {
     await expect(evidenceQuality).toContainText('待补证据');
     await expect(evidenceQuality).toContainText('Alpha 模型团队');
     await expect(evidenceQuality).toContainText('Beta 模型团队');
+    const taskTypeComparison = panel.getByTestId('model-task-type-comparison');
+    await expect(taskTypeComparison).toBeVisible();
+    await expect(taskTypeComparison).toContainText('任务类型运行对比');
+    await expect(taskTypeComparison).toContainText('规划');
+    await expect(taskTypeComparison).toContainText('完成任务证据覆盖');
     const evidenceTrend = panel.getByTestId('model-evidence-trend');
     await expect(evidenceTrend).toBeVisible();
     await expect(evidenceTrend).toContainText('按日趋势');

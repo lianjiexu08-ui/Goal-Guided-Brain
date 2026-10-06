@@ -289,6 +289,58 @@ test('model metrics aggregate retries by attempt and logical task, preserve unkn
   assert.equal(result.body.totals.totalTokens, 460);
   assert.equal(result.body.totals.costKnown, false);
   assert.equal(result.body.totals.cost, null);
+  assert.deepEqual(
+    result.body.taskTypeComparisons.map((item) => item.taskType),
+    ['planning', 'development'],
+  );
+  const developmentComparison = result.body.taskTypeComparisons.find(
+    (item) => item.taskType === 'development',
+  );
+  assert.deepEqual(
+    {
+      attempts: developmentComparison.attempts,
+      logicalTasks: developmentComparison.logicalTasks,
+      completed: developmentComparison.completed,
+      failed: developmentComparison.failed,
+      failedAttempts: developmentComparison.failedAttempts,
+      fallbacks: developmentComparison.fallbacks,
+      avgLatencyMs: developmentComparison.avgLatencyMs,
+      p50LatencyMs: developmentComparison.p50LatencyMs,
+      totalTokens: developmentComparison.totalTokens,
+      cost: developmentComparison.cost,
+      costKnown: developmentComparison.costKnown,
+      verificationPassed: developmentComparison.verificationPassed,
+      coverageRate: developmentComparison.coverageRate,
+      accepted: developmentComparison.accepted,
+      pending: developmentComparison.pending,
+    },
+    {
+      attempts: 2,
+      logicalTasks: 1,
+      completed: 1,
+      failed: 0,
+      failedAttempts: 1,
+      fallbacks: 1,
+      avgLatencyMs: 1750,
+      p50LatencyMs: 1750,
+      totalTokens: 430,
+      cost: 0.3,
+      costKnown: true,
+      verificationPassed: 1,
+      coverageRate: 100,
+      accepted: 1,
+      pending: 0,
+    },
+  );
+  const planningComparison = result.body.taskTypeComparisons.find(
+    (item) => item.taskType === 'planning',
+  );
+  assert.equal(planningComparison.attempts, 1);
+  assert.equal(planningComparison.logicalTasks, 1);
+  assert.equal(planningComparison.totalTokens, 30);
+  assert.equal(planningComparison.costKnown, false);
+  assert.equal(planningComparison.cost, null);
+  assert.equal(planningComparison.coverageRate, 0);
   const today = new Date().toISOString().slice(0, 10);
   assert.deepEqual(result.body.evidenceQuality, {
     completedTasks: 5,
@@ -402,6 +454,11 @@ test('model metrics aggregate retries by attempt and logical task, preserve unkn
   assert.equal(filtered.body.evidenceQuality.coverageRate, 0);
   assert.equal(filtered.body.evidenceQuality.verificationPassRate, null);
   assert.equal(filtered.body.filters.taskType, null);
+  assert.deepEqual(
+    filtered.body.taskTypeComparisons.map((item) => item.taskType),
+    ['planning'],
+  );
+  assert.equal(filtered.body.taskTypeComparisons[0].attempts, 1);
   assert.deepEqual(filtered.body.evidenceQuality.trend, [
     {
       date: today,
@@ -416,6 +473,9 @@ test('model metrics aggregate retries by attempt and logical task, preserve unkn
   assert.equal(development.body.filters.taskType, 'development');
   assert.equal(development.body.evidenceQuality.completedTasks, 4);
   assert.deepEqual(development.body.evidenceQuality.byTaskType.map((item) => item.taskType), ['development']);
+  const developmentAlias = await request('metrics/models?taskType=dev');
+  assert.equal(developmentAlias.status, 200);
+  assert.equal(developmentAlias.body.filters.taskType, 'development');
 });
 
 test('model metrics evidence trend follows date and filters', async (t) => {

@@ -1,7 +1,7 @@
 import {
   TASK_TYPES,
   inferTaskType,
-  isTaskType,
+  normalizeTaskType,
   taskTypeName,
 } from './task-types.mjs';
 
@@ -184,6 +184,62 @@ const publicBucket = (bucket) => {
   };
 };
 
+const emptyTaskTypeComparison = (taskType) => ({
+  taskType,
+  taskTypeName: taskTypeName(taskType),
+  attempts: new Set(),
+  logicalGroups: new Set(),
+  completed: 0,
+  failed: 0,
+  failedAttempts: 0,
+  fallbacks: 0,
+  latencies: [],
+  usageRows: [],
+  inputTokens: 0,
+  outputTokens: 0,
+  totalTokens: 0,
+  verificationPassed: 0,
+  currentVerified: 0,
+  missingCurrentEvidence: 0,
+  accepted: 0,
+  rejected: 0,
+  pending: 0,
+});
+
+const publicTaskTypeComparison = (bucket) => {
+  const costKnown = bucket.usageRows.length > 0 && bucket.usageRows.every((row) => numberOrNull(row.cost) !== null);
+  const cost = costKnown
+    ? Number(bucket.usageRows.reduce((sum, row) => sum + numberOrNull(row.cost), 0).toFixed(10))
+    : null;
+  const avgLatencyMs = bucket.latencies.length
+    ? Math.round(bucket.latencies.reduce((sum, value) => sum + value, 0) / bucket.latencies.length)
+    : null;
+  return {
+    taskType: bucket.taskType,
+    taskTypeName: bucket.taskTypeName,
+    attempts: bucket.attempts.size,
+    logicalTasks: bucket.logicalGroups.size,
+    completed: bucket.completed,
+    failed: bucket.failed,
+    failedAttempts: bucket.failedAttempts,
+    fallbacks: bucket.fallbacks,
+    avgLatencyMs,
+    p50LatencyMs: p50(bucket.latencies),
+    inputTokens: bucket.inputTokens,
+    outputTokens: bucket.outputTokens,
+    totalTokens: bucket.totalTokens,
+    cost,
+    costKnown,
+    verificationPassed: bucket.verificationPassed,
+    accepted: bucket.accepted,
+    rejected: bucket.rejected,
+    pending: bucket.pending,
+    coverageRate: percentage(bucket.currentVerified, bucket.completed),
+    currentVerified: bucket.currentVerified,
+    missingCurrentEvidence: bucket.missingCurrentEvidence,
+  };
+};
+
 const percentage = (numerator, denominator) =>
   denominator ? Math.round((numerator / denominator) * 1000) / 10 : null;
 
@@ -318,8 +374,11 @@ export function modelMetrics(store, query) {
   const roleFilter = query?.get?.('roleId') || '';
   const providerFilter = query?.get?.('providerId') || '';
   const modelFilter = query?.get?.('model') || '';
-  const taskTypeFilter = query?.get?.('taskType') || '';
-  if (taskTypeFilter && !isTaskType(taskTypeFilter))
+  const rawTaskTypeFilter = query?.get?.('taskType') || '';
+  const taskTypeFilter = rawTaskTypeFilter
+    ? normalizeTaskType(rawTaskTypeFilter, null)
+    : '';
+  if (rawTaskTypeFilter && !taskTypeFilter)
     throw new Error('taskType 必须是有效的任务类型。');
   const teams = store.teamSpaces();
   const roles = store.roles().filter((role) => !role.archived);
@@ -513,7 +572,10 @@ export function modelMetrics(store, query) {
       if ((!providerFilter || toDimensions.providerId === providerFilter) && (!modelFilter || toDimensions.model === modelFilter)) bucket.fallbackTargets += 1;
     }
     if (matches(fromDimensions) || matches(toDimensions))
-      fallbackEvents.push(event.id || `${event.taskId}:${event.createdAt}`);
+      fallbackEvents.push({
+        id: event.id || `${event.taskId}:${event.createdAt}`,
+        taskType: row.context.taskType,
+      });
   }
 
   const items = [...buckets.values()]
@@ -527,6 +589,59 @@ export function modelMetrics(store, query) {
   const matchingUsage = (dimensions) =>
     (!providerFilter || dimensions.providerId === providerFilter) &&
     (!modelFilter || dimensions.model === modelFilter);
+  const taskTypeBuckets = new Map();
+  const getTaskTypeBucket = (taskType) => {
+    const normalized = taskType || 'general';
+    if (!taskTypeBuckets.has(normalized))
+      taskTypeBuckets.set(normalized, emptyTaskTypeComparison(normalized));
+    return taskTypeBuckets.get(normalized);
+  };
+  for (const row of taskRows) {
+    const matchingGroups = [...row.usageGroups.values()].filter((entry) =>
+      matchingUsage(entry.dimensions),
+    );
+    if (!matchingGroups.length) continue;
+    const bucket = getTaskTypeBucket(row.context.taskType);
+    bucket.attempts.add(row.task.id);
+    if (row.task.status === 'failed') bucket.failedAttempts += 1;
+    if (row.latency !== null) bucket.latencies.push(row.latency);
+    for (const entry of matchingGroups) {
+      for (const usage of entry.rows) {
+        bucket.usageRows.push(usage);
+        bucket.inputTokens += numberOrNull(usage.inputTokens) || 0;
+        bucket.outputTokens += numberOrNull(usage.outputTokens) || 0;
+        bucket.totalTokens += numberOrNull(usage.totalTokens) ||
+          (numberOrNull(usage.inputTokens) || 0) + (numberOrNull(usage.outputTokens) || 0);
+      }
+    }
+  }
+  for (const row of finalGroupRows) {
+    const bucket = getTaskTypeBucket(row.context.taskType);
+    const delivery = store.taskDelivery(row.task);
+    bucket.logicalGroups.add(row.groupId);
+    if (row.task.status === 'completed') {
+      bucket.completed += 1;
+      if (delivery.hasCurrentVerificationEvidence) {
+        bucket.currentVerified += 1;
+        bucket.verificationPassed += 1;
+      } else {
+        bucket.missingCurrentEvidence += 1;
+      }
+    }
+    if (row.task.status === 'failed') bucket.failed += 1;
+    if (delivery.acceptanceDecision === 'accepted') bucket.accepted += 1;
+    else if (delivery.acceptanceDecision === 'rejected') bucket.rejected += 1;
+    else bucket.pending += 1;
+  }
+  for (const event of fallbackEvents)
+    getTaskTypeBucket(event.taskType).fallbacks += 1;
+  const taskTypeComparisons = [...taskTypeBuckets.values()]
+    .map(publicTaskTypeComparison)
+    .sort(
+      (a, b) =>
+        (TASK_TYPES.findIndex((item) => item.id === a.taskType) + 1 || 999) -
+        (TASK_TYPES.findIndex((item) => item.id === b.taskType) + 1 || 999),
+    );
   const totalUsageRows = taskRows.flatMap((row) => [...row.usageGroups.values()]
     .filter((entry) => matchingUsage(entry.dimensions))
     .flatMap((entry) => entry.rows));
@@ -566,6 +681,7 @@ export function modelMetrics(store, query) {
       p50LatencyMs: p50(totalLatency),
     },
     evidenceQuality: quality,
+    taskTypeComparisons,
     items,
   };
 }

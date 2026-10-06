@@ -84,6 +84,30 @@ type ModelMetricItem = {
     count: number;
   }[];
 };
+type TaskTypeComparison = {
+  taskType: string;
+  taskTypeName: string;
+  attempts: number;
+  logicalTasks: number;
+  completed: number;
+  failed: number;
+  failedAttempts: number;
+  fallbacks: number;
+  avgLatencyMs: number | null;
+  p50LatencyMs: number | null;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cost: number | null;
+  costKnown: boolean;
+  verificationPassed: number;
+  accepted: number;
+  rejected: number;
+  pending: number;
+  coverageRate: number | null;
+  currentVerified: number;
+  missingCurrentEvidence: number;
+};
 type ModelMetricsResponse = {
   generatedAt: string;
   window?: {
@@ -114,6 +138,7 @@ type ModelMetricsResponse = {
     p50LatencyMs: number | null;
   };
   evidenceQuality?: EvidenceQuality;
+  taskTypeComparisons?: TaskTypeComparison[];
   items: ModelMetricItem[];
 };
 
@@ -242,6 +267,7 @@ export function ModelMetricsPanel({
     setFilters((current) => ({ ...current, [key]: value }));
   const totals = metrics?.totals;
   const quality = metrics?.evidenceQuality;
+  const taskTypeComparisons = metrics?.taskTypeComparisons || [];
   return (
     <section
       className="model-metrics"
@@ -509,6 +535,78 @@ export function ModelMetricsPanel({
               </div>
             </div>
           )}
+        </section>
+      )}
+      {taskTypeComparisons.length > 0 && (
+        <section
+          className="model-task-type-comparison"
+          aria-label="任务类型运行对比"
+          data-testid="model-task-type-comparison"
+        >
+          <div className="model-task-type-comparison-heading">
+            <div>
+              <strong>任务类型运行对比</strong>
+              <span>
+                {timeWindowLabel(timeWindow)} ·
+                执行任务口径，完成/失败按逻辑任务最终状态计算
+              </span>
+            </div>
+            <span>{taskTypeComparisons.length} 种类型</span>
+          </div>
+          <div className="model-task-type-comparison-grid">
+            {taskTypeComparisons.map((item) => (
+              <article key={item.taskType} data-testid="model-task-type-card">
+                <div className="model-task-type-comparison-card-heading">
+                  <strong>{item.taskTypeName}</strong>
+                  <span>{item.taskType}</span>
+                </div>
+                <div className="model-task-type-comparison-stats">
+                  <div>
+                    <strong>
+                      {metricNumber(item.completed)} /{' '}
+                      {metricNumber(item.failed)}
+                    </strong>
+                    <span>最终完成 / 最终失败</span>
+                  </div>
+                  <div>
+                    <strong>{metricNumber(item.attempts)}</strong>
+                    <span>执行尝试</span>
+                  </div>
+                  <div>
+                    <strong>
+                      {item.avgLatencyMs === null
+                        ? '-'
+                        : `${metricNumber(item.avgLatencyMs)} ms`}
+                    </strong>
+                    <span>平均耗时</span>
+                  </div>
+                  <div>
+                    <strong>{metricNumber(item.totalTokens)}</strong>
+                    <span>Token</span>
+                  </div>
+                  <div>
+                    <strong>
+                      {item.costKnown && item.cost !== null
+                        ? `$${item.cost.toFixed(4)}`
+                        : '未知'}
+                    </strong>
+                    <span>费用</span>
+                  </div>
+                  <div>
+                    <strong>{metricRate(item.coverageRate)}</strong>
+                    <span>完成任务证据覆盖</span>
+                  </div>
+                </div>
+                <div className="model-task-type-comparison-meta">
+                  <span>逻辑任务 {metricNumber(item.logicalTasks)}</span>
+                  <span>失败尝试 {metricNumber(item.failedAttempts)}</span>
+                  <span>回退 {metricNumber(item.fallbacks)}</span>
+                  <span>验收 {metricNumber(item.accepted)}</span>
+                  <span>待处理 {metricNumber(item.pending)}</span>
+                </div>
+              </article>
+            ))}
+          </div>
         </section>
       )}
       {loading && !metrics ? (
