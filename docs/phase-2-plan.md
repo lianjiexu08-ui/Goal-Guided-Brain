@@ -47,8 +47,8 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Local Release Record
 
-Latest local regression on 2026-10-05: `npm test` 187/187 and Playwright
-desktop/mobile baseline 90/90 passed on macOS. `npm run lint`,
+Latest local regression on 2026-10-06: `npm test` 187/187 and Playwright
+desktop/mobile baseline 94/94 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines -- --json`, `npm run build` and
 `git diff --check` also passed. The UI and API smoke endpoints returned 200 and
 `{"ok":true}` respectively. This is local evidence only; the real Linux,
@@ -70,7 +70,7 @@ and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
 The current deterministic suite contains 187 passing tests. The repeatable
-Playwright baseline contains ninety passing desktop/mobile runs covering team
+Playwright baseline contains ninety-four passing desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
 binary drag-and-drop attachments, Team Charter confirmation and high-risk

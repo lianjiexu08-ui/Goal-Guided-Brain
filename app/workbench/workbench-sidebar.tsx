@@ -3,6 +3,7 @@
 'use client';
 // Focused presentation modules receive a controller context assembled by Workbench.
 /* oxlint-disable no-explicit-any, no-unused-vars */
+import { useState } from 'react';
 import Markdown from 'react-markdown';
 import { api, entityList, entityText } from '../workbench-api';
 import {
@@ -248,6 +249,15 @@ export function WorkbenchSidebar({ context }: { context: WorkbenchContext }) {
     setRecruitmentApprovals,
     recruitmentSyncState,
   } = context;
+  const [teamQuery, setTeamQuery] = useState('');
+  const normalizedTeamQuery = teamQuery.trim().toLocaleLowerCase();
+  const visibleTeams = confirmedSpaces.filter((space) => {
+    if (!normalizedTeamQuery) return true;
+    return `${space.name} ${space.goal || ''}`
+      .toLocaleLowerCase()
+      .includes(normalizedTeamQuery);
+  });
+  const showTeamSearch = confirmedSpaces.length >= 3;
   return (
     <Sidebar className="work-sidebar">
       <SidebarHeader className="brand-header">
@@ -307,8 +317,30 @@ export function WorkbenchSidebar({ context }: { context: WorkbenchContext }) {
             <Plus size={14} />
           </button>
         </div>
+        {showTeamSearch && (
+          <label className="team-nav-search">
+            <Search size={14} aria-hidden="true" />
+            <span className="sr-only">搜索我的团队</span>
+            <input
+              type="search"
+              aria-label="搜索我的团队"
+              value={teamQuery}
+              placeholder="搜索团队或职责"
+              onChange={(event) => setTeamQuery(event.target.value)}
+            />
+            {teamQuery && (
+              <button
+                type="button"
+                aria-label="清除团队搜索"
+                onClick={() => setTeamQuery('')}
+              >
+                <X size={13} />
+              </button>
+            )}
+          </label>
+        )}
         <SidebarMenu className="team-nav-list">
-          {confirmedSpaces.map((space) => (
+          {visibleTeams.map((space) => (
             <SidebarMenuItem key={space.id}>
               <SidebarMenuButton
                 className="team-nav-item"
@@ -318,6 +350,7 @@ export function WorkbenchSidebar({ context }: { context: WorkbenchContext }) {
                 }
                 onClick={() => {
                   selectTeam(space.id);
+                  setTeamQuery('');
                   setView('workspace');
                   if (isMobile) setOpenMobile(false);
                 }}
@@ -345,6 +378,11 @@ export function WorkbenchSidebar({ context }: { context: WorkbenchContext }) {
               </SidebarMenuButton>
             </SidebarMenuItem>
           ))}
+          {showTeamSearch && !visibleTeams.length && (
+            <SidebarMenuItem>
+              <div className="team-nav-filter-empty">没有匹配的团队</div>
+            </SidebarMenuItem>
+          )}
           {!confirmedSpaces.length && (
             <SidebarMenuItem>
               <button

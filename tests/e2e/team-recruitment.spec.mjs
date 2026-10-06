@@ -12,6 +12,7 @@ import {
   seedTeamTemplateSource,
   sidebarLocator,
 } from './team-recruitment-fixtures.mjs';
+import { seedManyConfirmedTeams } from './team-search-fixtures.mjs';
 
 test.describe('团队招募核心流程', () => {
   test('保存团队模板并创建独立副本，重新确认身份和边界', async ({ page }) => {
@@ -438,6 +439,10 @@ test.describe('团队招募核心流程', () => {
       return;
     }
 
+    await expect(page.locator('meta[name="viewport"]')).toHaveAttribute(
+      'content',
+      /width=device-width.*initial-scale=1.*viewport-fit=cover/,
+    );
     await expect(context).toBeVisible();
     await expect(
       context.getByRole('button', { name: '切换团队和工作空间', exact: true }),
@@ -504,6 +509,36 @@ test.describe('团队招募核心流程', () => {
       dialog.getByRole('button', { name: '保存团队设置', exact: true }),
     ).toBeVisible();
     await page.keyboard.press('Escape');
+  });
+
+  test('团队较多时侧栏支持按团队名称或职责搜索', async ({ page }) => {
+    const teams = seedManyConfirmedTeams();
+    await page.goto('/');
+    const sidebar = await openMobileSidebar(page);
+    const search = sidebar.getByRole('searchbox', {
+      name: '搜索我的团队',
+      exact: true,
+    });
+    await expect(search).toBeVisible();
+
+    await search.fill('共享平台');
+    await expect(
+      sidebar.getByRole('button', { name: new RegExp(teams.extra[0].name) }),
+    ).toBeVisible();
+    await expect(
+      sidebar.getByRole('button', { name: new RegExp(teams.extra[1].name) }),
+    ).toBeHidden();
+    await expect(
+      sidebar.getByRole('button', { name: new RegExp(teams.extra[2].name) }),
+    ).toBeHidden();
+
+    await sidebar
+      .getByRole('button', { name: '清除团队搜索', exact: true })
+      .click();
+    await expect(search).toHaveValue('');
+    await expect(
+      sidebar.getByRole('button', { name: new RegExp(teams.extra[1].name) }),
+    ).toBeVisible();
   });
 
   test('手机端主导航可以在招募、团队、任务和更多之间切换', async ({ page }) => {

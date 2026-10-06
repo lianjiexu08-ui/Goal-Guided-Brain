@@ -233,11 +233,16 @@ function seedAcceptanceJob({ rejected = false, title = '交付验收闭环任务
   }
 }
 
-function seedBatchAcceptanceJobs() {
+function seedBatchAcceptanceJobs({ includeInvalid = false } = {}) {
   const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
   try {
     const groupId = randomUUID();
-    const titles = ['批量交付复核任务 A', '批量交付复核任务 B'];
+    const suffix = groupId.slice(0, 8);
+    const titles = [
+      `批量交付复核任务 A · ${suffix}`,
+      `批量交付复核任务 B · ${suffix}`,
+      ...(includeInvalid ? [`缺少验证证据的批量任务 · ${suffix}`] : []),
+    ];
     const tasks = titles.map((title) => store.createTask({
       role: 'developer',
       prompt: title,
@@ -291,17 +296,19 @@ function seedBatchAcceptanceJobs() {
         status: 'completed',
         result: '测试已通过，等待批量验收。',
       });
-      store.records.save('artifacts', {
-        taskId: task.id,
-        groupId: job.groupId,
-        requirementVersion: 1,
-        kind: 'verification',
-        name: 'npm test',
-        status: 'verified',
-        verified: true,
-        output: '批量复核 fixture passed',
-        finishedAt: new Date().toISOString(),
-      }, `e2e-batch-verification-${groupId}-${index}`);
+      if (index < 2) {
+        store.records.save('artifacts', {
+          taskId: task.id,
+          groupId: job.groupId,
+          requirementVersion: 1,
+          kind: 'verification',
+          name: 'npm test',
+          status: 'verified',
+          verified: true,
+          output: '批量复核 fixture passed',
+          finishedAt: new Date().toISOString(),
+        }, `e2e-batch-verification-${groupId}-${index}`);
+      }
     });
     return { taskIds: tasks.map((task) => task.id), titles };
   } finally {
@@ -562,6 +569,38 @@ test('后台任务支持批量通过有验证证据的交付', async ({ page }) 
       (await page.request.get(`/api/tasks/${taskId}`)).json().then((body) => body.delivery?.deliveryStatus),
     ).toBe('accepted');
   }
+});
+
+test('后台任务批量复核失败会指出需要修正的任务', async ({ page }) => {
+  const fixture = seedBatchAcceptanceJobs({ includeInvalid: true });
+  await page.goto('/');
+  const mobile = (page.viewportSize()?.width || 1024) < 768;
+  if (mobile) {
+    await page.getByRole('button', { name: 'Toggle Sidebar', exact: true }).click();
+    await expect(page.locator('[data-sidebar="sidebar"][data-mobile="true"]')).toBeVisible();
+  }
+  const sidebar = page.locator(
+    mobile ? '[data-sidebar="sidebar"][data-mobile="true"]' : '[data-sidebar="sidebar"]',
+  );
+  await sidebar.getByRole('button', { name: '后台任务', exact: true }).click();
+  await page.getByRole('tab', { name: /待处理/ }).click();
+  const reviewPanel = page.getByRole('tabpanel', { name: '待处理' });
+  for (const title of fixture.titles) {
+    await reviewPanel.getByRole('checkbox', { name: `选择交付验收任务 ${title}` }).check();
+  }
+  await reviewPanel.getByRole('button', { name: '批量通过交付', exact: true }).click();
+  const toast = page.locator('output.toast');
+  await expect(toast).toContainText('批量复核未执行');
+  await expect(toast).toContainText(fixture.titles[2]);
+  await expect(toast).toContainText('当前需求版本还没有通过的验收证据');
+  for (const taskId of fixture.taskIds.slice(0, 2)) {
+    await expect.poll(async () =>
+      (await page.request.get(`/api/tasks/${taskId}`)).json().then((body) => body.delivery?.deliveryStatus),
+    ).toBe('awaiting-owner');
+  }
+  await expect.poll(async () =>
+    (await page.request.get(`/api/tasks/${fixture.taskIds[2]}`)).json().then((body) => body.delivery?.deliveryStatus),
+  ).toBe('pending-review');
 });
 
 test('需要你处理可以直接打开关联执行和交付状态', async ({ page }) => {

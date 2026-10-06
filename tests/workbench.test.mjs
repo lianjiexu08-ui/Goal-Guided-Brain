@@ -258,6 +258,8 @@ test('batch delivery review accepts atomically and records rejection attention',
       note: '尝试统一通过。',
     });
     assert.equal(atomicFailure.status, 409);
+    assert.match(atomicFailure.body.error, /缺验证批量任务/);
+    assert.match(atomicFailure.body.error, /验收证据/);
     assert.equal(app.store.taskDelivery(app.store.task(valid.id)).deliveryStatus, 'awaiting-owner');
     assert.equal(app.store.taskDelivery(app.store.task(missingEvidence.id)).deliveryStatus, 'pending-review');
 

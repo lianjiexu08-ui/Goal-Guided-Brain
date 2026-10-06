@@ -742,26 +742,33 @@ export function createPlatformHandler({
       const validated = [];
       for (const taskId of taskIds) {
         const task = store.task(taskId);
+        const result = { taskId, title: task?.title || taskId };
         try {
           const delivery = validateTaskAcceptance(task, decision, note);
           validated.push({ task, delivery });
-          results.push({ taskId, ok: true });
+          results.push({ ...result, ok: true });
         } catch (error) {
-          results.push({ taskId, ok: false, error: error.message });
+          results.push({ ...result, ok: false, error: error.message });
         }
       }
       // Batch review is intentionally all-or-nothing. A stale evidence record
       // or a task that changed status must never leave a mixed decision that
       // the owner did not explicitly inspect.
       if (results.some((result) => !result.ok)) {
+        const failures = results
+          .filter((result) => !result.ok)
+          .map((result) => `${result.title}：${result.error}`)
+          .join('；');
+        const message = `批量复核未执行，请修正失败项后重新选择。${failures ? ` ${failures}` : ''}`;
         return ok(
           {
             ok: false,
+            error: message,
             decision,
             results,
             succeeded: 0,
             failed: results.filter((result) => !result.ok).length,
-            message: '批量复核未执行，请修正失败项后重新选择。',
+            message,
           },
           409,
         );
