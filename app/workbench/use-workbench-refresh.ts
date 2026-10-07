@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api } from '../workbench-api';
+import { readWorkbenchState } from './state-client';
 import type { State } from './model';
 
 /** Polls share an in-flight read; explicit refreshes supersede older snapshots. */
@@ -10,6 +10,8 @@ export function useWorkbenchRefresh(onSnapshot: (snapshot: State) => void) {
   const [refreshing, setRefreshing] = useState(true);
   const mounted = useRef(false);
   const generation = useRef(0);
+  const etag = useRef<string | null>(null);
+  const lastSnapshot = useRef<State | null>(null);
   const pending = useRef<{
     controller: AbortController;
     promise: Promise<void>;
@@ -23,20 +25,28 @@ export function useWorkbenchRefresh(onSnapshot: (snapshot: State) => void) {
       pending.current?.controller.abort();
       const controller = new AbortController();
       let timedOut = false;
-      setRefreshing(true);
+      if (replace || !lastSnapshot.current) setRefreshing(true);
       const timer = window.setTimeout(() => {
         timedOut = true;
         controller.abort();
       }, 15_000);
       const current = () => mounted.current && generation.current === id;
-      const promise = api<State>('state', 'GET', undefined, controller.signal)
-        .then((snapshot) => {
+      const promise = readWorkbenchState(
+        controller.signal,
+        replace ? null : etag.current,
+      )
+        .then(({ snapshot, etag: nextEtag }) => {
           if (!current()) return;
-          onSnapshot(snapshot);
+          if (snapshot) lastSnapshot.current = snapshot;
+          // A 304 confirms this exact object. Reusing it avoids replacing
+          // unchanged data, while reconciling interim recruitment updates.
+          if (lastSnapshot.current) onSnapshot(lastSnapshot.current);
+          etag.current = nextEtag;
           setConnectionError('');
         })
         .catch((reason: unknown) => {
           if (!current()) return;
+          etag.current = null;
           setConnectionError(
             timedOut
               ? '连接超时，请重试。'

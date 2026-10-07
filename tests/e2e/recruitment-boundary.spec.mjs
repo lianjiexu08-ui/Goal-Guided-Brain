@@ -42,10 +42,13 @@ async function showOnly(page, team, view) {
     { id: team.id, view },
   );
   await page.route('**/api/state', async (route) => {
-    const response = await route.fetch();
+    const response = await route.fetch({
+      headers: { ...route.request().headers(), 'if-none-match': '' },
+    });
     const state = await response.json();
     state.spaces = state.spaces.filter((space) => space.id === team.id);
-    await route.fulfill({ response, json: state });
+    const { etag: _etag, ...headers } = response.headers();
+    await route.fulfill({ response, headers, json: state });
   });
 }
 
@@ -179,10 +182,13 @@ test('无可用空间时显示招募入口，点击后才创建独立草稿', as
   let createdId = '';
   let creates = 0;
   await page.route('**/api/state', async (route) => {
-    const response = await route.fetch();
+    const response = await route.fetch({
+      headers: { ...route.request().headers(), 'if-none-match': '' },
+    });
     const state = await response.json();
     state.spaces = state.spaces.filter((space) => space.id === createdId);
-    await route.fulfill({ response, json: state });
+    const { etag: _etag, ...headers } = response.headers();
+    await route.fulfill({ response, headers, json: state });
   });
   await page.route('**/api/spaces', async (route) => {
     if (route.request().method() !== 'POST') return route.continue();

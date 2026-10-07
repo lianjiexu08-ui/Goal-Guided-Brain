@@ -11,6 +11,13 @@ export async function api<T = unknown>(
     headers: { 'Content-Type': 'application/json' },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
+  return parseApiResponse<T>(response, path);
+}
+
+export async function parseApiResponse<T>(
+  response: Response,
+  path: string,
+): Promise<T> {
   const text = await response.text();
   let data: unknown;
   try {

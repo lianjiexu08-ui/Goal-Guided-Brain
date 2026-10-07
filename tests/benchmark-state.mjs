@@ -37,6 +37,8 @@ try {
   app.store.records.list = list;
   const times = [];
   const httpTimes = [];
+  const conditionalTimes = [];
+  let conditionalBodyBytes = 0;
   for (let i = 0; i < 5; i++) {
     const start = performance.now();
     app.getState();
@@ -48,6 +50,15 @@ try {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     await response.json();
     httpTimes.push(performance.now() - httpStart);
+    const conditionalStart = performance.now();
+    const unchanged = await fetch(
+      `http://127.0.0.1:${app.server.address().port}/api/state`,
+      { headers: { 'If-None-Match': response.headers.get('etag') } },
+    );
+    if (unchanged.status !== 304)
+      throw new Error(`Expected unchanged state, got ${unchanged.status}`);
+    conditionalBodyBytes += (await unchanged.arrayBuffer()).byteLength;
+    conditionalTimes.push(performance.now() - conditionalStart);
   }
   const median = (values) =>
     Math.round(
@@ -62,6 +73,8 @@ try {
         firstMs: Math.round(firstMs),
         medianMs: median(times),
         httpMedianMs: median(httpTimes),
+        conditionalHttpMedianMs: median(conditionalTimes),
+        conditionalBodyBytes,
         collectionReads: scans,
       },
       null,

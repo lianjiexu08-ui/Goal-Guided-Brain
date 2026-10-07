@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { sendState } from './http-state.mjs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -232,7 +233,7 @@ export function createRequestHandler({
       });
       if (managed) return send(managed.status, managed.body);
       if (req.method === 'GET' && parts[1] === 'state')
-        return send(200, getState());
+        return sendState(req, res, getState());
       if (req.method === 'GET' && parts[1] === 'risks')
         return send(
           200,

@@ -17,11 +17,22 @@ async function forward(request: Request) {
   const url = new URL(request.url);
   const uiPort = process.env.WORKBENCH_UI_PORT || '3088';
   const allowed = [`127.0.0.1:${uiPort}`, `localhost:${uiPort}`];
-  if (process.env.WORKBENCH_PUBLIC_URL) allowed.push(new URL(process.env.WORKBENCH_PUBLIC_URL).host);
+  if (process.env.WORKBENCH_PUBLIC_URL)
+    allowed.push(new URL(process.env.WORKBENCH_PUBLIC_URL).host);
   if (!allowed.includes(url.host))
     return Response.json({ error: '只接受本地工作台请求。' }, { status: 403 });
   const headers = new Headers();
-  for (const name of ['content-type', 'origin', 'cookie', 'authorization', 'accept', 'mcp-session-id', 'mcp-protocol-version', 'last-event-id']) {
+  for (const name of [
+    'content-type',
+    'origin',
+    'cookie',
+    'authorization',
+    'accept',
+    'mcp-session-id',
+    'mcp-protocol-version',
+    'last-event-id',
+    'if-none-match',
+  ]) {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }
@@ -30,16 +41,24 @@ async function forward(request: Request) {
     {
       method: request.method,
       headers,
-      ...(['GET', 'HEAD'].includes(request.method) ? {} : { body: await request.text() }),
+      ...(['GET', 'HEAD'].includes(request.method)
+        ? {}
+        : { body: await request.text() }),
       redirect: 'manual',
     },
   );
   const responseHeaders = new Headers({ 'Cache-Control': 'no-store' });
-  for (const name of ['content-type', 'content-disposition', 'mcp-session-id']) {
+  for (const name of [
+    'content-type',
+    'content-disposition',
+    'mcp-session-id',
+    'etag',
+  ]) {
     const value = upstream.headers.get(name);
     if (value) responseHeaders.set(name, value);
   }
-  for (const cookie of upstream.headers.getSetCookie()) responseHeaders.append('Set-Cookie', cookie);
+  for (const cookie of upstream.headers.getSetCookie())
+    responseHeaders.append('Set-Cookie', cookie);
   return new Response(upstream.body, {
     status: upstream.status,
     headers: responseHeaders,

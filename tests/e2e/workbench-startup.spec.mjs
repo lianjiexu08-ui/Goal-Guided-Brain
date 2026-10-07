@@ -175,7 +175,9 @@ for (const status of [200, 503]) {
     await page.route('**/api/state', async (route) => {
       if (captured) return route.continue();
       captured = true;
-      const response = await route.fetch();
+      const response = await route.fetch({
+        headers: { ...route.request().headers(), 'if-none-match': '' },
+      });
       const snapshot = await response.json();
       expect(
         snapshot.spaces.find((team) => team.id === development.id).name,
