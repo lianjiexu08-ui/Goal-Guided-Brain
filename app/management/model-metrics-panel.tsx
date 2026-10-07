@@ -3,6 +3,12 @@
 import { useEffect, useState } from 'react';
 import { LoaderCircle } from 'lucide-react';
 import { api } from '../workbench-api';
+import {
+  ModelMetricsFilters,
+  timeWindowOptions,
+  type MetricsTimeWindow,
+  type MetricsOptions,
+} from './model-metrics-filters';
 
 const labels: Record<string, string> = {
   selected: '已选用',
@@ -51,7 +57,6 @@ function ErrorMessage({ error }: { error: string }) {
   ) : null;
 }
 
-type ModelMetricOption = { id: string; name?: string };
 type ModelMetricItem = {
   providerId: string | null;
   providerName: string;
@@ -114,13 +119,7 @@ type ModelMetricsResponse = {
     since: string | null;
     until: string | null;
   };
-  options?: {
-    teams?: ModelMetricOption[];
-    roles?: ModelMetricOption[];
-    providers?: ModelMetricOption[];
-    models?: ModelMetricOption[];
-    taskTypes?: ModelMetricOption[];
-  };
+  options?: MetricsOptions;
   totals: {
     attempts: number;
     logicalTasks: number;
@@ -198,14 +197,6 @@ const metricRouteExplanation = (
       return `${label}${reason}`;
     })
     .join(' · ');
-
-type MetricsTimeWindow = 'all' | '7d' | '30d';
-
-const timeWindowOptions: Array<{ value: MetricsTimeWindow; label: string }> = [
-  { value: 'all', label: '全部时间' },
-  { value: '7d', label: '最近 7 天' },
-  { value: '30d', label: '最近 30 天' },
-];
 
 const timeWindowLabel = (value: MetricsTimeWindow) =>
   timeWindowOptions.find((option) => option.value === value)?.label ||
@@ -331,99 +322,23 @@ export function ModelMetricsPanel({
           </button>
         </div>
       )}
-      <div className="model-metrics-filters" aria-label="模型指标筛选">
-        <label>
-          时间范围
-          <select
-            aria-label="指标时间范围"
-            value={timeWindow}
-            onChange={(event) =>
-              setTimeWindow(event.target.value as MetricsTimeWindow)
-            }
-          >
-            {timeWindowOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          团队
-          <select
-            aria-label="指标团队"
-            value={filters.teamId}
-            onChange={(event) => updateFilter('teamId', event.target.value)}
-          >
-            <option value="">全部团队</option>
-            {(options.teams || []).map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name || item.id}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          助手
-          <select
-            aria-label="指标助手"
-            value={filters.roleId}
-            onChange={(event) => updateFilter('roleId', event.target.value)}
-          >
-            <option value="">全部助手</option>
-            {(options.roles || []).map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name || item.id}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          供应商
-          <select
-            aria-label="指标供应商"
-            value={filters.providerId}
-            onChange={(event) => updateFilter('providerId', event.target.value)}
-          >
-            <option value="">全部供应商</option>
-            {(options.providers || []).map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name || item.id}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          模型
-          <select
-            aria-label="指标模型"
-            value={filters.model}
-            onChange={(event) => updateFilter('model', event.target.value)}
-          >
-            <option value="">全部模型</option>
-            {(options.models || []).map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name || item.id}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          任务类型
-          <select
-            aria-label="指标任务类型"
-            value={filters.taskType}
-            onChange={(event) => updateFilter('taskType', event.target.value)}
-          >
-            <option value="">全部类型</option>
-            {(options.taskTypes || []).map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name || item.id}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      <ModelMetricsFilters
+        filters={filters}
+        options={options}
+        timeWindow={timeWindow}
+        onChange={updateFilter}
+        onTimeWindowChange={setTimeWindow}
+        onReset={() => {
+          setFilters({
+            teamId: '',
+            roleId: '',
+            providerId: '',
+            model: '',
+            taskType: '',
+          });
+          setTimeWindow('all');
+        }}
+      />
       {totals && (
         <div className="model-metrics-summary">
           <div>
