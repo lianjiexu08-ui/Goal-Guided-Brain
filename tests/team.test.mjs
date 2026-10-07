@@ -1,3 +1,4 @@
+import { seedConfirmedDefaultTeam } from './fixtures/confirmed-default-team.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -44,6 +45,7 @@ test('team space routes owner messages to the project manager and persists repli
       return run;
     },
   });
+  seedConfirmedDefaultTeam(app.store);
   await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
   const request = async (route, body, method = 'GET') => {
     const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
@@ -119,6 +121,7 @@ test('team space routes owner messages to the project manager and persists repli
 test('team autonomy pause and resume gate new team messages', async () => {
   const fixture = sandbox();
   const app = createWorkbench({ ...fixture, requireCredential: false, runtimeFactory: () => ({ start() {}, cancel() {} }) });
+  seedConfirmedDefaultTeam(app.store);
   await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
   const request = async (route, body, method = 'GET') => {
     const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
@@ -187,6 +190,7 @@ test('team token budget pauses autonomous work and records actionable attention'
       return run;
     },
   });
+  seedConfirmedDefaultTeam(app.store);
   await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
   const request = async (route, body, method = 'GET') => {
     const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
@@ -257,6 +261,7 @@ test('team token budget pauses autonomous work and records actionable attention'
 test('team templates save durable configuration and create an isolated team copy', async () => {
   const fixture = sandbox();
   const app = createWorkbench({ ...fixture, requireCredential: false, runtimeFactory: () => ({ start() {}, cancel() {} }) });
+  seedConfirmedDefaultTeam(app.store);
   await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
   const request = async (route, body, method = 'GET') => {
     const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
@@ -356,6 +361,7 @@ test('team templates save durable configuration and create an isolated team copy
 test('team timeline exposes an older page without duplicating the latest window', async () => {
   const fixture = sandbox();
   const app = createWorkbench({ ...fixture, requireCredential: false });
+  seedConfirmedDefaultTeam(app.store);
   await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
   const request = async (route, body, method = 'GET') => {
     const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
@@ -400,6 +406,7 @@ test('team timeline exposes an older page without duplicating the latest window'
 test('cross-team timeline aggregates confirmed teams with labels and cursor pagination', async () => {
   const fixture = sandbox();
   const app = createWorkbench({ ...fixture, requireCredential: false });
+  seedConfirmedDefaultTeam(app.store);
   await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
   const request = async (route, body, method = 'GET') => {
     const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
@@ -474,6 +481,7 @@ test('cross-team timeline aggregates confirmed teams with labels and cursor pagi
 test('team risks aggregate confirmed teams and support team, kind, and cursor filters', async () => {
   const fixture = sandbox();
   const app = createWorkbench({ ...fixture, requireCredential: false });
+  seedConfirmedDefaultTeam(app.store);
   await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
   const request = async (route, body, method = 'GET') => {
     const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
@@ -569,6 +577,7 @@ test('team sessions cannot be reused across teams', async () => {
       cancel() { options.onDone('cancelled', ''); },
     }),
   });
+  seedConfirmedDefaultTeam(app.store);
   await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
   const request = async (route, body, method = 'GET') => {
     const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
@@ -639,6 +648,7 @@ test('team task handoff keeps the receiving task in the same team', async () => 
       },
     }),
   });
+  seedConfirmedDefaultTeam(app.store);
   await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
   const request = async (route, body, method = 'GET') => {
     const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
@@ -698,6 +708,7 @@ test('multiple Chat teams keep independent ownership and can hand work to anothe
       return run;
     },
   });
+  seedConfirmedDefaultTeam(app.store);
   await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
   const request = async (route, body, method = 'GET') => {
     const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
@@ -858,6 +869,7 @@ test('twenty alternating messages keep two confirmed teams, models, and tasks is
       complete() { options.onResult('本地 fixture 回复'); options.onDone('completed', ''); },
     }),
   });
+  seedConfirmedDefaultTeam(app.store);
   await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
   const request = async (route, body, method = 'GET') => {
     const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {

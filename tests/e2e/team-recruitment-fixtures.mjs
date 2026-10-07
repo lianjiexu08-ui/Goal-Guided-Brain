@@ -18,7 +18,8 @@ function seedProposedRecruitment() {
         .find((space) => space.recruitment?.proposal?.teamName === teamName) ||
       store
         .teamSpaces()
-        .find((space) => space.recruitment?.phase === 'confirmed');
+        .find((space) => space.recruitment?.phase === 'confirmed') ||
+      store.teamSpaces().find((space) => space.status !== 'archived');
     if (!team) throw new Error('E2E fixture requires a seeded team.');
     const proposal = {
       version: 1,
@@ -521,6 +522,7 @@ function seedConfirmedTeams() {
           name: input.name,
           goal: input.goal,
           purpose: input.goal,
+          collaboration: { enabled: true, allowedTeamIds: [], autoHandoff: true, sharedBoard: true },
           workspace: process.cwd(),
           pmRoleId: 'project_manager',
           memberRoleIds: ['project_manager'],

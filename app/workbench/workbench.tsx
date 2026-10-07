@@ -8,6 +8,11 @@ import { useDraftSync } from '../drafts/use-draft-sync';
 import type { Assistant } from '../assistant-editor';
 import { WorkbenchView } from './workbench-view';
 import { useWorkbenchRefresh } from './use-workbench-refresh';
+import {
+  activeWorkspace,
+  initialWorkspaceRoute,
+  workspaceView,
+} from './workspace-route';
 import { createWorkbenchRenderers } from './renderers';
 import { createWorkbenchActions } from './actions';
 import { deriveWorkbenchState } from './derived';
@@ -35,7 +40,7 @@ export function Workbench() {
   const { isMobile, openMobile, setOpenMobile } = useSidebar();
   // 团队招募是主入口。工作空间载入后默认选中项目经理，具体角色由团队招募过程决定。
   const [role, setRole] = useState<RoleId>('__router__');
-  const [view, setView] = useState('workspace');
+  const [requestedView, setView] = useState('workspace');
   const [data, setData] = useState<State | null>(null);
   const [selected, setSelected] = useState<Partial<Record<RoleId, string>>>({});
   const [selectedSpaceId, setSelectedSpaceId] = useState('');
@@ -158,6 +163,11 @@ export function Workbench() {
   const recruitmentCursorRef = useRef<Record<string, string>>({});
   const overlayHistoryActiveRef = useRef(false);
   const closingOverlayFromPopRef = useRef(false);
+  const view = workspaceView(
+    requestedView,
+    activeWorkspace(data?.spaces || [], selectedSpaceId),
+    role,
+  );
   /* oxlint-disable no-explicit-any */
   const {
     roles,
@@ -431,46 +441,18 @@ export function Workbench() {
   );
   const applySnapshot = useCallback((next: State) => {
     setData(next);
-    const primary =
-      next.spaces?.find(
-        (space) =>
-          space.status !== 'archived' &&
-          space.recruitment?.phase === 'confirmed',
-      ) ||
-      next.spaces?.find((space) => space.status !== 'archived') ||
-      next.spaces?.[0];
-    const cachedRoute = readRouteCache();
-    const cachedSpace = cachedRoute.spaceId
-      ? next.spaces?.find(
-          (space) =>
-            space.id === cachedRoute.spaceId && space.status !== 'archived',
-        )
-      : null;
+    const restored = initialWorkspaceRoute(next, readRouteCache());
     setSelectedSpaceId((current) =>
-      current &&
       next.spaces?.some(
         (space) => space.id === current && space.status !== 'archived',
       )
         ? current
-        : cachedSpace?.id || primary?.id || '',
+        : restored.spaceId,
     );
     if (!routeInitialized.current) {
-      const initialSpace = cachedSpace || primary;
-      const cachedRole =
-        cachedRoute.role &&
-        initialSpace?.memberRoleIds.includes(cachedRoute.role) &&
-        next.roles.some(
-          (item) => item.id === cachedRoute.role && !item.archived,
-        )
-          ? cachedRoute.role
-          : null;
-      const preferred =
-        cachedRole ||
-        initialSpace?.pmRoleId ||
-        next.roles.find((item) => !item.archived)?.id;
-      if (preferred) setRole(preferred);
-      if (initialSpace?.id) setSelectedSpaceId(initialSpace.id);
-      if (cachedRoute.view) setView(cachedRoute.view);
+      setRole(restored.role);
+      setSelectedSpaceId(restored.spaceId);
+      setView(restored.view);
       routeInitialized.current = true;
     }
   }, []);

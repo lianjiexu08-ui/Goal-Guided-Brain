@@ -22,7 +22,9 @@ export function Choice({ label, value, onChange, options }: ChoiceProps) {
       onValueChange={(next) => next !== null && onChange(next)}
     >
       <SelectTrigger aria-label={label} className="choice">
-        <SelectValue />
+        <SelectValue>
+          {options.find((option) => option.value === value)?.label || '请选择'}
+        </SelectValue>
       </SelectTrigger>
       <SelectContent>
         {options.map((option) => (

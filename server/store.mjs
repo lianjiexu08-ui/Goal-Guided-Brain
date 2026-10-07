@@ -121,13 +121,13 @@ export class Store {
     }
     if (seedProjectManager && !this.records.list('spaces').length && this.role('project_manager')) {
       this.records.save('spaces', {
-        name: '我的项目组',
-        goal: '和项目经理沟通需求，由团队助手协作推进并汇总交付。',
-        purpose: '负责产品规划、开发交付与团队协调。',
+        name: '新需求',
+        goal: '先澄清需求、交付物和约束，再确认团队方案。',
+        purpose: '通过多轮交流明确团队职责。',
         teamType: 'project',
         workspace: this.config.workspace,
         pmRoleId: 'project_manager',
-        memberRoleIds: ['project_manager', 'product', 'developer', 'assistant'],
+        memberRoleIds: ['project_manager'],
         status: 'active',
         autonomy: {
           mode: 'auto',
@@ -138,19 +138,16 @@ export class Store {
         },
         responsibilities: {
           project_manager: '理解目标、拆解任务、协调团队并汇总结果。',
-          product: '调研需求、整理方案和验收标准。',
-          developer: '实现代码、运行测试并交付可验证结果。',
-          assistant: '整理资料、补充信息和行动计划。',
         },
         memberSettings: {},
         collaboration: { enabled: true, autoHandoff: true, sharedBoard: true, allowedTeamIds: [] },
         recruitment: {
-          phase: 'confirmed',
+          phase: 'discovery',
           sessionId: null,
           turns: 0,
           brief: '',
           proposal: null,
-          confirmedAt: new Date().toISOString(),
+          confirmedAt: null,
         },
       });
     }

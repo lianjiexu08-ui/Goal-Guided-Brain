@@ -1,3 +1,4 @@
+import { seedConfirmedDefaultTeam } from './fixtures/confirmed-default-team.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -19,6 +20,7 @@ test('overdue team plans create one deduplicated attention and resolve after res
     requireCredential: false,
     runtimeFactory: () => ({ start() {}, cancel() {} }),
   });
+  seedConfirmedDefaultTeam(app.store);
   await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
   const request = async (route) => {
     const response = await fetch(

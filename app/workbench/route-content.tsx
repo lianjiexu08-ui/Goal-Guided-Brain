@@ -316,6 +316,18 @@ export function RouteContent({ context }: { context: WorkbenchContext }) {
           teamEvidenceCount={teamEvidenceCount}
           setTaskFilter={setTaskFilter}
         />
+      ) : isRecruitmentView && !teamSpace ? (
+        <section className="empty-state" aria-label="开始团队招募">
+          <h1>发布需求，招募团队</h1>
+          <p>先和项目经理澄清目标、交付物与约束，确认方案后再组建团队。</p>
+          <button
+            className="primary-button"
+            disabled={busy || !activeRoles.length}
+            onClick={() => void startRecruitment(true)}
+          >
+            {busy ? '正在创建需求草稿…' : '开始发布需求'}
+          </button>
+        </section>
       ) : isConversationView ? (
         <ConversationPane context={context} />
       ) : view === 'assistants' ? (

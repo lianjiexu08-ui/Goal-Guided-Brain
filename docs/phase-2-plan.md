@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 202/202, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 204/204, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Cross-platform CI matrix runs lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
@@ -46,6 +46,18 @@ They are not sign-off for the separate real deployment gates below.
 - [ ] Real cloud continues scheduled work while the owner's computer is offline.
 
 ## Local Release Record
+
+Recruitment identity on 2026-10-07: new data directories seed a single discovery
+draft with only the project manager, rather than a pre-confirmed default team.
+Existing confirmed teams retain their identity and members. Startup and cached
+conversation routes follow the actual recruitment phase, while management views
+remain independent; archived spaces cannot become fallback conversations.
+Cross-device confirmation updates the page identity without dropping composer
+drafts, and empty workspaces require an explicit action to create a new draft.
+Choice controls display names instead of raw internal IDs. Backend tests verify
+first-run delegation denial, restart idempotence and preservation of existing
+confirmed teams. Established-team tests now explicitly seed a confirmed fixture.
+Validation passed 204/204 backend tests and 160/160 desktop/mobile browser runs.
 
 Startup recovery on 2026-10-07: the workbench now waits for the first valid
 snapshot before exposing team and recruitment actions. Connection failures and
@@ -108,8 +120,8 @@ format checks for changed code, file-size checks and production build passed.
 The subsequent full 126-run browser regression includes this mobile refinement,
 the ordinary attention-resolution workflow and cross-team overview recovery.
 
-Latest full local regression on 2026-10-07: `npm test` 202/202 and Playwright
-desktop/mobile baseline 146/146 passed on macOS. `npm run lint`,
+Latest full local regression on 2026-10-07: `npm test` 204/204 and Playwright
+desktop/mobile baseline 160/160 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines`, `npm run build` and
 `git diff --check` also passed. The model metrics regression includes task-type
 runtime comparisons, alias filtering, delayed response isolation, retry and
@@ -136,8 +148,8 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 202 passing tests. The latest
-full Playwright baseline passed 146 desktop/mobile runs covering team
+The current deterministic suite contains 204 passing tests. The latest
+full Playwright baseline passed 160 desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
 binary drag-and-drop attachments, conversation scroll recovery, evidence quality summaries, Team Charter confirmation and high-risk

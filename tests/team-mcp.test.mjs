@@ -1,3 +1,4 @@
+import { seedConfirmedDefaultTeam } from './fixtures/confirmed-default-team.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -43,6 +44,7 @@ test('team MCP can discover and delegate to an allowed long-lived team', async (
       },
     }),
   });
+  seedConfirmedDefaultTeam(app.store);
   await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
   const request = async (route, body, method = 'GET') => {
     const response = await fetch(

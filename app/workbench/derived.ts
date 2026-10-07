@@ -65,7 +65,7 @@ export function deriveWorkbenchState(input: Record<string, any>) {
   const recruitmentSpace =
     recruitmentSpaces.find((space) => space.id === selectedSpaceId) ||
     recruitmentSpaces[0];
-  const primarySpace = confirmedSpaces[0] || recruitmentSpaces[0] || spaces[0];
+  const primarySpace = confirmedSpaces[0] || recruitmentSpaces[0];
   const teamSpace =
     spaces.find(
       (space) => space.id === selectedSpaceId && space.status !== 'archived',
