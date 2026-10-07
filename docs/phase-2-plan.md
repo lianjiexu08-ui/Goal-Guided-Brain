@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 204/204, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 206/206, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Cross-platform CI matrix runs lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
@@ -46,6 +46,34 @@ They are not sign-off for the separate real deployment gates below.
 - [ ] Real cloud continues scheduled work while the owner's computer is offline.
 
 ## Local Release Record
+
+Conversation context on 2026-10-07: new team-member tasks now inherit the team's
+project directory. Existing member sessions keep their original directory; PM
+messages create a new session after the team's directory changes. Composer
+directory labels follow the same rule and open the corresponding team's settings.
+Runtime fixtures read marker files from two different projects and verify that
+isolated execution copies the correct source without rewriting history.
+Recruitment with existing messages uses an expandable context summary; phone
+composers remove duplicate hints while preserving file controls and sync state.
+The scoped 6/6 browser run checks directories, refresh, historical member sessions,
+more than 180px of reading space, disclosure toggles and live-update scroll
+retention at 1280×720 and 393×851. Backend regression passed 206/206.
+The PM session rule was extracted from the request handler so both edited server
+files can pass formatting while remaining under 1000 lines; the backend suite
+passed 206/206 again after extraction. All 14 changed source files pass formatting.
+The tracked-file formatting backlog decreased from 64 to 62 files.
+The initial browser run passed 175/176; the 20-cycle mobile switching scenario
+reached its 45-second aggregate limit during the final model refresh after 19
+successful sends. Its dedicated budget is now 90 seconds, retaining every model,
+message, draft and reload assertion. A 6/6 focused rerun passed including all 20
+cycles. This budget correction is not a claim that heavy-state performance is fixed.
+The subsequent full regression passed 176/176; its mobile stress scenario
+completed all assertions in 46.0 seconds.
+Production build and local API/UI health checks passed. The actual 1280×720
+production page has a 140px recruitment header and 211px message reading area;
+the directory button opens that team's settings with the correct project path.
+The local services were restarted only after confirming no active tasks/jobs.
+No remote push or deployment was performed.
 
 Composer usability on 2026-10-07: model selection and the send action now occupy
 separate grid columns with a fixed 44px send target. Probe status sits below the
@@ -137,8 +165,8 @@ format checks for changed code, file-size checks and production build passed.
 The subsequent full 126-run browser regression includes this mobile refinement,
 the ordinary attention-resolution workflow and cross-team overview recovery.
 
-Latest full local regression on 2026-10-07: `npm test` 204/204 and Playwright
-desktop/mobile baseline 170/170 passed on macOS. `npm run lint`,
+Latest full local regression on 2026-10-07: `npm test` 206/206 and Playwright
+desktop/mobile baseline 176/176 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines`, `npm run build` and
 `git diff --check` also passed. The model metrics regression includes task-type
 runtime comparisons, alias filtering, delayed response isolation, retry and
@@ -165,8 +193,8 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 204 passing tests. The latest
-full Playwright baseline passed 170 desktop/mobile runs covering team
+The current deterministic suite contains 206 passing tests. The latest
+full Playwright baseline passed 176 desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
 binary drag-and-drop attachments, conversation scroll recovery, evidence quality summaries, Team Charter confirmation and high-risk

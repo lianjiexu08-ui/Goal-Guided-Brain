@@ -100,14 +100,6 @@ for (const width of [320, 390, 1024, 1280, 1440]) {
         }),
       );
     }, team.id);
-    // Exercise the visible directory as well. Before a first session the UI
-    // currently reads the config directory, so supply that snapshot explicitly.
-    await page.route('**/api/state', async (route) => {
-      const response = await route.fetch();
-      const state = await response.json();
-      state.config.workspace = team.workspace;
-      await route.fulfill({ response, json: state });
-    });
     await page.goto('/');
     await expect(page.locator('.workspace-path')).toContainText(
       'long-project-name-'.repeat(8),

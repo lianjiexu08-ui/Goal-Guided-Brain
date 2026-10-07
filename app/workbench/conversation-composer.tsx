@@ -32,6 +32,7 @@ export function ConversationComposer({
     attachmentDraftKey,
     conversationWorkspace,
     openSettings,
+    openTeamSettings,
     isTeamMember,
     selectedModelOption,
     modelOptions,
@@ -174,7 +175,11 @@ export function ConversationComposer({
             <Paperclip size={15} />
             添加文件
           </button>
-          <button className="workspace-path" onClick={openSettings}>
+          <button
+            className="workspace-path"
+            title={`工作目录：${conversationWorkspace || '未设置'}${isTeamMember ? '；点击查看团队设置，历史成员会话保留原目录' : ''}`}
+            onClick={isTeamMember ? openTeamSettings : openSettings}
+          >
             <FolderOpen size={15} />
             <span>
               {conversationWorkspace?.split('/').filter(Boolean).pop() ||
@@ -292,7 +297,9 @@ export function ConversationComposer({
         </div>
       )}
       <p className="composer-hint">
-        Enter 发送 · Shift + Enter 换行
+        <span className="composer-keyboard-hint">
+          Enter 发送 · Shift + Enter 换行
+        </span>
         <span>
           {isRecruitmentView ? '先澄清需求，再确认团队方案' : '任务在后台执行'}
         </span>

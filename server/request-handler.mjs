@@ -8,6 +8,7 @@ import {
   capabilityFingerprint,
 } from './capabilities.mjs';
 import { redact } from './runtime.mjs';
+import { teamMessageSession } from './platform/team-conversation.mjs';
 
 export function createRequestHandler({
   store,
@@ -305,8 +306,10 @@ export function createRequestHandler({
         if (parts[2]) {
           const space = store.teamSpace(parts[2]);
           if (!space) return send(404, { error: '团队空间不存在。' });
-          if (parts[3] === 'plan' && !parts[4] && req.method === 'GET') return send(200, store.teamPlan(space.id));
-          if (parts[3] === 'plan' && !parts[4] && req.method === 'PUT') return send(200, store.saveTeamPlan(space.id, body));
+          if (parts[3] === 'plan' && !parts[4] && req.method === 'GET')
+            return send(200, store.teamPlan(space.id));
+          if (parts[3] === 'plan' && !parts[4] && req.method === 'PUT')
+            return send(200, store.saveTeamPlan(space.id, body));
           if (req.method === 'GET' && !parts[3]) {
             const tasks = store
               .tasks()
@@ -411,11 +414,24 @@ export function createRequestHandler({
               platform.control.setTeamStatus(space.id, nextStatus),
             );
           }
-          if (req.method === 'POST' && ['archive', 'restore'].includes(parts[3]))
-            return send(200, store.archiveTeamSpace(space.id, parts[3] === 'archive'));
+          if (
+            req.method === 'POST' &&
+            ['archive', 'restore'].includes(parts[3])
+          )
+            return send(
+              200,
+              store.archiveTeamSpace(space.id, parts[3] === 'archive'),
+            );
           if (req.method === 'PUT' && !parts[3]) {
-            if (body.status !== undefined && body.status !== space.status && (body.status === 'archived' || space.status === 'archived'))
-              throw Object.assign(new Error('团队归档和恢复必须通过生命周期接口完成。'), { status: 409 });
+            if (
+              body.status !== undefined &&
+              body.status !== space.status &&
+              (body.status === 'archived' || space.status === 'archived')
+            )
+              throw Object.assign(
+                new Error('团队归档和恢复必须通过生命周期接口完成。'),
+                { status: 409 },
+              );
             const requestedRecruitment = body.recruitment;
             if (
               requestedRecruitment &&
@@ -677,32 +693,15 @@ export function createRequestHandler({
                   `request:${space.id}:${clientMessageId}`,
                 );
             const recruitment = space.recruitment || {};
-            const spaceTasks = store.tasks().filter((task) => {
-              const meta = store.records.get('task-meta', task.id) || {};
-              return meta.spaceId === space.id && task.role === space.pmRoleId;
-            });
-            const activePmTask = spaceTasks.find((task) =>
-              ['queued', 'running'].includes(task.status),
-            );
-            const pmTask =
-              activePmTask ||
-              (recruitment.sessionId &&
-                spaceTasks.find(
-                  (task) => task.sessionId === recruitment.sessionId,
-                ));
             try {
-              if (activePmTask)
-                throw Object.assign(
-                  new Error('项目经理正在处理上一条消息，请等待完成后再继续。'),
-                  { status: 409 },
-                );
+              const sessionId = teamMessageSession(store, space);
               const task = newTask({
                 role: space.pmRoleId,
                 prompt:
                   recruitment.phase === 'confirmed'
                     ? `你正在负责已经确认的团队「${space.name}」。请阅读团队历史和当前消息，按已确认的成员职责拆解任务，使用 delegate_task 推进，并跟踪结果后汇总。只有用户明确提出重新招募或团队范围发生重大变化时，才回到团队招募流程；否则不要调用 propose_team。\n\n用户本轮消息：\n${messageContent}`
                     : `你正在负责团队空间「${space.name}」的团队招募。当前阶段：${recruitment.phase || 'discovery'}。请先阅读招募历史和已有团队上下文，继续与用户多轮澄清目标、交付物、约束、质量标准、工作目录、权限和模型/工具需求。需求未清楚前不要分派任务；信息充分后使用 propose_team 保存待用户确认的 Team Charter。Team Charter 确认前不要把成员说成已创建，也不要调用 delegate_task。\n\n用户本轮消息：\n${messageContent}`,
-                sessionId: pmTask?.sessionId,
+                sessionId,
                 workspace: space.workspace,
                 spaceId: space.id,
                 sourceMessageId: message.id,

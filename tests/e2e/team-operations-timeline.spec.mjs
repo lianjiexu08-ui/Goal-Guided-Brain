@@ -323,6 +323,9 @@ test.describe('团队运营与协作：时间线与协作', () => {
   test('desktop/mobile 连续20次切换时团队模型、动态和草稿保持隔离', async ({
     page,
   }) => {
+    // This single scenario performs 20 complete send/switch cycles plus
+    // restoration checks; keep its budget separate from one-action tests.
+    test.setTimeout(90_000);
     const teams = seedModelTeams();
     const requests = [];
     const messages = new Map();

@@ -3,6 +3,7 @@
 'use client';
 // Focused presentation modules receive a controller context assembled by Workbench.
 /* oxlint-disable no-explicit-any, no-unused-vars */
+import { RecruitmentStatus } from './recruitment-status';
 import { useEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import { api, entityList, entityText } from '../workbench-api';
@@ -222,8 +223,13 @@ export function ConversationMain({ context }: { context: WorkbenchContext }) {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   };
   return (
-    <section className="conversation" ref={conversationRef}>
-      <div className="conversation-top">
+    <section
+      className={`conversation${isRecruitmentView && currentTasks.length ? ' has-recruitment-history' : ''}`}
+      ref={conversationRef}
+    >
+      <div
+        className={`conversation-top${isRecruitmentView && currentTasks.length ? ' is-compact' : ''}`}
+      >
         <div>
           <span className="section-kicker">
             {isRecruitmentView
@@ -259,32 +265,22 @@ export function ConversationMain({ context }: { context: WorkbenchContext }) {
               {recruitmentSyncState === 'syncing'
                 ? '正在同步招募会话'
                 : recruitmentSyncState === 'synced'
-                  ? '招募会话已同步，可在其他设备继续'
+                  ? currentTasks.length
+                    ? '会话已同步'
+                    : '招募会话已同步，可在其他设备继续'
                   : recruitmentSyncState === 'offline'
                     ? '暂时无法同步，会话内容会在恢复后继续同步'
                     : ''}
             </small>
           )}
           {isRecruitmentView && (
-            <div
-              className={`recruitment-status-card recruitment-status-${recruitment?.phase || 'discovery'}`}
-              data-testid="recruitment-status-card"
-            >
-              <div>
-                <span>当前对象</span>
-                <strong>需求草稿</strong>
-                <small>{teamSpace?.name || '未命名需求'}</small>
-              </div>
-              <div>
-                <span>当前阶段</span>
-                <strong>{recruitmentPhaseMeta.label}</strong>
-                <small>{recruitmentPhaseMeta.description}</small>
-              </div>
-              <div>
-                <span>下一步</span>
-                <small>{recruitmentPhaseMeta.next}</small>
-              </div>
-            </div>
+            <RecruitmentStatus
+              key={conversationKey}
+              compact={currentTasks.length > 0}
+              name={teamSpace?.name || '未命名需求'}
+              phase={recruitment?.phase || 'discovery'}
+              meta={recruitmentPhaseMeta}
+            />
           )}
         </div>
         <div className="conversation-controls">

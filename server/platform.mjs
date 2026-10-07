@@ -87,11 +87,11 @@ export function createPlatform({
     if (!assistant || assistant.archived)
       throw new Error('助手不存在或已归档。');
     const teamId = input.teamId || input.spaceId || null;
+    const space = teamId ? store.teamSpace(teamId) : null;
     const attachmentIds = attachments.validateIds(input.attachmentIds, teamId);
     let teamModelHint = '';
     let teamProviderIds = [];
     if (teamId) {
-      const space = store.teamSpace(teamId);
       if (!space) throw new Error('团队空间不存在。');
       if (space.status !== 'active')
         throw new Error('团队空间当前不可接收新任务。');
@@ -203,10 +203,8 @@ export function createPlatform({
       !resolveApiKey(dataDir)
     )
       throw new Error('请先配置模型供应商或 DeepSeek API Key。');
-    const workspace = input.workspace || store.config.workspace;
-    const teamWorkspaceMode = teamId
-      ? store.teamSpace(teamId)?.workspaceMode
-      : null;
+    const workspace =
+      input.workspace || space?.workspace || store.config.workspace;
     const jobId = input.jobId || randomUUID();
     const taskType = taskTypeForTask(input, records, jobId);
     const groupId =
@@ -227,10 +225,8 @@ export function createPlatform({
         ? [input.providerId.trim()]
         : teamProviderIds.length
           ? teamProviderIds
-          : teamId &&
-              typeof store.teamSpace(teamId)?.providerId === 'string' &&
-              store.teamSpace(teamId).providerId
-            ? [store.teamSpace(teamId).providerId]
+          : typeof space?.providerId === 'string' && space.providerId
+            ? [space.providerId]
             : (assistant.providerIds ?? []));
     if (
       !Array.isArray(providerIds) ||
@@ -297,7 +293,7 @@ export function createPlatform({
         workspaceKey: input.workspaceKey || 'default',
         workspaceMode:
           input.workspaceMode ||
-          teamWorkspaceMode ||
+          space?.workspaceMode ||
           assistant.workspaceMode ||
           'shared',
         providerIds,
@@ -957,13 +953,14 @@ export function createPlatform({
     newTask,
     stopTask,
     schedule,
-    checkPlanDeadlines: (now) => checkPlanDeadlines({
-      store,
-      control,
-      ...(now !== undefined
-        ? { now: typeof now === 'function' ? now : () => now }
-        : {}),
-    }),
+    checkPlanDeadlines: (now) =>
+      checkPlanDeadlines({
+        store,
+        control,
+        ...(now !== undefined
+          ? { now: typeof now === 'function' ? now : () => now }
+          : {}),
+      }),
     start,
     handle,
     manage,

@@ -449,6 +449,8 @@ export function WorkbenchDialogTeam({
               工作目录
               <input
                 required
+                aria-label="工作目录"
+                aria-describedby="team-workspace-help"
                 value={teamForm.workspace}
                 onChange={(e) =>
                   setTeamForm((form) => ({
@@ -458,6 +460,10 @@ export function WorkbenchDialogTeam({
                 }
                 placeholder="沿用工作空间目录"
               />
+              <small className="field-help" id="team-workspace-help">
+                项目经理的后续对话和成员的新会话使用此目录；已有成员会话保留原目录。
+                隔离执行时会从此项目创建副本，实际执行位置可在任务详情查看。
+              </small>
             </label>
             <div className="field-label">
               默认执行目录

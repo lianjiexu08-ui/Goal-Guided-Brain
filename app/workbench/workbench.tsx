@@ -350,7 +350,10 @@ export function Workbench() {
       : role;
   const currentSession = selected[sessionSelectionKey];
   const conversationWorkspace =
-    sessions.find((s) => s.id === currentSession)?.workspace ||
+    (isTeamConversation
+      ? teamSpace?.workspace
+      : sessions.find((s) => s.id === currentSession)?.workspace) ||
+    (isTeamMember ? teamSpace?.workspace : undefined) ||
     data?.config.workspace;
   const currentTasks = tasks
     .filter((t) =>
