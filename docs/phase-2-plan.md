@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 254/254, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 261/261, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Cross-platform CI matrix is configured to run formatting, file-size checks, lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
@@ -46,6 +46,35 @@ They are not sign-off for the separate real deployment gates below.
 - [ ] Real cloud continues scheduled work while the owner's computer is offline.
 
 ## Local Release Record
+
+Whole-chain owner review on 2026-10-08: the collaboration graph now has an
+explicit all-request preview and complete/end/reopen actions. Preview includes
+unexpanded history, every verified delegation and all participating source
+teams. Incomplete provenance blocks bulk actions. Each action checks its own
+eligibility; completion requires current accepted delivery and a terminal task,
+ending requires terminal work and a reason, and reopening never schedules work.
+Existing decisions are retained when the action does not need to change them.
+
+A fresh fingerprint binds the topology, content, shared replies, task/delivery
+state, review versions and source-team eligibility. Changed scope rejects the
+whole batch. Review records, per-source audit events, an immutable receipt and
+versioned draft consumption commit together. A repeated request returns its
+original receipt without closing a newly added branch or undoing a later reopen.
+Drafts support cross-device continuation, conflict resolution and per-tab receipt
+recovery; changing the action, note or preview invalidates the UI confirmation.
+
+Seven new backend/HTTP scenarios cover 23 requests beyond the first page,
+three-team onward delegation, acceptance, stale work, scope changes, archived
+sources, authentication, required reasons, draft conflicts, late receipts and
+injected transaction rollback without notifications. The complete backend suite
+passed 261/261. The first focused browser run passed 7 cases and timed out on the
+last mobile sync case during system sleep (45-second test elapsed about 17
+minutes). Evidence is retained in `/tmp/ggb-chain-close-evidence/first-focused`.
+The same 8 cases passed unchanged in 27.2 seconds with process-scoped AC system
+sleep prevention. No assertion or timeout was relaxed. A further desktop/mobile
+case now rejects malformed preview data while retaining the note and retry path.
+The complete desktop/mobile suite passed 254/254 in 13.0 minutes without skips
+or retries. Format, Lint, typecheck and the 315-source line gate passed.
 
 Repository formatting gate completed on 2026-10-08: cleared the 50-file tracked
 formatting backlog. The CLI now separates provider configuration, session
@@ -725,8 +754,8 @@ format checks for changed code, file-size checks and production build passed.
 The subsequent full 126-run browser regression includes this mobile refinement,
 the ordinary attention-resolution workflow and cross-team overview recovery.
 
-Latest full local regression on 2026-10-07: `npm test` 254/254 and Playwright
-desktop/mobile baseline 244/244 passed on macOS. `npm run lint`,
+Latest full local regression on 2026-10-08: `npm test` 261/261 and Playwright
+desktop/mobile baseline 254/254 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines`, `npm run build` and
 `git diff --check` also passed. The model metrics regression includes task-type
 runtime comparisons, alias filtering, delayed response isolation, retry and
@@ -753,8 +782,8 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 254 passing tests. The latest
-full Playwright baseline passed 244 desktop/mobile runs covering team
+The current deterministic suite contains 261 passing tests. The latest
+full Playwright baseline passed 254 desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
 binary drag-and-drop attachments, conversation scroll recovery, evidence quality summaries, Team Charter confirmation and high-risk

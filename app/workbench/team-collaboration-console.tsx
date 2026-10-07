@@ -619,6 +619,7 @@ export function TeamCollaborationConsole({
             key={`${team.id}:${chainMessageId}`}
             teamId={team.id}
             messageId={chainMessageId}
+            onChanged={history.refresh}
             onOpenTask={onOpenTask}
             onClose={() => {
               setChainMessageId(null);

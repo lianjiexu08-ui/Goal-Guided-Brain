@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../workbench-api';
+import { ChainReviewControl } from './chain-review-control';
 
 type Item = {
   messageId: string;
@@ -66,11 +67,13 @@ export function CollaborationChain({
   messageId,
   onClose,
   onOpenTask,
+  onChanged,
 }: {
   teamId: string;
   messageId: string;
   onClose: () => void;
   onOpenTask: (id: string) => void;
+  onChanged: () => void;
 }) {
   const [chain, setChain] = useState<Chain | null>(null);
   const [loading, setLoading] = useState(true);
@@ -268,6 +271,17 @@ export function CollaborationChain({
             </output>
           )}
         </>
+      )}
+      {chain && (
+        <ChainReviewControl
+          teamId={teamId}
+          messageId={messageId}
+          onOpenTask={onOpenTask}
+          onChanged={() => {
+            void load();
+            onChanged();
+          }}
+        />
       )}
       {error && (
         <div role="alert" className="overview-load-error">

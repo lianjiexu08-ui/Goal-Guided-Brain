@@ -1,3 +1,8 @@
+import { previewChainReview, saveChainReview } from './team-chain-review.mjs';
+import {
+  readChainReviewDraft,
+  saveChainReviewDraft,
+} from './chain-review-drafts.mjs';
 import { readCollaborationChain } from './team-collaboration-chain.mjs';
 import {
   readCollaborationDraft,
@@ -563,6 +568,38 @@ export function createRequestHandler({
                 },
               ),
             );
+          }
+          if (
+            parts[3] === 'collaboration-chain-review' &&
+            parts[4] &&
+            !parts[6]
+          ) {
+            if (authorization.principal?.type !== 'owner')
+              return send(403, { error: '链路收尾仅供工作台所有者处理。' });
+            const messageId = decodeURIComponent(parts[4]);
+            if (parts[5] === 'draft') {
+              if (req.method === 'GET')
+                return send(
+                  200,
+                  readChainReviewDraft(store, space.id, messageId),
+                );
+              if (req.method === 'PUT')
+                return send(
+                  200,
+                  saveChainReviewDraft(store, space.id, messageId, body),
+                );
+            } else if (!parts[5]) {
+              if (req.method === 'GET')
+                return send(
+                  200,
+                  previewChainReview(store, space.id, messageId),
+                );
+              if (req.method === 'POST')
+                return send(
+                  200,
+                  saveChainReview(store, space.id, messageId, body),
+                );
+            }
           }
           if (parts[3] === 'collaboration-review' && parts[4] && !parts[5]) {
             const messageId = decodeURIComponent(parts[4]);
