@@ -20,25 +20,25 @@ They are not sign-off for the separate real deployment gates below.
 - [x] P5: primary capability sources, installation, compatibility and pinned versions.
 - [x] P6: interval/Cron schedules, monitors, notifications, budgets and backups.
 
-| Batch | Delivered behavior | Evidence |
-| --- | --- | --- |
-| P0 | Versioned transactional migration, pre-upgrade consistent backup, modular views | Migration success/failure, WAL and historical-record tests |
-| P1 | Four provider protocols, real capability probes, ordered routing and failure fallback, encrypted vault, resources | Native DSH calls against three deterministic wire protocols; API and credential boundary tests |
-| P2 | Environment-bootstrapped owner auth, outbound workers, pairing/revocation, durable claims, leases and result ACK | Real loopback HTTP worker and authenticated MCP tests; lost lease and late-result rejection |
-| P3 | Logical jobs and attempts, parent/peer messages, mailbox IDs, versions, checkpoints, board and operation grants | Persistent inbox, duplicate delivery, requirement ACK, descendant permissions, pause/resume tests |
-| P4 | Managed worktrees, no-HEAD snapshots, reserved ports, commits, integration, verification evidence and knowledge history | Large/unusual diffs, source preservation, conflict retention, budget and composite scenario tests |
-| P5 | SkillsMP, ClawHub, official MCP Registry, custom repos; skills, MCP tools, plugin commands/templates and supported sync Hooks | Live read-only search of all three markets; local plugin fixtures and real MCP tool gateway tests |
-| P6 | Explicit timezone, interval and Cron preview, misfire policies, no overlap, deduped notifications/Webhook, usage and offline restore | Injected-clock DST/cadence tests; replacement-attempt scheduling, notification retry, encrypted restore and rollback tests |
+| Batch | Delivered behavior                                                                                                                   | Evidence                                                                                                                   |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| P0    | Versioned transactional migration, pre-upgrade consistent backup, modular views                                                      | Migration success/failure, WAL and historical-record tests                                                                 |
+| P1    | Four provider protocols, real capability probes, ordered routing and failure fallback, encrypted vault, resources                    | Native DSH calls against three deterministic wire protocols; API and credential boundary tests                             |
+| P2    | Environment-bootstrapped owner auth, outbound workers, pairing/revocation, durable claims, leases and result ACK                     | Real loopback HTTP worker and authenticated MCP tests; lost lease and late-result rejection                                |
+| P3    | Logical jobs and attempts, parent/peer messages, mailbox IDs, versions, checkpoints, board and operation grants                      | Persistent inbox, duplicate delivery, requirement ACK, descendant permissions, pause/resume tests                          |
+| P4    | Managed worktrees, no-HEAD snapshots, reserved ports, commits, integration, verification evidence and knowledge history              | Large/unusual diffs, source preservation, conflict retention, budget and composite scenario tests                          |
+| P5    | SkillsMP, ClawHub, official MCP Registry, custom repos; skills, MCP tools, plugin commands/templates and supported sync Hooks        | Live read-only search of all three markets; local plugin fixtures and real MCP tool gateway tests                          |
+| P6    | Explicit timezone, interval and Cron preview, misfire policies, no overlap, deduped notifications/Webhook, usage and offline restore | Injected-clock DST/cadence tests; replacement-attempt scheduling, notification retry, encrypted restore and rollback tests |
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 206/206, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 209/209, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Cross-platform CI matrix runs lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
 - [x] Combined parent/frontend/backend/reviewer scenario using real orchestration MCP,
-  a local external MCP, pinned Skill, isolated Git worktrees, peer messages,
-  checkpoints, pause/change-provider/resume, automatic summary and a tested integration.
+      a local external MCP, pinned Skill, isolated Git worktrees, peer messages,
+      checkpoints, pause/change-provider/resume, automatic summary and a tested integration.
 - [x] Original local data upgraded and checked against pre-upgrade table hashes.
 - [ ] Linux worker integration on a real Linux execution environment.
 - [ ] Windows/WSL2 worker integration on a real Windows execution environment.
@@ -46,6 +46,37 @@ They are not sign-off for the separate real deployment gates below.
 - [ ] Real cloud continues scheduled work while the owner's computer is offline.
 
 ## Local Release Record
+
+State read performance on 2026-10-07: a request-scoped index now reads each
+shared task/team collection once and reuses delivery calculations. It is discarded
+at the end of each synchronous projection, so writes through another SQLite
+connection appear on the next request. Timeline assembly and team validation
+were extracted into domain modules; the formatted Store is 919 lines.
+On macOS arm64 with Node.js 26.8.1, an isolated 10-team/200-task benchmark reduced
+state-generation median from
+698.81ms to 4.68ms and local HTTP median from 713.4ms to 10.41ms. Artifact scans
+fell from 811 to 1, with the same 1,158,429-byte response size. A 20-team/800-task
+run measured 18.09ms generation and 30.35ms HTTP. These are local five-sample
+medians, not browser interaction or remote-network latency guarantees.
+Serialized state and timeline pagination matched the pre-change response exactly
+on the same 72-task database. Three new tests cover constant collection-read
+counts as history grows, external-connection writes/deletes, acceptance invalidation,
+team isolation and equal-timestamp pagination. Backend regression passed 209/209.
+All 13 changed files pass formatting; the tracked-file backlog decreased from
+62 to 56 files after formatting the edited source and documentation.
+The first full browser run passed 174/176. Both failures overlapped macOS sleep
+intervals confirmed in power logs (11-minute trace gaps); traces were retained.
+A fresh full run with a process-scoped idle-sleep assertion passed 176/176 with
+unchanged tests. The previously failing cases passed in 4.8s and 3.7s. The
+20-cycle switching scenario took 5.0s on desktop and 10.6s on mobile; the previous
+full mobile run took 46.0s. Browser timings describe whole fixture scenarios,
+not individual clicks or model response latency.
+Full-state payload growth and browser rendering still need separate measurement;
+no history was truncated to achieve this improvement.
+Lint, typecheck, all 247 hand-written source file line limits, changed-file
+formatting and production build passed. Local services were restarted after
+confirming 11 tasks and 10 jobs had no active execution; API health, UI and
+proxied state requests returned HTTP 200. No remote push or deployment occurred.
 
 Conversation context on 2026-10-07: new team-member tasks now inherit the team's
 project directory. Existing member sessions keep their original directory; PM
@@ -165,7 +196,7 @@ format checks for changed code, file-size checks and production build passed.
 The subsequent full 126-run browser regression includes this mobile refinement,
 the ordinary attention-resolution workflow and cross-team overview recovery.
 
-Latest full local regression on 2026-10-07: `npm test` 206/206 and Playwright
+Latest full local regression on 2026-10-07: `npm test` 209/209 and Playwright
 desktop/mobile baseline 176/176 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines`, `npm run build` and
 `git diff --check` also passed. The model metrics regression includes task-type
@@ -193,7 +224,7 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 206 passing tests. The latest
+The current deterministic suite contains 209 passing tests. The latest
 full Playwright baseline passed 176 desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,

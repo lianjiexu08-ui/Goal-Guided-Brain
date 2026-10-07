@@ -37,33 +37,33 @@ GGB 不把“模型回答得像人”作为唯一目标。一个合格的执行�
 
 ### 设计原则
 
-| 原则 | 具体含义 |
-| --- | --- |
-| 目标优先 | 从用户想达成的结果开始，而不是从模型或工具开始。 |
-| 团队优先 | 用户主要和项目经理沟通，成员由项目经理按职责调度。 |
-| 模型可替换 | 供应商和模型是路由配置，不绑定某个角色的人格。 |
-| 权限最小化 | 助手只能使用已经绑定并获准的 Skill、MCP、Plugin 和工具。 |
-| 证据优先 | 任务状态、外部操作和交付物必须有可检查的记录。 |
-| 人在回路 | 发布、部署、删除、发送和其他高风险动作仍需要明确授权或复核。 |
-| 可恢复 | 任务通过新的执行实例和检查点恢复，不假装恢复已经失联的进程。 |
+| 原则       | 具体含义                                                     |
+| ---------- | ------------------------------------------------------------ |
+| 目标优先   | 从用户想达成的结果开始，而不是从模型或工具开始。             |
+| 团队优先   | 用户主要和项目经理沟通，成员由项目经理按职责调度。           |
+| 模型可替换 | 供应商和模型是路由配置，不绑定某个角色的人格。               |
+| 权限最小化 | 助手只能使用已经绑定并获准的 Skill、MCP、Plugin 和工具。     |
+| 证据优先   | 任务状态、外部操作和交付物必须有可检查的记录。               |
+| 人在回路   | 发布、部署、删除、发送和其他高风险动作仍需要明确授权或复核。 |
+| 可恢复     | 任务通过新的执行实例和检查点恢复，不假装恢复已经失联的进程。 |
 
 ## 核心概念
 
-| 概念 | 说明 |
-| --- | --- |
-| 工作空间 | 本地项目、知识、团队和运行数据的边界。默认数据目录为 `~/.dsh-workbench/`。 |
-| 团队空间 | 用户与项目经理协作的长期容器。每个团队有目标、职责、成员、预算、工作目录和自治设置。 |
-| 角色智能体 | 具有稳定职责的助手模板，例如项目经理、开发、产品和运维。角色不是固定模型。 |
-| 成员实例 | 某个角色在某个任务中的一次执行。实例有自己的任务 ID、权限、租约和运行快照。 |
-| 任务 | 一次具体目标。任务可以由用户创建，也可以由父任务或跨团队委派创建。 |
-| 任务组 | 一个主任务及其子任务、预算、依赖、消息和产物的集合。 |
-| 执行尝试 | 任务的一次实际运行。失败重试会创建新的实例，避免覆盖旧结果。 |
-| 供应商 | 模型接口配置，包括协议、基础地址、凭据引用、模型列表和优先级。 |
-| Skill | 注入给智能体的工作规范和知识文件。 |
-| MCP | 通过受控协议暴露工具的服务。工具调用仍受实例权限和参数审批约束。 |
-| Plugin | 可安装、固定版本并绑定到助手的能力包，可能包含 Skill、MCP、命令和助手模板。 |
-| Team Charter | 项目经理在招募阶段生成的团队方案，包含成员、职责、交付物、模型和能力建议。 |
-| 检查点 | 任务的目标、约束、决定、产物、操作和后续步骤，供新实例继续工作。 |
+| 概念         | 说明                                                                                 |
+| ------------ | ------------------------------------------------------------------------------------ |
+| 工作空间     | 本地项目、知识、团队和运行数据的边界。默认数据目录为 `~/.dsh-workbench/`。           |
+| 团队空间     | 用户与项目经理协作的长期容器。每个团队有目标、职责、成员、预算、工作目录和自治设置。 |
+| 角色智能体   | 具有稳定职责的助手模板，例如项目经理、开发、产品和运维。角色不是固定模型。           |
+| 成员实例     | 某个角色在某个任务中的一次执行。实例有自己的任务 ID、权限、租约和运行快照。          |
+| 任务         | 一次具体目标。任务可以由用户创建，也可以由父任务或跨团队委派创建。                   |
+| 任务组       | 一个主任务及其子任务、预算、依赖、消息和产物的集合。                                 |
+| 执行尝试     | 任务的一次实际运行。失败重试会创建新的实例，避免覆盖旧结果。                         |
+| 供应商       | 模型接口配置，包括协议、基础地址、凭据引用、模型列表和优先级。                       |
+| Skill        | 注入给智能体的工作规范和知识文件。                                                   |
+| MCP          | 通过受控协议暴露工具的服务。工具调用仍受实例权限和参数审批约束。                     |
+| Plugin       | 可安装、固定版本并绑定到助手的能力包，可能包含 Skill、MCP、命令和助手模板。          |
+| Team Charter | 项目经理在招募阶段生成的团队方案，包含成员、职责、交付物、模型和能力建议。           |
+| 检查点       | 任务的目标、约束、决定、产物、操作和后续步骤，供新实例继续工作。                     |
 
 ## 整体架构
 
@@ -90,17 +90,17 @@ flowchart TD
 
 仓库中的主要实现位置如下：
 
-| 模块 | 文件 | 责任 |
-| --- | --- | --- |
-| HTTP 入口 | `server/index.mjs` | 认证、请求解析、团队接口、状态接口和 MCP 入口。 |
-| 控制平面 | `server/platform.mjs`、`server/control.mjs` | 创建任务、调度、租约、预算、消息和团队协作。 |
-| 模型供应商 | `server/providers.mjs` | 保存供应商、凭据引用、能力路由、探测和 TypeSafe 决策请求。 |
-| 原生运行时 | `server/runtime.mjs` | 为任务生成隔离运行环境，注入模型、Skill 和能力配置。 |
-| 编排 MCP | `server/orchestration-mcp.mjs` | 向运行中的智能体提供任务、团队、消息、能力和检查点工具。 |
-| 能力服务 | `server/capabilities.mjs`、`server/capability-gateway.mjs` | 安装、固定、探测和授权 Skill、MCP、Plugin。 |
-| 数据层 | `server/store.mjs`、`server/records.mjs`、`server/vault.mjs` | 业务实体、记录、迁移、备份和加密凭据。 |
-| 网页 | `app/page.tsx`、`app/management.tsx` | 团队招募、团队动态、任务、助手、模型和能力管理。 |
-| CLI | `scripts/cli.mjs` | `ggb run`、`ggb chat`、`ggb rpc`、`ggb events`、`ggb providers`、`ggb doctor`、`ggb decide` 和 `ggb node`。 |
+| 模块       | 文件                                                         | 责任                                                                                                        |
+| ---------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| HTTP 入口  | `server/index.mjs`                                           | 认证、请求解析、团队接口、状态接口和 MCP 入口。                                                             |
+| 控制平面   | `server/platform.mjs`、`server/control.mjs`                  | 创建任务、调度、租约、预算、消息和团队协作。                                                                |
+| 模型供应商 | `server/providers.mjs`                                       | 保存供应商、凭据引用、能力路由、探测和 TypeSafe 决策请求。                                                  |
+| 原生运行时 | `server/runtime.mjs`                                         | 为任务生成隔离运行环境，注入模型、Skill 和能力配置。                                                        |
+| 编排 MCP   | `server/orchestration-mcp.mjs`                               | 向运行中的智能体提供任务、团队、消息、能力和检查点工具。                                                    |
+| 能力服务   | `server/capabilities.mjs`、`server/capability-gateway.mjs`   | 安装、固定、探测和授权 Skill、MCP、Plugin。                                                                 |
+| 数据层     | `server/store.mjs`、`server/records.mjs`、`server/vault.mjs` | 业务实体、记录、迁移、备份和加密凭据。                                                                      |
+| 网页       | `app/page.tsx`、`app/management.tsx`                         | 团队招募、团队动态、任务、助手、模型和能力管理。                                                            |
+| CLI        | `scripts/cli.mjs`                                            | `ggb run`、`ggb chat`、`ggb rpc`、`ggb events`、`ggb providers`、`ggb doctor`、`ggb decide` 和 `ggb node`。 |
 
 ## 从需求到交付
 
@@ -145,11 +145,11 @@ flowchart TD
 
 团队招募使用三个阶段：
 
-| 阶段 | 行为 | 是否可以分派成员任务 |
-| --- | --- | --- |
-| `discovery` | 项目经理与用户多轮澄清需求。 | 不可以。 |
-| `proposed` | 已保存 Team Charter，等待用户检查。 | 不可以。 |
-| `confirmed` | 用户确认方案，成员被配置到团队。 | 可以。 |
+| 阶段        | 行为                                | 是否可以分派成员任务 |
+| ----------- | ----------------------------------- | -------------------- |
+| `discovery` | 项目经理与用户多轮澄清需求。        | 不可以。             |
+| `proposed`  | 已保存 Team Charter，等待用户检查。 | 不可以。             |
+| `confirmed` | 用户确认方案，成员被配置到团队。    | 可以。               |
 
 ### Team Charter 应包含
 
@@ -302,14 +302,14 @@ ggb decide \
 
 ### 供应商环境变量
 
-| 供应商 | 默认密钥变量 |
-| --- | --- |
-| DeepSeek | `DEEPSEEK_API_KEY` |
-| Kimi | `KIMI_API_KEY` 或 `MOONSHOT_API_KEY` |
-| Gemini | `GEMINI_API_KEY` 或 `GOOGLE_API_KEY` |
-| Claude | `ANTHROPIC_API_KEY` |
-| Codex/OpenAI | `CODEX_API_KEY` 或 `OPENAI_API_KEY` |
-| TypeSafe | `TYPESAFE_API_KEY`（只用于 `decide`） |
+| 供应商       | 默认密钥变量                          |
+| ------------ | ------------------------------------- |
+| DeepSeek     | `DEEPSEEK_API_KEY`                    |
+| Kimi         | `KIMI_API_KEY` 或 `MOONSHOT_API_KEY`  |
+| Gemini       | `GEMINI_API_KEY` 或 `GOOGLE_API_KEY`  |
+| Claude       | `ANTHROPIC_API_KEY`                   |
+| Codex/OpenAI | `CODEX_API_KEY` 或 `OPENAI_API_KEY`   |
+| TypeSafe     | `TYPESAFE_API_KEY`（只用于 `decide`） |
 
 也可以通过 `--api-key` 临时传入；临时密钥不会自动写入磁盘。
 
@@ -340,13 +340,13 @@ ggb decide \
 
 ### 数据目录
 
-| 内容 | 默认位置 | 说明 |
-| --- | --- | --- |
-| SQLite | `~/.dsh-workbench/workspace.sqlite` | 团队、任务、消息、知识、调度和配置。 |
-| 加密凭据 | `~/.dsh-workbench/vault.json` | Argon2id 派生密钥和 AES-256-GCM 加密。 |
-| 执行目录 | `~/.dsh-workbench/runs/<taskId>/` | 隔离的运行环境、日志和临时文件。 |
-| 能力包 | `~/.dsh-workbench/capabilities/` | 固定版本和摘要后的 Skill/Plugin 内容。 |
-| 备份 | `~/.dsh-workbench/backups/` | SQLite 一致性备份及凭据副本。 |
+| 内容     | 默认位置                            | 说明                                   |
+| -------- | ----------------------------------- | -------------------------------------- |
+| SQLite   | `~/.dsh-workbench/workspace.sqlite` | 团队、任务、消息、知识、调度和配置。   |
+| 加密凭据 | `~/.dsh-workbench/vault.json`       | Argon2id 派生密钥和 AES-256-GCM 加密。 |
+| 执行目录 | `~/.dsh-workbench/runs/<taskId>/`   | 隔离的运行环境、日志和临时文件。       |
+| 能力包   | `~/.dsh-workbench/capabilities/`    | 固定版本和摘要后的 Skill/Plugin 内容。 |
+| 备份     | `~/.dsh-workbench/backups/`         | SQLite 一致性备份及凭据副本。          |
 
 可使用 `WORKBENCH_DATA_DIR` 指定数据目录。一个数据目录只允许一个控制平面持有写入锁。
 
@@ -370,51 +370,51 @@ ggb decide \
 
 API 默认监听 `127.0.0.1:3089`，网页默认监听 `127.0.0.1:3088`。除健康检查外需要登录。
 
-| 方法 | 路径 | 用途 |
-| --- | --- | --- |
-| `GET` | `/api/health` | 健康检查，支持 `HEAD`。 |
-| `GET` | `/api/state` | 返回角色、团队、供应商、任务、能力和配置摘要。 |
-| `GET/POST` | `/api/teams` | 列出或创建团队；`/api/spaces` 是兼容别名。 |
-| `GET/PUT` | `/api/teams/:id` | 查看或更新团队配置、消息和任务；团队归档/恢复必须使用下面的生命周期接口。 |
-| `POST` | `/api/teams/:id/archive` | 归档已确认团队；保留历史、任务和交付证据，有进行中任务时返回 `409`。`/api/spaces` 和 `/api/chats` 是兼容别名。 |
-| `POST` | `/api/teams/:id/restore` | 恢复已归档团队为活动状态，清除归档时间并回到“我的团队”。 |
-| `GET/POST` | `/api/team-templates` | 列出或保存已确认团队的可复用配置模板；模板不包含历史、任务、招募会话或附件。 |
-| `GET/PUT/DELETE` | `/api/team-templates/:id` | 查看、更新或删除团队模板。 |
-| `POST` | `/api/team-templates/:id/apply` | 用模板创建全新团队，并重新确认名称、目标、工作区和协作边界。 |
-| `GET` | `/api/teams/:id/timeline` | 按 `limit` 和 `before=时间\|记录ID` 游标加载更早的团队统一时间线。 |
-| `GET` | `/api/teams/:id/events` | 按 `after=时间\|记录ID` 增量读取团队消息、任务和执行事件；新连接默认回放最近窗口。`/api/spaces` 和 `/api/chats` 是兼容别名。 |
-| `GET` | `/api/teams/:id/events/stream` | 以 SSE 推送团队消息、消息状态回写、任务执行事件、产物/验收变化和风险刷新标记；先回放当前窗口，再推送后续事件，支持 `after` 游标断线恢复；CLI 可用 `ggb events --team` 订阅。 |
-| `GET` | `/api/teams/:id/recruitment` | 按 `after=时间\|记录ID` 增量读取招募会话消息，支持多设备继续同一会话。 |
-| `GET` | `/api/drafts` | 按 `spaceId`、`role` 查询参数读取服务端草稿、附件引用、版本和更新时间。 |
-| `PUT` | `/api/drafts` | 按请求体中的 `spaceId`、`roleId` 写入草稿；带上当前 `revision` 做乐观并发校验，版本过期返回 `409` 和远端草稿供三方合并。 |
-| `DELETE` | `/api/drafts` | 清理已发送或用户主动放弃的草稿及其附件引用。 |
-| `GET` | `/api/timeline` | 聚合已确认团队的统一时间线；支持 `teamId`、`kind=all/messages/execution/evidence/risk`、`limit` 和 `before`。 |
-| `GET` | `/api/risks` | 聚合已确认团队的执行、交付、待确认和知识复核风险；支持 `teamId`、`kind`、`status`、`limit` 和 `before` 筛选。知识风险返回 `knowledgeId`，可直接打开知识编辑。 |
-| `POST` | `/api/teams/:id/messages` | 向团队项目经理发送用户需求。 |
-| `POST` | `/api/teams/:id/recruitment/confirm` | 用户确认 Team Charter。 |
-| `GET` | `/api/teams/:id/collaborators` | 查看允许协作的团队。 |
-| `POST` | `/api/teams/:id/collaborate` | 向其他团队项目经理委派协作目标。 |
-| `GET/POST/PUT/DELETE` | `/api/providers` | 管理供应商；`POST /api/providers/:id/probe` 做连通性测试。 |
-| `GET/POST/PUT/DELETE` | `/api/credentials` | 管理加密凭据库中的引用。 |
-| `GET/POST/PUT/DELETE` | `/api/capabilities` | 管理能力包和能力版本。 |
-| `POST/PUT` | `/api/roles` | 创建或更新角色智能体；角色列表随 `/api/state` 和 `/api/manage` 返回。 |
-| `GET/POST/PUT` | `/api/knowledge` | 管理知识和历史版本；`scope=team` 时必须提供有效 `teamId`。 |
-| `GET` | `/api/knowledge/:id` | 读取单条知识的当前版本和复核状态，供风险收件箱直达编辑使用。 |
-| `GET` / `PUT` | `/api/teams/:id/plan` | 读取或更新团队目标与里程碑计划；PUT 使用记录 revision 做乐观并发校验，计划目标会同步团队身份；milestones[].taskIds 去重且最多 40 项，必须指向本团队存在的执行任务，无效关联拒绝整次更新。 |
-| `POST` | `/api/tasks` | 创建任务；任务控制接口还支持取消和重试。 |
-| `GET` | `/api/tasks/:id` | 查看任务、执行目录、运行快照、事件、用量、产物和最近验证。 |
-| `GET` | `/api/tasks/:id/events` | 按 `after=时间|事件ID` 和 `limit` 增量读取任务事件，返回 oldest-first 页面、`hasMore` 和下一次游标。 |
-| `GET` | `/api/tasks/:id/events/stream` | 以 SSE 推送任务事件；支持相同的 `after` 游标，先补发历史事件，再推送后续事件，断线可回到游标接口恢复。 |
-| `POST` | `/api/jobs/:id/archive` | 归档或恢复已结束且状态明确的任务组；归档只隐藏历史记录，不删除任务、产物或验收证据。 |
-| `POST` | `/api/tasks/batch-review` | 所有者批量通过或退回复核已完成任务；最多 50 项，整批预校验，退回需要统一备注。 |
-| `GET` | `/api/workspaces/:taskId` | 查看任务执行目录的未提交差异。 |
-| `POST` | `/api/workspaces/:taskId/commit` | 保存工作树的内部提交，结果等待复核。 |
-| `POST` | `/api/workspaces/:taskId/verify` | 在空闲执行目录中运行验证命令并保存验证产物。 |
-| `GET` | `/api/manage` | 返回管理界面所需的聚合数据。 |
-| `GET` | `/api/metrics/models` | 返回模型运行指标、验收证据质量摘要和 `taskTypeComparisons`；支持 `since`、`until`、`taskType`、`teamId`、`roleId`、`providerId` 和 `model` 筛选，并返回当前窗口证据覆盖率、过期/失败/待补证据、按团队/任务类型覆盖率、按任务类型的最终状态/失败尝试/延迟/Token/费用对比和按 UTC 日期聚合的趋势。网页预置全部时间、最近 7 天和最近 30 天三个窗口，任务类型由任务元数据持久化并向旧任务提供可解释回退，查询也接受 `dev`、`ops` 等稳定别名。 |
-| `POST` | `/api/attention/:id/resolve` | 所有者处理普通事项时提交 1–4000 字符的 `resolution`，同时持久化处理记录并将关联通知标为已读；重复提交不改写首次决定，未知事项返回 404，事务失败回滚。工具审批继续使用独立的批准/拒绝分支，普通处理不会重试任务或更改交付验收。 |
-| `POST` | `/api/mcp` | 运行实例使用的编排 MCP。 |
-| `POST` | `/api/capability-mcp/:id` | 绑定能力的 MCP 工具网关。 |
+| 方法                  | 路径                                 | 用途                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| --------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`                 | `/api/health`                        | 健康检查，支持 `HEAD`。                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `GET`                 | `/api/state`                         | 返回角色、团队、供应商、任务、能力和配置摘要。                                                                                                                                                                                                                                                                                                                                                                                            |
+| `GET/POST`            | `/api/teams`                         | 列出或创建团队；`/api/spaces` 是兼容别名。                                                                                                                                                                                                                                                                                                                                                                                                |
+| `GET/PUT`             | `/api/teams/:id`                     | 查看或更新团队配置、消息和任务；团队归档/恢复必须使用下面的生命周期接口。                                                                                                                                                                                                                                                                                                                                                                 |
+| `POST`                | `/api/teams/:id/archive`             | 归档已确认团队；保留历史、任务和交付证据，有进行中任务时返回 `409`。`/api/spaces` 和 `/api/chats` 是兼容别名。                                                                                                                                                                                                                                                                                                                            |
+| `POST`                | `/api/teams/:id/restore`             | 恢复已归档团队为活动状态，清除归档时间并回到“我的团队”。                                                                                                                                                                                                                                                                                                                                                                                  |
+| `GET/POST`            | `/api/team-templates`                | 列出或保存已确认团队的可复用配置模板；模板不包含历史、任务、招募会话或附件。                                                                                                                                                                                                                                                                                                                                                              |
+| `GET/PUT/DELETE`      | `/api/team-templates/:id`            | 查看、更新或删除团队模板。                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `POST`                | `/api/team-templates/:id/apply`      | 用模板创建全新团队，并重新确认名称、目标、工作区和协作边界。                                                                                                                                                                                                                                                                                                                                                                              |
+| `GET`                 | `/api/teams/:id/timeline`            | 按 `limit` 和 `before=时间\|记录ID` 游标加载更早的团队统一时间线。                                                                                                                                                                                                                                                                                                                                                                        |
+| `GET`                 | `/api/teams/:id/events`              | 按 `after=时间\|记录ID` 增量读取团队消息、任务和执行事件；新连接默认回放最近窗口。`/api/spaces` 和 `/api/chats` 是兼容别名。                                                                                                                                                                                                                                                                                                              |
+| `GET`                 | `/api/teams/:id/events/stream`       | 以 SSE 推送团队消息、消息状态回写、任务执行事件、产物/验收变化和风险刷新标记；先回放当前窗口，再推送后续事件，支持 `after` 游标断线恢复；CLI 可用 `ggb events --team` 订阅。                                                                                                                                                                                                                                                              |
+| `GET`                 | `/api/teams/:id/recruitment`         | 按 `after=时间\|记录ID` 增量读取招募会话消息，支持多设备继续同一会话。                                                                                                                                                                                                                                                                                                                                                                    |
+| `GET`                 | `/api/drafts`                        | 按 `spaceId`、`role` 查询参数读取服务端草稿、附件引用、版本和更新时间。                                                                                                                                                                                                                                                                                                                                                                   |
+| `PUT`                 | `/api/drafts`                        | 按请求体中的 `spaceId`、`roleId` 写入草稿；带上当前 `revision` 做乐观并发校验，版本过期返回 `409` 和远端草稿供三方合并。                                                                                                                                                                                                                                                                                                                  |
+| `DELETE`              | `/api/drafts`                        | 清理已发送或用户主动放弃的草稿及其附件引用。                                                                                                                                                                                                                                                                                                                                                                                              |
+| `GET`                 | `/api/timeline`                      | 聚合已确认团队的统一时间线；支持 `teamId`、`kind=all/messages/execution/evidence/risk`、`limit` 和 `before`。                                                                                                                                                                                                                                                                                                                             |
+| `GET`                 | `/api/risks`                         | 聚合已确认团队的执行、交付、待确认和知识复核风险；支持 `teamId`、`kind`、`status`、`limit` 和 `before` 筛选。知识风险返回 `knowledgeId`，可直接打开知识编辑。                                                                                                                                                                                                                                                                             |
+| `POST`                | `/api/teams/:id/messages`            | 向团队项目经理发送用户需求。                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `POST`                | `/api/teams/:id/recruitment/confirm` | 用户确认 Team Charter。                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `GET`                 | `/api/teams/:id/collaborators`       | 查看允许协作的团队。                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `POST`                | `/api/teams/:id/collaborate`         | 向其他团队项目经理委派协作目标。                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `GET/POST/PUT/DELETE` | `/api/providers`                     | 管理供应商；`POST /api/providers/:id/probe` 做连通性测试。                                                                                                                                                                                                                                                                                                                                                                                |
+| `GET/POST/PUT/DELETE` | `/api/credentials`                   | 管理加密凭据库中的引用。                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `GET/POST/PUT/DELETE` | `/api/capabilities`                  | 管理能力包和能力版本。                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `POST/PUT`            | `/api/roles`                         | 创建或更新角色智能体；角色列表随 `/api/state` 和 `/api/manage` 返回。                                                                                                                                                                                                                                                                                                                                                                     |
+| `GET/POST/PUT`        | `/api/knowledge`                     | 管理知识和历史版本；`scope=team` 时必须提供有效 `teamId`。                                                                                                                                                                                                                                                                                                                                                                                |
+| `GET`                 | `/api/knowledge/:id`                 | 读取单条知识的当前版本和复核状态，供风险收件箱直达编辑使用。                                                                                                                                                                                                                                                                                                                                                                              |
+| `GET` / `PUT`         | `/api/teams/:id/plan`                | 读取或更新团队目标与里程碑计划；PUT 使用记录 revision 做乐观并发校验，计划目标会同步团队身份；milestones[].taskIds 去重且最多 40 项，必须指向本团队存在的执行任务，无效关联拒绝整次更新。                                                                                                                                                                                                                                                 |
+| `POST`                | `/api/tasks`                         | 创建任务；任务控制接口还支持取消和重试。                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `GET`                 | `/api/tasks/:id`                     | 查看任务、执行目录、运行快照、事件、用量、产物和最近验证。                                                                                                                                                                                                                                                                                                                                                                                |
+| `GET`                 | `/api/tasks/:id/events`              | 按 `after=时间                                                                                                                                                                                                                                                                                                                                                                                                                            | 事件ID`和`limit` 增量读取任务事件，返回 oldest-first 页面、`hasMore` 和下一次游标。 |
+| `GET`                 | `/api/tasks/:id/events/stream`       | 以 SSE 推送任务事件；支持相同的 `after` 游标，先补发历史事件，再推送后续事件，断线可回到游标接口恢复。                                                                                                                                                                                                                                                                                                                                    |
+| `POST`                | `/api/jobs/:id/archive`              | 归档或恢复已结束且状态明确的任务组；归档只隐藏历史记录，不删除任务、产物或验收证据。                                                                                                                                                                                                                                                                                                                                                      |
+| `POST`                | `/api/tasks/batch-review`            | 所有者批量通过或退回复核已完成任务；最多 50 项，整批预校验，退回需要统一备注。                                                                                                                                                                                                                                                                                                                                                            |
+| `GET`                 | `/api/workspaces/:taskId`            | 查看任务执行目录的未提交差异。                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `POST`                | `/api/workspaces/:taskId/commit`     | 保存工作树的内部提交，结果等待复核。                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `POST`                | `/api/workspaces/:taskId/verify`     | 在空闲执行目录中运行验证命令并保存验证产物。                                                                                                                                                                                                                                                                                                                                                                                              |
+| `GET`                 | `/api/manage`                        | 返回管理界面所需的聚合数据。                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `GET`                 | `/api/metrics/models`                | 返回模型运行指标、验收证据质量摘要和 `taskTypeComparisons`；支持 `since`、`until`、`taskType`、`teamId`、`roleId`、`providerId` 和 `model` 筛选，并返回当前窗口证据覆盖率、过期/失败/待补证据、按团队/任务类型覆盖率、按任务类型的最终状态/失败尝试/延迟/Token/费用对比和按 UTC 日期聚合的趋势。网页预置全部时间、最近 7 天和最近 30 天三个窗口，任务类型由任务元数据持久化并向旧任务提供可解释回退，查询也接受 `dev`、`ops` 等稳定别名。 |
+| `POST`                | `/api/attention/:id/resolve`         | 所有者处理普通事项时提交 1–4000 字符的 `resolution`，同时持久化处理记录并将关联通知标为已读；重复提交不改写首次决定，未知事项返回 404，事务失败回滚。工具审批继续使用独立的批准/拒绝分支，普通处理不会重试任务或更改交付验收。                                                                                                                                                                                                            |
+| `POST`                | `/api/mcp`                           | 运行实例使用的编排 MCP。                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `POST`                | `/api/capability-mcp/:id`            | 绑定能力的 MCP 工具网关。                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 请求体使用 JSON。远程公开部署必须通过 HTTPS、登录认证和反向代理；不要直接把 3088/3089 暴露到公网。
 
@@ -473,7 +473,9 @@ npm test
 npm run build
 ```
 
-测试使用临时数据库、本地确定性模型和 MCP fixture，不调用付费模型。覆盖加密凭据、协议认证、模型路由、模型运行指标与验收证据质量摘要及按日趋势、任务类型持久化/父子继承/任务类型筛选、知识版本与过期过滤、团队知识复核风险与直达编辑、通知管理页聚合风险和单条知识读取、团队目标与里程碑计划、计划逾期通知去重与改期收敛、能力绑定可见性、能力风险摘要、能力启用确认与审计、Team Charter 能力绑定确认与审计、工具网关、任务租约、消息幂等、团队招募、团队模板复制、多设备招募会话游标、服务端草稿版本、多设备草稿自动合并与冲突选择、跨团队协作白名单、团队自治暂停/恢复、团队自治限额、团队归档/恢复和进行中任务拦截、团队专属知识隔离、工作树、定时任务、定时任务失败通知、任务介入事项持久通知与已读状态、恢复、任务组归档/恢复、任务中心按团队/状态筛选、CLI 节点 bootstrap、`ggb node` 统一入口、`ggb rpc` JSONL 事件流与中止、`ggb events` 任务和团队 SSE 订阅、`ggb doctor --strict` 部署门禁、节点配置校验、批量复核失败提示、任务事件游标、任务与团队 SSE 实时流、网页增量消费和断线回放、远程节点在线/执行状态、失联提醒、恢复和断线恢复事件；当前后端套件为 206/206，最近一次桌面/移动浏览器全量验证为 176 个运行，并包含手机端团队上下文、支持按名称/职责搜索的快速切换团队、底部主导航、导航抽屉、触控文件入口、底部设置面板、模型指标卡片无横向溢出、团队实时消息回归、对话上滑阅读与回到最新、执行节点配对向导、节点详情状态刷新、失联提醒与恢复和撤销后重新配对回归。
+测试使用临时数据库、本地确定性模型和 MCP fixture，不调用付费模型。覆盖加密凭据、协议认证、模型路由、模型运行指标与验收证据质量摘要及按日趋势、任务类型持久化/父子继承/任务类型筛选、知识版本与过期过滤、团队知识复核风险与直达编辑、通知管理页聚合风险和单条知识读取、团队目标与里程碑计划、计划逾期通知去重与改期收敛、能力绑定可见性、能力风险摘要、能力启用确认与审计、Team Charter 能力绑定确认与审计、工具网关、任务租约、消息幂等、团队招募、团队模板复制、多设备招募会话游标、服务端草稿版本、多设备草稿自动合并与冲突选择、跨团队协作白名单、团队自治暂停/恢复、团队自治限额、团队归档/恢复和进行中任务拦截、团队专属知识隔离、工作树、定时任务、定时任务失败通知、任务介入事项持久通知与已读状态、恢复、任务组归档/恢复、任务中心按团队/状态筛选、CLI 节点 bootstrap、`ggb node` 统一入口、`ggb rpc` JSONL 事件流与中止、`ggb events` 任务和团队 SSE 订阅、`ggb doctor --strict` 部署门禁、节点配置校验、批量复核失败提示、任务事件游标、任务与团队 SSE 实时流、网页增量消费和断线回放、远程节点在线/执行状态、失联提醒、恢复和断线恢复事件；当前后端套件为 209/209，最近一次桌面/移动浏览器全量验证为 176 个运行，并包含手机端团队上下文、支持按名称/职责搜索的快速切换团队、底部主导航、导航抽屉、触控文件入口、底部设置面板、模型指标卡片无横向溢出、团队实时消息回归、对话上滑阅读与回到最新、执行节点配对向导、节点详情状态刷新、失联提醒与恢复和撤销后重新配对回归。
+
+状态接口为每次同步读取建立短生命周期索引，将任务、产物、验收、团队消息与用量按身份聚合，共享集合在一次响应中只读取一次。索引不跨请求保留；下一次刷新会读取其他 SQLite 连接提交的更新和删除。完整任务结果、消息和既有时间线分页仍然保留。隔离性能基准使用 `node tests/benchmark-state.mjs 10 20`（10 个团队，每队 20 个任务）；长期增长后的完整响应体积和浏览器渲染仍需继续优化。
 
 首次数据读取由独立的刷新 Hook 管理。界面在读取成功前展示加载或错误恢复状态，避免点击操作时角色和团队尚未就绪；请求超过 15 秒会中止并提供重试。后台轮询不会重叠，主动刷新会替换进行中的旧请求，过期的成功或失败响应均被忽略。已有数据时连接失败保留当前内容，并显示新鲜度提示，不清空团队或草稿。
 
