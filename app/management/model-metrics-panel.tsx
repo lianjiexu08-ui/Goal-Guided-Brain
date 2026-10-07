@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { LoaderCircle } from 'lucide-react';
 import { api } from '../workbench-api';
 
@@ -222,7 +222,10 @@ export function ModelMetricsPanel({
 }: {
   labels?: Record<string, string>;
 } = {}) {
-  const [metrics, setMetrics] = useState<ModelMetricsResponse | null>(null);
+  const [result, setResult] = useState<{
+    scope: string;
+    data: ModelMetricsResponse;
+  } | null>(null);
   const [filters, setFilters] = useState({
     teamId: '',
     roleId: '',
@@ -231,38 +234,60 @@ export function ModelMetricsPanel({
     taskType: '',
   });
   const [timeWindow, setTimeWindow] = useState<MetricsTimeWindow>('all');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      for (const [key, value] of Object.entries(filters))
-        if (value) params.set(key, value);
-      const since = timeWindowSince(timeWindow);
-      if (since) params.set('since', since);
-      const suffix = params.toString();
-      setMetrics(
-        await api<ModelMetricsResponse>(
-          `metrics/models${suffix ? `?${suffix}` : ''}`,
-        ),
-      );
-      setError('');
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }, [filters, timeWindow]);
+  const [failure, setFailure] = useState({ scope: '', message: '' });
+  const [requestState, setRequestState] = useState({
+    scope: '',
+    pending: false,
+  });
+  const [retry, setRetry] = useState(0);
+  const scope = JSON.stringify({ ...filters, timeWindow });
   useEffect(() => {
-    const initial = setTimeout(() => void refresh(), 0);
-    const timer = setInterval(() => void refresh(), 8000);
-    return () => {
-      clearTimeout(initial);
-      clearInterval(timer);
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const controller = new AbortController();
+    const refresh = async () => {
+      setRequestState({ scope, pending: true });
+      try {
+        const params = new URLSearchParams();
+        for (const [key, value] of Object.entries(filters))
+          if (value) params.set(key, value);
+        const since = timeWindowSince(timeWindow);
+        if (since) params.set('since', since);
+        const suffix = params.toString();
+        const data = await api<ModelMetricsResponse>(
+          `metrics/models${suffix ? `?${suffix}` : ''}`,
+          'GET',
+          undefined,
+          controller.signal,
+        );
+        if (!active) return;
+        setResult({ scope, data });
+        setFailure({ scope, message: '' });
+      } catch (err) {
+        if (!active) return;
+        setFailure({ scope, message: (err as Error).message });
+      } finally {
+        // Wait after completion so slow connections cannot overlap polls.
+        if (active) {
+          setRequestState({ scope, pending: false });
+          timer = setTimeout(() => void refresh(), 8000);
+        }
+      }
     };
-  }, [refresh]);
-  const options = metrics?.options || {};
+    const initial = setTimeout(() => void refresh(), 0);
+    return () => {
+      active = false;
+      controller.abort();
+      clearTimeout(initial);
+      clearTimeout(timer);
+    };
+  }, [filters, timeWindow, scope, retry]);
+  const metrics = result?.scope === scope ? result.data : null;
+  const error = failure.scope === scope ? failure.message : '';
+  const pending = requestState.scope === scope && requestState.pending;
+  const loading = pending || (!metrics && !error);
+  // Keep the catalog usable while the selected scope is loading or fails.
+  const options = result?.data.options || {};
   const updateFilter = (key: keyof typeof filters, value: string) =>
     setFilters((current) => ({ ...current, [key]: value }));
   const totals = metrics?.totals;
@@ -273,6 +298,7 @@ export function ModelMetricsPanel({
       className="model-metrics"
       aria-label="模型运行指标"
       data-testid="model-metrics-panel"
+      aria-busy={loading}
     >
       <div className="model-metrics-heading">
         <div>
@@ -283,10 +309,28 @@ export function ModelMetricsPanel({
         <span className="model-metrics-updated">
           {metrics?.generatedAt
             ? `更新于 ${time(metrics.generatedAt)}`
-            : '正在读取运行记录'}
+            : error
+              ? '指标读取失败'
+              : '正在读取运行记录'}
         </span>
       </div>
       <ErrorMessage error={error} />
+      {error && (
+        <div className="model-metrics-recovery">
+          <span>
+            {metrics
+              ? '刷新失败，当前显示上次成功获取的数据。'
+              : '当前筛选的指标未能载入。'}
+          </span>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => setRetry((value) => value + 1)}
+          >
+            {pending ? '正在重新加载' : '重新加载指标'}
+          </button>
+        </div>
+      )}
       <div className="model-metrics-filters" aria-label="模型指标筛选">
         <label>
           时间范围
@@ -422,7 +466,8 @@ export function ModelMetricsPanel({
             <div>
               <strong>验收证据质量</strong>
               <span>
-                {timeWindowLabel(timeWindow)} · 仅统计当前筛选范围内已完成的逻辑任务
+                {timeWindowLabel(timeWindow)} ·
+                仅统计当前筛选范围内已完成的逻辑任务
               </span>
             </div>
             <span>{metricNumber(quality.completedTasks)} 个已完成任务</span>
@@ -469,7 +514,10 @@ export function ModelMetricsPanel({
             <span>待所有者 {metricNumber(quality.awaitingOwner)}</span>
           </div>
           {quality.byTeam.length > 1 && (
-            <div className="model-evidence-quality-teams" aria-label="按团队查看证据质量">
+            <div
+              className="model-evidence-quality-teams"
+              aria-label="按团队查看证据质量"
+            >
               <span>团队覆盖率</span>
               {quality.byTeam.map((team) => (
                 <span key={team.teamId || team.teamName}>
@@ -693,7 +741,10 @@ export function ModelMetricsPanel({
           </table>
         </div>
       ) : (
-        <Empty text="当前筛选没有模型运行记录" busy={loading} />
+        <Empty
+          text={error ? '指标暂不可用，请重新加载' : '当前筛选没有模型运行记录'}
+          busy={loading}
+        />
       )}
     </section>
   );

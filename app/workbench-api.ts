@@ -2,10 +2,12 @@ export async function api<T = unknown>(
   path: string,
   method = 'GET',
   body?: unknown,
+  signal?: AbortSignal,
 ): Promise<T> {
   const response = await fetch(`/api/${path}`, {
     method,
     credentials: 'same-origin',
+    signal,
     headers: { 'Content-Type': 'application/json' },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });

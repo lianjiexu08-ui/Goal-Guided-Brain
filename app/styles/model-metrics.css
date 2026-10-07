@@ -30,6 +30,33 @@
   white-space: nowrap;
   margin-top: 4px;
 }
+.model-metrics-recovery {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  color: #65757c;
+  font-size: 12px;
+  line-height: 1.6;
+  margin-top: 10px;
+}
+.model-metrics-recovery button {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid #c4d8d0;
+  border-radius: 6px;
+  background: #fff;
+  color: #1d5f52;
+  cursor: pointer;
+}
+.model-metrics-recovery button:focus-visible {
+  outline: 2px solid #1d6657;
+  outline-offset: 3px;
+}
+.model-metrics-recovery button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
 .model-metrics-filters {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
