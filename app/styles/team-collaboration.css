@@ -662,3 +662,125 @@
   opacity: 0.55;
   cursor: not-allowed;
 }
+
+.collaboration-chain {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid #c9ddd3;
+  border-radius: 16px;
+  background: #f7fbf9;
+  overflow-wrap: anywhere;
+}
+.collaboration-chain header,
+.collaboration-chain-actions,
+.collaboration-chain-item-head,
+.collaboration-chain-status,
+.collaboration-chain-counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.collaboration-chain header {
+  justify-content: space-between;
+}
+.collaboration-chain h3 {
+  margin: 4px 0;
+  font-size: 18px;
+}
+.collaboration-chain p {
+  color: #597167;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.collaboration-chain-counts {
+  margin: 16px 0;
+  gap: 8px;
+}
+.collaboration-chain-counts > span {
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: #e8f1eb;
+  font-size: 12px;
+}
+.collaboration-chain-list {
+  display: grid;
+  gap: 12px;
+  padding: 0;
+  list-style: none;
+}
+.collaboration-chain-list > li {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #dbe7e0;
+  border-radius: 12px;
+  background: white;
+}
+.collaboration-chain-list > li[aria-current='step'] {
+  border-color: #4f9481;
+  box-shadow: 0 0 0 1px #4f9481;
+}
+.collaboration-chain-item-head {
+  font-size: 13px;
+}
+.collaboration-chain-item-head > span {
+  color: #286c58;
+  font-size: 12px;
+}
+.collaboration-chain-item-head time {
+  margin-left: auto;
+  color: #65796f;
+  font-size: 11px;
+}
+.collaboration-chain-status {
+  color: #546e61;
+  font-size: 12px;
+}
+.collaboration-chain details {
+  min-width: 0;
+  border-top: 1px solid #e5ede8;
+}
+.collaboration-chain summary {
+  min-height: 44px;
+  padding: 10px 0;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.8;
+}
+.collaboration-chain summary span {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #60796d;
+}
+.collaboration-chain details > div {
+  white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.8;
+}
+.collaboration-chain button {
+  min-height: 44px;
+}
+.collaboration-chain li > button {
+  justify-self: start;
+}
+.collaboration-chain small {
+  color: #65796f;
+  font-size: 12px;
+}
+@media (max-width: 600px) {
+  .collaboration-chain {
+    padding: 12px;
+  }
+  .collaboration-chain-list > li {
+    padding: 12px;
+  }
+  .collaboration-chain-item-head time {
+    width: 100%;
+    margin-left: 0;
+  }
+}

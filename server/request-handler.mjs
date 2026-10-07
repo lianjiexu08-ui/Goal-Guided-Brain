@@ -1,3 +1,4 @@
+import { readCollaborationChain } from './team-collaboration-chain.mjs';
 import { createTeamHandoff } from './team-handoff.mjs';
 import {
   readCollaborationReview,
@@ -520,6 +521,27 @@ export function createRequestHandler({
               required,
             });
             return send(result.status, result.body);
+          }
+          if (
+            req.method === 'GET' &&
+            parts[3] === 'collaboration-chain' &&
+            parts[4] &&
+            !parts[5]
+          ) {
+            return send(
+              200,
+              readCollaborationChain(
+                store,
+                space.id,
+                decodeURIComponent(parts[4]),
+                {
+                  ...(url.searchParams.has('limit')
+                    ? { limit: url.searchParams.get('limit') }
+                    : {}),
+                  after: url.searchParams.get('after'),
+                },
+              ),
+            );
           }
           if (parts[3] === 'collaboration-review' && parts[4] && !parts[5]) {
             const messageId = decodeURIComponent(parts[4]);

@@ -5,6 +5,7 @@ import { ArrowRight, Check, Users, Workflow } from 'lucide-react';
 import { api } from '../workbench-api';
 import { useCollaborationDraft } from './use-collaboration-draft';
 import { useTeamTimeline } from './use-team-timeline';
+import { CollaborationChain } from './collaboration-chain';
 import { CollaborationReviewControl } from './collaboration-review';
 import type { CollaborationReview } from './model';
 
@@ -106,6 +107,8 @@ export function TeamCollaborationConsole({
   const { targetTeamId, content, acceptance, clientMessageId, followup } =
     draftStore.draft;
   const composer = useRef<HTMLFormElement>(null);
+  const [chainMessageId, setChainMessageId] = useState<string | null>(null);
+  const chainTrigger = useRef<HTMLButtonElement | null>(null);
   const [replacement, setReplacement] = useState<TeamMessage | null>(null);
   const inFlight = useRef(false);
   const [loadError, setLoadError] = useState('');
@@ -606,6 +609,18 @@ export function TeamCollaborationConsole({
           <strong>最近协作</strong>
           {messages.length > 0 && <span>{messages.length} 条记录</span>}
         </div>
+        {chainMessageId && (
+          <CollaborationChain
+            key={`${team.id}:${chainMessageId}`}
+            teamId={team.id}
+            messageId={chainMessageId}
+            onOpenTask={onOpenTask}
+            onClose={() => {
+              setChainMessageId(null);
+              chainTrigger.current?.focus();
+            }}
+          />
+        )}
         {history.error && (
           <div className="overview-load-error" role="alert">
             <div>
@@ -685,6 +700,19 @@ export function TeamCollaborationConsole({
                   <div>{message.content}</div>
                 </details>
                 <div className="team-collaboration-item-actions">
+                  {message.collaborationReview && (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        chainTrigger.current = event.currentTarget;
+                        setChainMessageId(
+                          message.collaborationReview!.messageId,
+                        );
+                      }}
+                    >
+                      查看协作链路
+                    </button>
+                  )}
                   {relatedTeamId && (
                     <button
                       type="button"

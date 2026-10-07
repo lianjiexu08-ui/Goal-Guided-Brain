@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 240/240, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 244/244, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Cross-platform CI matrix runs lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
@@ -46,6 +46,39 @@ They are not sign-off for the separate real deployment gates below.
 - [ ] Real cloud continues scheduled work while the owner's computer is offline.
 
 ## Local Release Record
+
+Collaboration follow-up chain inspection on 2026-10-07: each valid shared
+request/reply opens a read-only chain for the same source/target pair. The
+view connects original requests, nested follow-ups and branches; separates
+execution, delivery acceptance and owner closure; shows complete shared request,
+reply and closure-note text; and links to the corresponding task conversation.
+It supports locating the selected request, 44px mobile controls, focus return,
+page retry and refresh of the entire expanded history. Failed reads retain the
+accepted view, and switching chains discards stale responses.
+
+`GET /teams/:id/collaboration-chain/:messageId` validates paired messages and
+task metadata. Foreign pairs, target-private notes and unshared task results
+are excluded. Broken ancestors are marked incomplete; cycles are rejected.
+Pages default to 20 (maximum 50); cursors bind team, root and topology revision,
+so changing membership/associations invalidates old cursors. This does not close
+requests or cover another team's onward delegation to a third team.
+
+Four new real HTTP tests plus existing handoff/review regressions passed 20/20.
+The complete backend suite passed 244/244 with no skips. Six new desktop/mobile
+browser scenarios passed in 19.6s on stable code; fixture name/timestamp setup
+and the expected task-conversation navigation were corrected during development.
+Screenshots were inspected and touch sizes/overflow asserted. Evidence remains
+under `/tmp/ggb-chain-evidence/focused`. Lint, typecheck and the 288-file size gate
+passed; the tracked formatting backlog remains 52. Full desktop/mobile browser
+regression passed 232/232 in 9.8m, retained under `/tmp/ggb-chain-evidence/full`.
+The final focused check after neutralizing the shared failure label passed 6/6
+in 14.1s (`final-focused`). Production build and all 12 changed files' targeted
+format checks passed. The local service restarted after verifying zero active
+work; UI, API health, proxied state and collaborator-list requests returned 200.
+Both existing spaces correctly reject an unmatched chain request with the new
+route's 404. Original IDs remain unchanged: 11 tasks, 10 jobs and two unconfirmed
+spaces. Successful chain flows were verified in isolated fixtures, not claimed
+as production confirmed-team execution. No remote push or deployment occurred.
 
 Control-plane responsibility split on 2026-10-07: execution eligibility, leases
 and result submission now live in `server/control/execution-lifecycle.mjs`;
@@ -583,8 +616,8 @@ format checks for changed code, file-size checks and production build passed.
 The subsequent full 126-run browser regression includes this mobile refinement,
 the ordinary attention-resolution workflow and cross-team overview recovery.
 
-Latest full local regression on 2026-10-07: `npm test` 240/240 and Playwright
-desktop/mobile baseline 226/226 passed on macOS. `npm run lint`,
+Latest full local regression on 2026-10-07: `npm test` 244/244 and Playwright
+desktop/mobile baseline 232/232 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines`, `npm run build` and
 `git diff --check` also passed. The model metrics regression includes task-type
 runtime comparisons, alias filtering, delayed response isolation, retry and
@@ -611,8 +644,8 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 240 passing tests. The latest
-full Playwright baseline passed 226 desktop/mobile runs covering team
+The current deterministic suite contains 244 passing tests. The latest
+full Playwright baseline passed 232 desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
 binary drag-and-drop attachments, conversation scroll recovery, evidence quality summaries, Team Charter confirmation and high-risk
