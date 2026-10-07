@@ -1,4 +1,8 @@
 import { createTeamHandoff } from './team-handoff.mjs';
+import {
+  readCollaborationReview,
+  saveCollaborationReview,
+} from './team-handoff-review.mjs';
 import fs from 'node:fs';
 import { teamTimelinePage } from './http-team-timeline.mjs';
 import { createStateResponder } from './http-state.mjs';
@@ -516,6 +520,19 @@ export function createRequestHandler({
               required,
             });
             return send(result.status, result.body);
+          }
+          if (parts[3] === 'collaboration-review' && parts[4] && !parts[5]) {
+            const messageId = decodeURIComponent(parts[4]);
+            if (req.method === 'GET')
+              return send(
+                200,
+                readCollaborationReview(store, space.id, messageId),
+              );
+            if (req.method === 'POST')
+              return send(
+                200,
+                saveCollaborationReview(store, space.id, messageId, body),
+              );
           }
           if (req.method === 'POST' && parts[3] === 'messages') {
             if (space.status !== 'active')

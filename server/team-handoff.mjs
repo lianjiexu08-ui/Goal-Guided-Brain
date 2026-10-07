@@ -49,16 +49,21 @@ export function createTeamHandoff({ store, space, body, newTask, required }) {
     '消息 ID',
     200,
   );
-  const followup = handoffContext(store, space, target, body.followupMessageId);
   const result = commitTeamHandoff({
     store,
     source: space,
     target,
     clientMessageId,
     content,
-    followupMessageId: followup?.messageId || null,
-    createTask: (message) =>
-      newTask({
+    followupMessageId: body.followupMessageId || null,
+    createTask: (message) => {
+      const followup = handoffContext(
+        store,
+        space,
+        target,
+        body.followupMessageId,
+      );
+      return newTask({
         role: target.pmRoleId,
         prompt: `团队「${space.name}」向本团队发起协作请求。请阅读请求并自主判断是否接受、拆解和安排执行。\n\n协作目标：\n${content}${followup?.prompt || ''}`,
         workspace: target.workspace,
@@ -66,7 +71,8 @@ export function createTeamHandoff({ store, space, body, newTask, required }) {
         spaceId: target.id,
         sourceMessageId: message.id,
         acceptance,
-      }),
+      });
+    },
   });
   return {
     status: result.duplicate ? 200 : 201,

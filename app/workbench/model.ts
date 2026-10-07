@@ -113,6 +113,28 @@ export type TeamMessage = {
   attachmentIds?: string[];
   attachments?: Attachment[];
 };
+export type CollaborationReview = {
+  messageId: string;
+  taskId: string;
+  sourceTeamId: string;
+  targetTeamId: string;
+  status: 'open' | 'closed' | 'stale';
+  action: 'complete' | 'end' | 'reopen' | null;
+  note: string;
+  revision: number;
+  fingerprint: string;
+  updatedAt: string | null;
+  canComplete: boolean;
+  canEnd: boolean;
+  deliveryStatus: string;
+  history?: {
+    action: string;
+    note: string;
+    createdAt: string;
+    requestId: string;
+  }[];
+};
+
 export type TeamTimelineItem = {
   id: string;
   type:
@@ -123,6 +145,7 @@ export type TeamTimelineItem = {
     | 'verification'
     | 'acceptance'
     | 'attention';
+  collaborationReview?: CollaborationReview | null;
   at: string;
   teamId?: string | null;
   teamName?: string | null;

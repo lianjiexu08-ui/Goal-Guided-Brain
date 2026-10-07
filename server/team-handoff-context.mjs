@@ -25,6 +25,8 @@ export function handoffContext(store, source, target, id) {
   )
     throw reject('原协作不属于当前来源和目标团队，请重新选择。');
   const task = store.task(message.taskId);
+  if (store.records.get('handoff-reviews', message.id)?.status === 'closed')
+    throw reject('原协作已关闭，请先由负责人重新打开，再继续协作。');
   if (!task || !settled.has(task.status))
     throw reject('原协作仍在执行或状态未确认，请先处理原任务。');
   const reply = store.records.get('space-messages', `handoff-reply:${task.id}`);

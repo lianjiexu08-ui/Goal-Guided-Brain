@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 230/230, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 235/235, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Cross-platform CI matrix runs lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
@@ -46,6 +46,45 @@ They are not sign-off for the separate real deployment gates below.
 - [ ] Real cloud continues scheduled work while the owner's computer is offline.
 
 ## Local Release Record
+
+Owner collaboration closure on 2026-10-07: source-team history now exposes
+processing controls and shared closure status. Completing a request requires
+the existing current owner-approved delivery; ending follow-up instead requires
+a settled task and a reason, and never changes delivery acceptance. Reopening
+requires a reason and starts no task. Each follow-up request remains independent.
+Closed requests block new HTTP/MCP follow-ups, while previously accepted sends
+can still recover their original receipts. Only the owner can write decisions.
+
+Review state and audit events commit atomically before source/target live
+refreshes. Revision and task/evidence fingerprints prevent stale overwrites;
+fingerprints include result/error contents, so external writes that retain a
+timestamp still invalidate old closure. These fingerprints are memoized only
+inside a synchronous read projection. History retains all audit events, showing
+the newest 20. Local processing drafts and pending request IDs survive reload;
+unknown outcomes preserve immutable retries, explicit rejection preserves the
+reason and allows fresh review. Chain-wide summaries/closure and cross-device
+processing-draft sync remain outstanding.
+
+Five new backend cases cover accepted evidence, stale output/evidence, reasons,
+reopening, authenticated-instance rejection, team scope, active/unknown-task
+rejection, duplicate receipts, revision conflicts and late-audit rollback with
+no success events. Full backend regression passed 235/235. The focused
+desktop/mobile browser suite passed 14/14, exercising actual owner acceptance,
+real closure POSTs with dropped responses, reload/retry, audit uniqueness,
+draft recovery, reopening and conflicting decisions. Mobile screenshots were
+inspected. Evidence is retained in `/tmp/ggb-review-evidence` for this session.
+Full browser regression passed 226/226 in 9.1m. Lint, typecheck, all 279
+hand-written source-file size limits and targeted formatting for all 18 changed
+files passed. The full repository format gate still reports 54 legacy files.
+After including output contents in fingerprints, the full backend suite again
+passed 235/235; a fresh desktop/mobile run of closure/reopen/conflict/receipt
+scenarios passed 4/4 against the final implementation.
+Production build passed. After confirming zero active tasks/jobs, the local
+service restarted. UI, health, proxied state and collaborator-list smoke checks
+passed; nonexistent review references correctly returned 404. Existing data
+remains 11 tasks, 10 jobs and two unconfirmed spaces, so no production closure
+was written. Functional decisions were exercised only in isolated fixtures.
+No remote push or deployment was performed.
 
 Linked collaboration follow-up on 2026-10-07: the collaboration history now
 expands complete messages and loads earlier records beyond the initial eight.
@@ -473,8 +512,8 @@ format checks for changed code, file-size checks and production build passed.
 The subsequent full 126-run browser regression includes this mobile refinement,
 the ordinary attention-resolution workflow and cross-team overview recovery.
 
-Latest full local regression on 2026-10-07: `npm test` 230/230 and Playwright
-desktop/mobile baseline 222/222 passed on macOS. `npm run lint`,
+Latest full local regression on 2026-10-07: `npm test` 235/235 and Playwright
+desktop/mobile baseline 226/226 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines`, `npm run build` and
 `git diff --check` also passed. The model metrics regression includes task-type
 runtime comparisons, alias filtering, delayed response isolation, retry and
@@ -501,8 +540,8 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 230 passing tests. The latest
-full Playwright baseline passed 222 desktop/mobile runs covering team
+The current deterministic suite contains 235 passing tests. The latest
+full Playwright baseline passed 226 desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
 binary drag-and-drop attachments, conversation scroll recovery, evidence quality summaries, Team Charter confirmation and high-risk

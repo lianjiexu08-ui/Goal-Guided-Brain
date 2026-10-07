@@ -28,21 +28,21 @@ export function delegateToTeam(control, body, principal) {
   const content = `${prompt}${acceptance ? `\n\n验收标准：\n${acceptance}` : ''}`;
   if (content.length > 32000)
     throw fail('协作目标和验收标准合计不能超过 32000 个字符。');
-  const followup = handoffContext(
-    control.store,
-    source,
-    target,
-    body.followupMessageId,
-  );
   const result = commitTeamHandoff({
     store: control.store,
     source,
     target,
     content,
-    followupMessageId: followup?.messageId || null,
+    followupMessageId: body.followupMessageId || null,
     clientMessageId: `mcp:${sourceTask.id}:${key}`,
     legacyMessageId: `handoff:${source.id}:${target.id}:${key}`,
     createTask: (message) => {
+      const followup = handoffContext(
+        control.store,
+        source,
+        target,
+        body.followupMessageId,
+      );
       const activeJobs = control.records
         .list('jobs')
         .filter(

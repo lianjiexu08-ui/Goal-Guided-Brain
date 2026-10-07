@@ -5,6 +5,7 @@ const LIVE_COLLECTIONS = new Set([
   'task-acceptance',
   'attention',
   'jobs',
+  'handoff-reviews',
 ]);
 
 /**
@@ -26,7 +27,7 @@ export function createTeamEventHub({ records, store, attachments, nowIso }) {
 
   function teamForRecord(collection, record) {
     if (!record) return null;
-    if (collection === 'space-messages' || collection === 'jobs')
+    if (['space-messages', 'jobs', 'handoff-reviews'].includes(collection))
       return record.spaceId || record.teamId || null;
     if (collection === 'attention')
       return record.spaceId || record.teamId || teamForTask(record.taskId);
@@ -129,6 +130,15 @@ export function createTeamEventHub({ records, store, attachments, nowIso }) {
     if (!teamId) return;
     const event = timelineEvent(change.collection, change.record);
     if (event) publishTeamEvent(teamId, { ...event, teamId });
+    if (
+      event &&
+      change.collection === 'handoff-reviews' &&
+      change.record.targetTeamId
+    )
+      publishTeamEvent(change.record.targetTeamId, {
+        ...event,
+        teamId: change.record.targetTeamId,
+      });
   }
 
   function publishTeamTask(change) {

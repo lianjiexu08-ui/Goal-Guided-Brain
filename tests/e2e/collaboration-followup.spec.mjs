@@ -254,3 +254,168 @@ test('继续协作保护已有草稿，刷新保留引用，审阅后创建带�
   expect(data.task.sessionId).not.toBe(data.original.sessionId);
   expect(data.trace.followupMessageId).toBe(teams.rows[4].sourceMessageId);
 });
+
+test('结束跟进保存说明，丢失回执后刷新重试不重复记录，重新打开后恢复追问', async ({
+  page,
+}, info) => {
+  const teams = seed();
+  await open(page, teams.source);
+  const row = () =>
+    panel(page).locator('article').filter({ hasText: '原协作目标 4' });
+  await row().getByRole('button', { name: '处理协作', exact: true }).click();
+  const review = () => row().getByRole('region', { name: '协作收尾处理' });
+  await review()
+    .getByRole('combobox', { name: '协作处理方式' })
+    .selectOption('end');
+  await expect(
+    review().getByRole('button', { name: '结束跟进', exact: true }),
+  ).toBeDisabled();
+  await review()
+    .getByRole('textbox', { name: '协作处理说明' })
+    .fill('需求已取消，保留交付状态');
+  await clickNavigation(page, '知识库');
+  await clickNavigation(page, '团队动态');
+  await row().getByRole('button', { name: '处理协作', exact: true }).click();
+  await expect(
+    review().getByRole('textbox', { name: '协作处理说明' }),
+  ).toHaveValue('需求已取消，保留交付状态');
+  let first = true;
+  const requests = [];
+  await page.route('**/collaboration-review/**', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    requests.push(route.request().postDataJSON());
+    const response = await route.fetch();
+    expect(response.status()).toBe(200);
+    if (first) {
+      first = false;
+      await route.abort('failed');
+    } else await route.fulfill({ response });
+  });
+  await review().getByRole('button', { name: '结束跟进', exact: true }).click();
+  await expect(
+    review().getByRole('button', { name: '重试确认处理结果' }),
+  ).toBeVisible();
+  await page.reload();
+  await row()
+    .getByRole('button', { name: '查看收尾记录', exact: true })
+    .click();
+  await review().getByRole('button', { name: '重试确认处理结果' }).click();
+  expect(requests).toHaveLength(2);
+  expect(requests[0].requestId).toBe(requests[1].requestId);
+  await expect(
+    row().getByText('已结束跟进（不代表验收通过）', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    row().getByRole('button', { name: '继续协作', exact: true }),
+  ).toHaveCount(0);
+  const events = withStore((store) =>
+    store.records
+      .list('handoff-review-events')
+      .filter((event) => event.messageId === teams.rows[4].sourceMessageId),
+  );
+  expect(events).toHaveLength(1);
+  await row()
+    .getByRole('button', { name: '查看收尾记录', exact: true })
+    .click();
+  await review()
+    .getByRole('textbox', { name: '协作处理说明' })
+    .fill('需求恢复，继续处理');
+  await page.screenshot({
+    path: info.outputPath('review-reopen.png'),
+    fullPage: true,
+  });
+  await review().getByRole('button', { name: '重新打开', exact: true }).click();
+  await expect(
+    row().getByRole('button', { name: '继续协作', exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
+
+test('协作完成复用交付验收，证据变化提示重新复核，旧页面决定拒绝覆盖新状态', async ({
+  page,
+  request,
+}) => {
+  const teams = seed();
+  await open(page, teams.source);
+  const row = () =>
+    panel(page).locator('article').filter({ hasText: '原协作目标 4' });
+  const review = () => row().getByRole('region', { name: '协作收尾处理' });
+  await row().getByRole('button', { name: '处理协作', exact: true }).click();
+  await expect(
+    review().getByRole('button', { name: '确认完成', exact: true }),
+  ).toBeDisabled();
+  await expect(
+    review().getByRole('button', { name: '查看任务并复核交付' }),
+  ).toBeVisible();
+  const taskId = teams.rows[4].taskId;
+  const evidence = withStore((store) =>
+    store.records.save('artifacts', {
+      taskId,
+      kind: 'verification',
+      status: 'verified',
+      verified: true,
+      requirementVersion: 1,
+    }),
+  );
+  expect(
+    (
+      await request.post(`/api/tasks/${taskId}/accept`, {
+        data: { note: '实际复核通过' },
+      })
+    ).status(),
+  ).toBe(200);
+  await review().getByRole('button', { name: '刷新处理状态' }).click();
+  await expect(
+    review().getByRole('button', { name: '确认完成', exact: true }),
+  ).toBeEnabled();
+  await review().getByRole('button', { name: '确认完成', exact: true }).click();
+  await expect(row().getByText('已确认完成', { exact: true })).toBeVisible();
+  withStore((store) =>
+    store.records.save(
+      'artifacts',
+      { ...evidence, status: 'failed', verified: false },
+      evidence.id,
+    ),
+  );
+  await expect(
+    row().getByRole('button', { name: '重新复核协作', exact: true }),
+  ).toBeVisible();
+  await row()
+    .getByRole('button', { name: '重新复核协作', exact: true })
+    .click();
+  await expect(review()).toContainText('原收尾结论需要重新复核');
+  await review()
+    .getByRole('textbox', { name: '协作处理说明' })
+    .fill('旧页面的处理原因');
+  const endpoint = `/api/teams/${teams.source.id}/collaboration-review/${encodeURIComponent(teams.rows[4].sourceMessageId)}`;
+  const fresh = await (await request.get(endpoint)).json();
+  expect(
+    (
+      await request.post(endpoint, {
+        data: {
+          action: 'reopen',
+          note: '另一页面已重新打开',
+          fingerprint: fresh.fingerprint,
+          revision: fresh.revision,
+          requestId: crypto.randomUUID(),
+        },
+      })
+    ).status(),
+  ).toBe(200);
+  await review().getByRole('button', { name: '重新打开', exact: true }).click();
+  await expect(review().getByRole('alert')).toContainText('状态已更新');
+  await expect(
+    review().getByRole('textbox', { name: '协作处理说明' }),
+  ).toHaveValue('旧页面的处理原因');
+  await review().getByRole('button', { name: '重新读取状态' }).click();
+  await expect(
+    review().getByRole('combobox', { name: '协作处理方式' }),
+  ).toHaveValue('complete');
+  const persisted = await (await request.get(endpoint)).json();
+  expect(persisted.note).toBe('另一页面已重新打开');
+  expect(persisted.history).toHaveLength(2);
+});

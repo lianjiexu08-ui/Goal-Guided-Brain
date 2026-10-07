@@ -1,3 +1,5 @@
+import { collaborationReview } from '../team-handoff-review.mjs';
+
 function matchesKind(item, kind) {
   if (kind === 'collaboration')
     return (
@@ -59,6 +61,9 @@ export function buildTeamTimeline(
       toTeamId: message.toTeamId || null,
       relatedMessageId: message.relatedMessageId || null,
       followupMessageId: message.followupMessageId || null,
+      collaborationReview: ['handoff', 'reply'].includes(message.kind)
+        ? collaborationReview(read, message)
+        : null,
       kind: message.kind,
       taskId: message.taskId || null,
       content: message.content,

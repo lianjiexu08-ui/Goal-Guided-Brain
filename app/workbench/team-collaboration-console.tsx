@@ -5,8 +5,11 @@ import { ArrowRight, Check, Users, Workflow } from 'lucide-react';
 import { api } from '../workbench-api';
 import { useCollaborationDraft } from './use-collaboration-draft';
 import { useTeamTimeline } from './use-team-timeline';
+import { CollaborationReviewControl } from './collaboration-review';
+import type { CollaborationReview } from './model';
 
 type TeamMessage = {
+  collaborationReview?: CollaborationReview | null;
   id: string;
   messageId?: string;
   followupMessageId?: string | null;
@@ -661,6 +664,19 @@ export function TeamCollaborationConsole({
                     {statusLabel(message, relatedTask)}
                   </em>
                 </div>
+                {message.collaborationReview && (
+                  <div
+                    className={`collaboration-review-status ${message.collaborationReview.status}`}
+                  >
+                    {message.collaborationReview.status === 'closed'
+                      ? message.collaborationReview.action === 'complete'
+                        ? '已确认完成'
+                        : '已结束跟进（不代表验收通过）'
+                      : message.collaborationReview.status === 'stale'
+                        ? '结果或验收已变化，需重新复核'
+                        : '协作跟进中'}
+                  </div>
+                )}
                 <details className="team-collaboration-detail">
                   <summary>
                     <span>{message.content.split('\n')[0]}</span>
@@ -687,6 +703,8 @@ export function TeamCollaborationConsole({
                   )}
                   {confirmed &&
                     enabled &&
+                    (!message.collaborationReview ||
+                      message.collaborationReview.status === 'open') &&
                     relatedTask &&
                     [
                       'completed',
@@ -711,6 +729,13 @@ export function TeamCollaborationConsole({
                       </button>
                     )}
                 </div>
+                {message.collaborationReview?.sourceTeamId === team.id && (
+                  <CollaborationReviewControl
+                    review={message.collaborationReview}
+                    onOpenTask={onOpenTask}
+                    onChanged={history.refresh}
+                  />
+                )}
               </article>
             );
           })

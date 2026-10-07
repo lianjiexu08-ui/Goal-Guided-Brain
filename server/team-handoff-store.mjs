@@ -4,7 +4,7 @@ export function commitTeamHandoff(options) {
   return atomicHandoff(options.store, () => persistHandoff(options));
 }
 
-function atomicHandoff(store, operation) {
+export function atomicHandoff(store, operation) {
   const onRecord = store.records.onSave;
   const onTask = store.onTaskUpdate;
   const changes = new Map();
