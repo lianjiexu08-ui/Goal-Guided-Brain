@@ -663,3 +663,28 @@
 .confirmed {
   color: #549e82;
 }
+
+.overview-load-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #eadfce;
+  border-radius: 10px;
+  color: #875340;
+  background: #fff8ef;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.overview-load-error strong {
+  font-weight: 600;
+}
+.overview-load-error p {
+  margin: 4px 0 0;
+}
+.overview-load-error .secondary-button {
+  flex-shrink: 0;
+  min-height: 44px;
+}

@@ -1,8 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, Check, History, RefreshCw } from 'lucide-react';
-import { api } from '../workbench-api';
+import { useState } from 'react';
+import {
+  AlertTriangle,
+  Check,
+  History,
+  LoaderCircle,
+  RefreshCw,
+} from 'lucide-react';
+import { useOverviewPage } from './use-overview-page';
 
 type TeamOption = { id: string; name: string };
 type TeamRisk = {
@@ -17,7 +23,6 @@ type TeamRisk = {
   taskId?: string | null;
   knowledgeId?: string | null;
 };
-type TeamRiskResponse = { items: TeamRisk[]; hasMore: boolean; total: number };
 type TimelineItem = {
   id: string;
   type:
@@ -83,6 +88,52 @@ const formatTime = (value: string) =>
     minute: '2-digit',
   });
 
+const riskCursor = (item: TeamRisk) => `${item.updatedAt}|${item.id}`;
+const timelineCursor = (item: TimelineItem) => `${item.at}|${item.id}`;
+function overviewQuery(limit: number, team: string, kind: string) {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (team !== 'all') query.set('teamId', team);
+  if (kind !== 'all') query.set('kind', kind);
+  return query.toString();
+}
+
+function OverviewError({
+  error,
+  retained,
+  moreFailed,
+  loading,
+  retry,
+}: {
+  error: string;
+  retained: boolean;
+  moreFailed: boolean;
+  loading: boolean;
+  retry: () => void;
+}) {
+  return (
+    <div className="overview-load-error" role="alert">
+      <div>
+        <strong>{error}</strong>
+        <p>
+          {retained
+            ? moreFailed
+              ? '未能加载更多，已加载内容仍保留。'
+              : '刷新失败，当前显示上次成功获取的数据。'
+            : '暂时无法获取当前筛选的结果，请重试。'}
+        </p>
+      </div>
+      <button
+        type="button"
+        className="secondary-button"
+        disabled={loading}
+        onClick={retry}
+      >
+        重试
+      </button>
+    </div>
+  );
+}
+
 export function RiskInbox({
   teams,
   onOpenTeam,
@@ -98,12 +149,15 @@ export function RiskInbox({
 }) {
   const [teamFilter, setTeamFilter] = useState('all');
   const [kindFilter, setKindFilter] = useState('all');
-  const [items, setItems] = useState<TeamRisk[]>([]);
-  const [total, setTotal] = useState(0);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const { page, loading, error, moreFailed, refresh, retry, loadMore } =
+    useOverviewPage<TeamRisk>(
+      'risks',
+      overviewQuery(50, teamFilter, kindFilter),
+      riskCursor,
+      refreshKey,
+    );
+  const items = page?.items || [];
+  const hasMore = page?.hasMore === true;
   const kindLabels: Record<string, string> = {
     execution: '执行风险',
     delivery: '交付风险',
@@ -111,54 +165,8 @@ export function RiskInbox({
     knowledge: '知识复核',
     plan: '计划逾期',
   };
-  const loadFirstPage = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const query = new URLSearchParams({ limit: '50' });
-      if (teamFilter !== 'all') query.set('teamId', teamFilter);
-      if (kindFilter !== 'all') query.set('kind', kindFilter);
-      const page = await api<TeamRiskResponse>(`risks?${query.toString()}`);
-      const last = page.items?.[page.items.length - 1];
-      setItems(page.items || []);
-      setTotal(page.total || 0);
-      setHasMore(page.hasMore === true);
-      setNextCursor(last ? `${last.updatedAt}|${last.id}` : null);
-    } catch (rawError) {
-      setError((rawError as Error).message);
-      setItems([]);
-      setTotal(0);
-      setHasMore(false);
-      setNextCursor(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [kindFilter, teamFilter]);
-  useEffect(() => {
-    const timer = window.setTimeout(() => void loadFirstPage(), 0);
-    return () => window.clearTimeout(timer);
-  }, [loadFirstPage, refreshKey]);
-  const loadMore = async () => {
-    if (!nextCursor || loading) return;
-    setLoading(true);
-    setError('');
-    try {
-      const query = new URLSearchParams({ limit: '50', before: nextCursor });
-      if (teamFilter !== 'all') query.set('teamId', teamFilter);
-      if (kindFilter !== 'all') query.set('kind', kindFilter);
-      const page = await api<TeamRiskResponse>(`risks?${query.toString()}`);
-      const last = page.items?.[page.items.length - 1];
-      setItems((current) => [...current, ...(page.items || [])]);
-      setHasMore(page.hasMore === true);
-      setNextCursor(last ? `${last.updatedAt}|${last.id}` : null);
-    } catch (rawError) {
-      setError((rawError as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  };
   return (
-    <section className="risk-inbox" aria-label="跨团队风险">
+    <section className="risk-inbox" aria-label="跨团队风险" aria-busy={loading}>
       <div className="risk-inbox-head">
         <div>
           <span className="section-kicker">TEAM RISKS</span>
@@ -168,12 +176,18 @@ export function RiskInbox({
           </p>
         </div>
         <div className="risk-inbox-summary">
-          <span className="count-pill needs-review">{total} 项待处理</span>
+          <span className="count-pill needs-review">
+            {page
+              ? `${page.total ?? items.length} 项待处理`
+              : loading
+                ? '检查中…'
+                : '风险状态未知'}
+          </span>
           <button
             type="button"
             className="icon-button"
             aria-label="刷新跨团队风险"
-            onClick={() => void loadFirstPage()}
+            onClick={refresh}
             disabled={loading}
           >
             <RefreshCw size={15} className={loading ? 'spin' : ''} />
@@ -212,7 +226,15 @@ export function RiskInbox({
           </select>
         </label>
       </div>
-      {error && <div className="risk-inbox-error">{error}</div>}
+      {error && (
+        <OverviewError
+          error={error}
+          retained={page !== null}
+          moreFailed={moreFailed}
+          loading={loading}
+          retry={retry}
+        />
+      )}
       {items.length > 0 ? (
         <div className="risk-inbox-list">
           {items.map((item) => (
@@ -250,21 +272,25 @@ export function RiskInbox({
             <button
               type="button"
               className="risk-inbox-more"
-              onClick={() => void loadMore()}
+              onClick={loadMore}
               disabled={loading}
             >
               {loading ? '加载中…' : '加载更早风险'}
             </button>
           )}
         </div>
-      ) : (
-        <div className="risk-inbox-empty">
-          <Check size={20} />
+      ) : !error ? (
+        <output className="risk-inbox-empty">
+          {loading ? (
+            <LoaderCircle size={20} className="spin" />
+          ) : (
+            <Check size={20} />
+          )}
           <span>
             {loading ? '正在检查团队风险…' : '当前没有需要处理的跨团队风险。'}
           </span>
-        </div>
-      )}
+        </output>
+      ) : null}
     </section>
   );
 }
@@ -280,72 +306,20 @@ export function CrossTeamTimeline({
 }) {
   const [teamFilter, setTeamFilter] = useState('all');
   const [kindFilter, setKindFilter] = useState('all');
-  const [items, setItems] = useState<TimelineItem[]>([]);
-  const [hasMore, setHasMore] = useState(false);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const { page, loading, error, moreFailed, refresh, retry, loadMore } =
+    useOverviewPage<TimelineItem>(
+      'timeline',
+      overviewQuery(60, teamFilter, kindFilter),
+      timelineCursor,
+    );
+  const items = page?.items || [];
+  const hasMore = page?.hasMore === true;
   const kindLabels: Record<string, string> = {
     all: '全部动态',
     messages: '消息',
     execution: '执行',
     evidence: '证据',
     risk: '风险',
-  };
-  const loadFirstPage = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const query = new URLSearchParams({ limit: '60' });
-      if (teamFilter !== 'all') query.set('teamId', teamFilter);
-      if (kindFilter !== 'all') query.set('kind', kindFilter);
-      const page = await api<{ items: TimelineItem[]; hasMore: boolean }>(
-        `timeline?${query.toString()}`,
-      );
-      const last = page.items?.[page.items.length - 1];
-      setItems(page.items || []);
-      setHasMore(page.hasMore === true);
-      setNextCursor(last ? `${last.at}|${last.id}` : null);
-    } catch (rawError) {
-      setError((rawError as Error).message);
-      setItems([]);
-      setHasMore(false);
-      setNextCursor(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [kindFilter, teamFilter]);
-  useEffect(() => {
-    const timer = window.setTimeout(() => void loadFirstPage(), 0);
-    return () => window.clearTimeout(timer);
-  }, [loadFirstPage]);
-  const loadMore = async () => {
-    if (!nextCursor || loading) return;
-    setLoading(true);
-    setError('');
-    try {
-      const query = new URLSearchParams({ limit: '60', before: nextCursor });
-      if (teamFilter !== 'all') query.set('teamId', teamFilter);
-      if (kindFilter !== 'all') query.set('kind', kindFilter);
-      const page = await api<{ items: TimelineItem[]; hasMore: boolean }>(
-        `timeline?${query.toString()}`,
-      );
-      const last = page.items?.[page.items.length - 1];
-      setItems((current) => {
-        const merged = new Map(
-          [...page.items, ...current].map((item) => [item.id, item]),
-        );
-        return [...merged.values()].sort(
-          (a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id),
-        );
-      });
-      setHasMore(page.hasMore === true);
-      setNextCursor(last ? `${last.at}|${last.id}` : null);
-    } catch (rawError) {
-      setError((rawError as Error).message);
-    } finally {
-      setLoading(false);
-    }
   };
   const renderItem = (item: TimelineItem) => {
     const title =
@@ -410,7 +384,11 @@ export function CrossTeamTimeline({
     );
   };
   return (
-    <section className="cross-team-timeline" aria-label="跨团队统一时间线">
+    <section
+      className="cross-team-timeline"
+      aria-label="跨团队统一时间线"
+      aria-busy={loading}
+    >
       <div className="cross-team-timeline-head">
         <div>
           <span className="section-kicker">ALL TEAMS</span>
@@ -423,7 +401,7 @@ export function CrossTeamTimeline({
             type="button"
             className="icon-button"
             aria-label="刷新跨团队时间线"
-            onClick={() => void loadFirstPage()}
+            onClick={refresh}
             disabled={loading}
           >
             <RefreshCw size={15} className={loading ? 'spin' : ''} />
@@ -461,7 +439,15 @@ export function CrossTeamTimeline({
           </select>
         </label>
       </div>
-      {error && <div className="cross-team-timeline-error">{error}</div>}
+      {error && (
+        <OverviewError
+          error={error}
+          retained={page !== null}
+          moreFailed={moreFailed}
+          loading={loading}
+          retry={retry}
+        />
+      )}
       {items.length > 0 ? (
         <div className="cross-team-timeline-list">
           {items.map(renderItem)}
@@ -469,21 +455,25 @@ export function CrossTeamTimeline({
             <button
               type="button"
               className="timeline-load-more cross-team-timeline-more"
-              onClick={() => void loadMore()}
+              onClick={loadMore}
               disabled={loading}
             >
               {loading ? '加载中…' : '加载更早动态'}
             </button>
           )}
         </div>
-      ) : (
-        <div className="cross-team-timeline-empty">
-          <History size={18} />
+      ) : !error ? (
+        <output className="cross-team-timeline-empty">
+          {loading ? (
+            <LoaderCircle size={18} className="spin" />
+          ) : (
+            <History size={18} />
+          )}
           <span>
             {loading ? '正在加载团队动态…' : '当前筛选没有团队动态。'}
           </span>
-        </div>
-      )}
+        </output>
+      ) : null}
     </section>
   );
 }

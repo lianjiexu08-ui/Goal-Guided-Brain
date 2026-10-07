@@ -47,6 +47,17 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Local Release Record
 
+Cross-team overview recovery on 2026-10-07: risk inbox and unified timeline
+share scoped, abortable pagination. Changing filters immediately hides old cards;
+late success and failure responses cannot replace the selected team's results.
+Initial read failures show an unknown state with retry, same-filter refresh
+failures retain the last successful page with a freshness warning, and failed
+pagination retries the original cursor without duplicating cards. The focused
+desktop/mobile suite passed 30/30, including attention resolution and existing
+team timeline/navigation scenarios. The full desktop/mobile suite then passed
+126/126; recovery layout checks cover 320px and 393px mobile widths, no
+horizontal overflow and a retry target of at least 44px height.
+
 Mobile metrics refinement on 2026-10-07: the scoped desktop/mobile metrics
 suite passed 14/14, including advanced-filter retention, individual removal,
 reset, delayed responses and refresh recovery. Layout checks cover 320px and
@@ -54,12 +65,12 @@ reset, delayed responses and refresh recovery. Layout checks cover 320px and
 no page overflow. On the local production build at 393px, the combined filter
 and summary content height decreased from 879px to 430px. Typecheck, lint,
 format checks for changed code, file-size checks and production build passed.
-The subsequent full 110-run browser regression includes this mobile refinement
-and the ordinary attention-resolution workflow.
+The subsequent full 126-run browser regression includes this mobile refinement,
+the ordinary attention-resolution workflow and cross-team overview recovery.
 
 Latest full local regression on 2026-10-07: `npm test` 193/193 and Playwright
-desktop/mobile baseline 110/110 passed on macOS. `npm run lint`,
-`npm run typecheck`, `npm run quality:lines -- --json`, `npm run build` and
+desktop/mobile baseline 126/126 passed on macOS. `npm run lint`,
+`npm run typecheck`, `npm run quality:lines`, `npm run build` and
 `git diff --check` also passed. The model metrics regression includes task-type
 runtime comparisons, alias filtering, delayed response isolation, retry and
 background refresh failure recovery. Attention-resolution tests cover taskless
@@ -86,7 +97,7 @@ and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
 The current deterministic suite contains 193 passing tests. The latest
-full Playwright baseline passed 110 desktop/mobile runs covering team
+full Playwright baseline passed 126 desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
 binary drag-and-drop attachments, conversation scroll recovery, evidence quality summaries, Team Charter confirmation and high-risk
