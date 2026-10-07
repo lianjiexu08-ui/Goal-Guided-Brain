@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 217/217, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 219/219, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Cross-platform CI matrix runs lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
@@ -46,6 +46,50 @@ They are not sign-off for the separate real deployment gates below.
 - [ ] Real cloud continues scheduled work while the owner's computer is offline.
 
 ## Local Release Record
+
+Team activity loading on 2026-10-07: the web client negotiates
+`X-GGB-State-View: workbench`, deferring each space's messages/timeline while
+retaining all task text, metadata and counts. The response explicitly marks
+`teamActivityDeferred`; default API consumers retain the original full state.
+Only the mounted team activity panel requests a scoped timeline, with filters
+applied before cursor pagination (120 initial rows, 60 older rows). Switching
+teams/filters isolates stale success and error responses. Initial failure,
+refresh failure and older-page failure have distinct recovery states; retry
+preserves the failed cursor and accepted content. SSE-triggered refresh and
+five-second polling re-read the entire expanded window so older edits and
+deletions remain visible. Offscreen panels stop polling. The recent-collaboration
+panel independently
+loads the latest eight handoffs/replies using a server-side collaboration filter,
+with retained error/retry state and reload persistence. Unexpanded windows stay
+bounded; only explicitly expanded history is re-read to its prior oldest row.
+Failed task previews prioritize the error over partial output. Confirmed-team guidance describes
+ongoing collaboration rather than recruiting the same team again. Mobile
+filter and refresh controls have at least 44px touch targets.
+
+Isolated five-sample fixtures compared each compact response against the full
+state excluding only the deferred activity fields. At 10 teams/200 tasks,
+initial state bodies were 483,069 versus 1,158,429 bytes; at 20 teams/800 tasks,
+1,883,589 versus 3,457,309 bytes. Timings vary under concurrent test load and
+are not mobile UX measurements. Initial task text is still complete; task-level
+server pagination/search remains outstanding. Backend regression passed 219/219.
+The initial 20-run focused browser suite passed, including delayed responses, failures,
+older evidence, expanded-history edits/deletions, SSE messages and 20 alternating
+team switches. Screenshots were inspected at desktop and mobile sizes. An initial
+failure exposed partial task output masking its error; the renderer now prioritizes
+the error. The final 10-run feature suite also verifies recent collaboration
+recovery, persistence and bounded refresh. Its first run exposed a test setup
+that reset the route on every reload; the setup now seeds the route only once
+per browser session so reload tests exercise real route persistence.
+Evidence is retained in `/tmp/ggb-lazy-evidence` for this session.
+The final full browser regression passed 212/212 desktop/mobile runs in 8.3m,
+including the updated collaboration history. Lint, typecheck, all 267 source-file
+line limits and formatting for all 34 changed files passed. The existing
+55-file formatting backlog remains explicitly open. Production build passed.
+The local service restarted only after confirming all 11 tasks and 10 jobs
+were inactive. UI, health, legacy state and workbench state returned 200;
+compact-state 304 and unknown-baseline fallback passed through the production
+proxy, as did all/evidence/collaboration timeline reads. Existing tasks and team
+metadata were preserved. No remote push or deployment was performed.
 
 Changed-state transport on 2026-10-07: background reads opt into entity deltas
 against the exact accepted ETag. The server still authorizes, reads and hashes
@@ -320,8 +364,8 @@ format checks for changed code, file-size checks and production build passed.
 The subsequent full 126-run browser regression includes this mobile refinement,
 the ordinary attention-resolution workflow and cross-team overview recovery.
 
-Latest full local regression on 2026-10-07: `npm test` 217/217 and Playwright
-desktop/mobile baseline 202/202 passed on macOS. `npm run lint`,
+Latest full local regression on 2026-10-07: `npm test` 219/219 and Playwright
+desktop/mobile baseline 212/212 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines`, `npm run build` and
 `git diff --check` also passed. The model metrics regression includes task-type
 runtime comparisons, alias filtering, delayed response isolation, retry and
@@ -348,8 +392,8 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 217 passing tests. The latest
-full Playwright baseline passed 202 desktop/mobile runs covering team
+The current deterministic suite contains 219 passing tests. The latest
+full Playwright baseline passed 212 desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
 binary drag-and-drop attachments, conversation scroll recovery, evidence quality summaries, Team Charter confirmation and high-risk

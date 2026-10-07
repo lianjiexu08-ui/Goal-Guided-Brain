@@ -100,12 +100,7 @@ export function RouteContent({ context }: { context: WorkbenchContext }) {
     running,
     rosterReady,
     teamMembers,
-    teamTimeline,
-    teamTimelineHasMore,
     teamTasks,
-    timelineItems,
-    visibleTeamTimeline,
-    timelineFilterOptions,
     teamOpenTasks,
     teamReviewTasks,
     teamRiskTasks,
@@ -156,7 +151,6 @@ export function RouteContent({ context }: { context: WorkbenchContext }) {
     startRecruitment,
     openTeamConversation,
     openTeamOverview,
-    loadOlderTeamTimeline,
     selectTeam,
     showTask,
     openRiskTeam,
@@ -164,6 +158,7 @@ export function RouteContent({ context }: { context: WorkbenchContext }) {
     handoffRoles,
     editRole,
     renderTeamTimelineItem,
+    teamActivityRevision,
     taskCard,
     reviewTaskCard,
     isMobile,
@@ -240,9 +235,6 @@ export function RouteContent({ context }: { context: WorkbenchContext }) {
     batchReviewNote,
     setBatchReviewNote,
     batchReviewBusy,
-    timelineFilter,
-    setTimelineFilter,
-    timelineLoading,
     setExpandedCharters,
     recruitmentApprovals,
     setRecruitmentApprovals,
@@ -297,16 +289,8 @@ export function RouteContent({ context }: { context: WorkbenchContext }) {
           projectManager={projectManager}
           teamTasks={teamTasks}
           isActive={isActive}
-          timelineItems={timelineItems}
-          teamTimeline={teamTimeline}
-          timelineFilterOptions={timelineFilterOptions}
-          timelineFilter={timelineFilter}
-          setTimelineFilter={setTimelineFilter}
-          teamTimelineHasMore={teamTimelineHasMore}
-          loadOlderTeamTimeline={loadOlderTeamTimeline}
-          timelineLoading={timelineLoading}
-          visibleTeamTimeline={visibleTeamTimeline}
           renderTeamTimelineItem={renderTeamTimelineItem}
+          teamActivityRevision={teamActivityRevision}
           openTeamConversation={openTeamConversation}
           setRole={setRole}
           setView={setView}

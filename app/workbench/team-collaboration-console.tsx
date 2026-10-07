@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ArrowRight, Check, Users, Workflow } from 'lucide-react';
 import { api } from '../workbench-api';
+import { useTeamTimeline } from './use-team-timeline';
 
 type TeamMessage = {
   id: string;
@@ -36,7 +37,6 @@ type TeamSpace = {
   name: string;
   recruitment?: { phase?: string } | null;
   collaboration?: { enabled?: boolean } | null;
-  messages?: TeamMessage[] | null;
 };
 
 const statusLabels: Record<string, string> = {
@@ -83,6 +83,7 @@ export function TeamCollaborationConsole({
   onOpenTeam,
   onOpenTask,
   onChanged,
+  revision = 0,
 }: {
   team: TeamSpace;
   teams: TeamSpace[];
@@ -90,6 +91,7 @@ export function TeamCollaborationConsole({
   onOpenTeam: (teamId: string) => void;
   onOpenTask: (taskId: string) => void;
   onChanged?: () => Promise<void> | void;
+  revision?: number;
 }) {
   const [collaborators, setCollaborators] = useState<TeamCollaborator[]>([]);
   const [targetTeamId, setTargetTeamId] = useState('');
@@ -99,6 +101,7 @@ export function TeamCollaborationConsole({
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const history = useTeamTimeline(team.id, 'collaboration', revision, 8);
   const [lastCreated, setLastCreated] = useState<
     | (TeamMessage & {
         sourceTeamId?: string;
@@ -150,13 +153,14 @@ export function TeamCollaborationConsole({
     return () => window.clearTimeout(timer);
   }, [collaborators]);
 
-  const messages = [...(team.messages || [])]
-    .filter(
-      (message) =>
-        message.kind === 'handoff' ||
-        (message.kind === 'reply' &&
-          Boolean(message.relatedMessageId || message.fromTeamId)),
-    )
+  const messages: TeamMessage[] = (history.page?.items || [])
+    .map((item) => ({
+      ...item,
+      kind: item.kind || 'handoff',
+      content: item.content || '',
+      status: item.status || 'sent',
+      createdAt: item.at,
+    }))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, 8);
 
@@ -208,6 +212,7 @@ export function TeamCollaborationConsole({
       setAcceptance('');
       setReviewing(false);
       setLastCreated(created);
+      history.refresh();
       await onChanged?.();
     } catch (rawError) {
       setError((rawError as Error).message);
@@ -402,6 +407,27 @@ export function TeamCollaborationConsole({
           <strong>最近协作</strong>
           {messages.length > 0 && <span>{messages.length} 条记录</span>}
         </div>
+        {history.error && (
+          <div className="overview-load-error" role="alert">
+            <div>
+              <strong>{history.error}</strong>
+              <p>
+                {history.page
+                  ? '协作记录刷新失败，保留上次读取的内容。'
+                  : '协作记录暂时不可用。'}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={history.loading}
+              onClick={history.retry}
+            >
+              重试
+            </button>
+          </div>
+        )}
+        {!history.page && history.loading && <output>正在读取协作记录…</output>}
         {messages.length > 0 ? (
           messages.map((message) => {
             const outgoing = message.fromTeamId === team.id;
@@ -457,12 +483,12 @@ export function TeamCollaborationConsole({
               </article>
             );
           })
-        ) : (
+        ) : history.page ? (
           <div className="team-collaboration-empty">
             <Workflow size={16} />{' '}
             发起一次协作后，这里会显示目标团队、任务状态和回传结果。
           </div>
-        )}
+        ) : null}
       </div>
     </section>
   );

@@ -11,12 +11,11 @@ export async function readWorkbenchState(
     credentials: 'same-origin',
     cache: 'no-store',
     signal,
-    headers: etag
-      ? {
-          'If-None-Match': etag,
-          ...(previous ? { 'X-GGB-State-Delta': '1' } : {}),
-        }
-      : {},
+    headers: {
+      'X-GGB-State-View': 'workbench',
+      ...(etag ? { 'If-None-Match': etag } : {}),
+      ...(etag && previous ? { 'X-GGB-State-Delta': '1' } : {}),
+    },
   });
   const nextEtag = response.headers.get('etag');
   if (response.status === 304) {

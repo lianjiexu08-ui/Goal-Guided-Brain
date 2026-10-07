@@ -354,6 +354,7 @@ export type Provider = {
   models: ProviderModel[];
 };
 export type State = {
+  teamActivityDeferred?: boolean;
   roles: Assistant[];
   skillCatalog: { id: string; name: string }[];
   unreadNotificationCount: number;

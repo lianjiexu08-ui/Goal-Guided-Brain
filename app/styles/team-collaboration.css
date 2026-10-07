@@ -488,3 +488,19 @@
 .team-task-row em {
   font-style: normal;
 }
+
+.team-timeline .icon-button,
+.team-timeline .timeline-filter-button,
+.team-timeline .timeline-load-more {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.team-timeline .timeline-filter-button,
+.team-timeline .timeline-load-more {
+  font-size: 12px;
+}
+
+.team-timeline > output {
+  display: block;
+}

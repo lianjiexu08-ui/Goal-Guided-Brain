@@ -33,6 +33,7 @@ async function forward(request: Request) {
     'last-event-id',
     'if-none-match',
     'x-ggb-state-delta',
+    'x-ggb-state-view',
   ]) {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);

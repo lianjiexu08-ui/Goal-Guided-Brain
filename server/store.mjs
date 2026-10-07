@@ -674,8 +674,9 @@ export class Store {
     limit = 120,
     before = null,
     read = new StoreReadIndex(this),
+    kind = 'all',
   ) {
-    return buildTeamTimeline(read, spaceId, limit, before);
+    return buildTeamTimeline(read, spaceId, limit, before, kind);
   }
   draftKey(spaceId, roleId) {
     return makeDraftKey(spaceId, roleId);

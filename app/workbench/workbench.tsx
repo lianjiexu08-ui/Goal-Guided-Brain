@@ -25,8 +25,6 @@ import {
   Knowledge,
   Profile,
   TeamMessage,
-  TeamTimelineItem,
-  TimelineFilter,
   CapabilityApproval,
   TeamRecruitment,
   TeamForm,
@@ -139,14 +137,7 @@ export function Workbench() {
   );
   const [batchReviewNote, setBatchReviewNote] = useState('');
   const [batchReviewBusy, setBatchReviewBusy] = useState(false);
-  const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>('all');
-  const [timelineHistory, setTimelineHistory] = useState<
-    Record<string, TeamTimelineItem[]>
-  >({});
-  const [timelineHasMore, setTimelineHasMore] = useState<
-    Record<string, boolean>
-  >({});
-  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [teamActivityRevision, setTeamActivityRevision] = useState(0);
   const [expandedCharters, setExpandedCharters] = useState<
     Record<string, boolean>
   >({});
@@ -195,12 +186,7 @@ export function Workbench() {
     running,
     rosterReady,
     teamMembers,
-    teamTimeline,
-    teamTimelineHasMore,
     teamTasks,
-    timelineItems,
-    visibleTeamTimeline,
-    timelineFilterOptions,
     teamOpenTasks,
     teamReviewTasks,
     teamRiskTasks,
@@ -221,9 +207,6 @@ export function Workbench() {
     selectedReviewTaskIds,
     mobileTeamQuery,
     selectedSpaceId,
-    timelineHistory,
-    timelineHasMore,
-    timelineFilter,
     expandedCharters,
     recruitmentApprovals,
   }) as {
@@ -506,6 +489,7 @@ export function Workbench() {
         window.clearTimeout(teamEventRefreshTimerRef.current);
       teamEventRefreshTimerRef.current = window.setTimeout(() => {
         teamEventRefreshTimerRef.current = null;
+        setTeamActivityRevision((value) => value + 1);
         void refresh();
       }, 120);
     };
@@ -649,7 +633,6 @@ export function Workbench() {
     startRecruitment,
     openTeamConversation,
     openTeamOverview,
-    loadOlderTeamTimeline,
     selectTeam,
     showTask,
     openRiskTeam,
@@ -725,12 +708,6 @@ export function Workbench() {
     selectedSpaceId,
     tasks,
     setTaskDetail,
-    setTimelineFilter,
-    timelineLoading,
-    setTimelineLoading,
-    teamTimeline,
-    setTimelineHistory,
-    setTimelineHasMore,
     setEditingAssistant,
   });
   /* oxlint-enable */
@@ -773,12 +750,7 @@ export function Workbench() {
     running,
     rosterReady,
     teamMembers,
-    teamTimeline,
-    teamTimelineHasMore,
     teamTasks,
-    timelineItems,
-    visibleTeamTimeline,
-    timelineFilterOptions,
     teamOpenTasks,
     teamReviewTasks,
     teamRiskTasks,
@@ -830,7 +802,6 @@ export function Workbench() {
     startRecruitment,
     openTeamConversation,
     openTeamOverview,
-    loadOlderTeamTimeline,
     selectTeam,
     showTask,
     openRiskTeam,
@@ -838,6 +809,7 @@ export function Workbench() {
     handoffRoles,
     editRole,
     renderTeamTimelineItem,
+    teamActivityRevision,
     taskCard,
     reviewTaskCard,
     isMobile,
@@ -917,9 +889,6 @@ export function Workbench() {
     batchReviewNote,
     setBatchReviewNote,
     batchReviewBusy,
-    timelineFilter,
-    setTimelineFilter,
-    timelineLoading,
     setExpandedCharters,
     recruitmentApprovals,
     setRecruitmentApprovals,

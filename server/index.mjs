@@ -52,7 +52,13 @@ export function createWorkbench({
   });
   const publicTeamTimeline = (spaceId, options = {}) =>
     store
-      .teamTimeline(spaceId, options.limit, options.before, options.read)
+      .teamTimeline(
+        spaceId,
+        options.limit,
+        options.before,
+        options.read,
+        options.kind,
+      )
       .map((item) =>
         item.type === 'message'
           ? {
@@ -540,10 +546,11 @@ export function createWorkbench({
     }
     return counts;
   };
-  const getState = () => {
+  const getState = ({ includeTeamActivity = true } = {}) => {
     const read = new StoreReadIndex(store);
     const roles = store.roles();
     return {
+      ...(!includeTeamActivity ? { teamActivityDeferred: true } : {}),
       roles,
       skillCatalog: SKILLS.map(({ id, name }) => ({ id, name })),
       unreadNotificationCount: read
@@ -641,16 +648,20 @@ export function createWorkbench({
         ...space,
         planRevision: read.get('team-plans', space.id)?.revision || 0,
         autonomyUsage: teamUsageSummary(space, read),
-        messages: read
-          .group('space-messages', 'spaceId', space.id)
-          .map((message) => ({
-            ...message,
-            attachmentIds: Array.isArray(message.attachmentIds)
-              ? message.attachmentIds
-              : [],
-            attachments: platform.attachments.list(message.attachmentIds),
-          })),
-        timeline: publicTeamTimeline(space.id, { read }),
+        ...(includeTeamActivity
+          ? {
+              messages: read
+                .group('space-messages', 'spaceId', space.id)
+                .map((message) => ({
+                  ...message,
+                  attachmentIds: Array.isArray(message.attachmentIds)
+                    ? message.attachmentIds
+                    : [],
+                  attachments: platform.attachments.list(message.attachmentIds),
+                })),
+              timeline: publicTeamTimeline(space.id, { read }),
+            }
+          : {}),
       })),
       teamTemplates: store.teamTemplates(),
       config: {

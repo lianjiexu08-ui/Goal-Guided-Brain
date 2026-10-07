@@ -5,7 +5,6 @@ import {
   ArrowRight,
   Archive,
   Copy,
-  History,
   ListChecks,
   MessageSquare,
   Pause,
@@ -17,17 +16,11 @@ import {
 } from 'lucide-react';
 import { CrossTeamTimeline } from './team-overview';
 import { TeamCollaborationConsole } from './team-collaboration-console';
+import { TeamTimelinePanel } from './team-timeline-panel';
 import { TeamPlan } from './team-plan';
 import { Choice } from './choice';
 import { assistantIcons } from '../assistant-editor';
 import type { Task, TeamSpace, TeamTimelineItem } from './model';
-
-type TeamTimelineFilter =
-  | 'all'
-  | 'messages'
-  | 'execution'
-  | 'evidence'
-  | 'risk';
 
 type TeamMember = {
   id: string;
@@ -61,16 +54,8 @@ export type TeamActivityProps = {
   projectManager?: { name: string };
   teamTasks: Task[];
   isActive: (task: Task) => boolean;
-  timelineItems: TeamTimelineItem[];
-  teamTimeline: TeamTimelineItem[];
-  timelineFilterOptions: Array<{ id: TeamTimelineFilter; label: string }>;
-  timelineFilter: TeamTimelineFilter;
-  setTimelineFilter: (filter: TeamTimelineFilter) => void;
-  teamTimelineHasMore: boolean;
-  loadOlderTeamTimeline: () => Promise<void>;
-  timelineLoading: boolean;
-  visibleTeamTimeline: TeamTimelineItem[];
   renderTeamTimelineItem: (item: TeamTimelineItem) => ReactNode;
+  teamActivityRevision: number;
   openTeamConversation: () => void;
   setRole: Dispatch<SetStateAction<string>>;
   setView: (view: string) => void;
@@ -106,16 +91,8 @@ export function TeamActivity({
   refresh,
   projectManager,
   teamTasks,
-  timelineItems,
-  teamTimeline,
-  timelineFilterOptions,
-  timelineFilter,
-  setTimelineFilter,
-  teamTimelineHasMore,
-  loadOlderTeamTimeline,
-  timelineLoading,
-  visibleTeamTimeline,
   renderTeamTimelineItem,
+  teamActivityRevision,
   openTeamConversation,
   setRole,
   setView,
@@ -286,7 +263,9 @@ export function TeamActivity({
       )}
       {teamSpace?.recruitment?.phase === 'confirmed' && teamSpace && (
         <TeamCollaborationConsole
+          key={teamSpace.id}
           team={teamSpace}
+          revision={teamActivityRevision}
           teams={confirmedSpaces}
           tasks={tasks}
           onOpenTeam={openRiskTeam}
@@ -326,69 +305,33 @@ export function TeamActivity({
                 <span className="mini-role pm">PM</span> 项目经理
               </span>
               <p>
-                把目标、问题或一段模糊需求直接丢进来。我会先和你澄清，再给出团队规模、职责和推进方式。
+                {recruitment?.phase === 'confirmed'
+                  ? '在这里跟进团队进展、执行风险和交付证据。需要补充要求或调整方向时，回到团队对话与项目经理沟通。'
+                  : '把目标、问题或一段模糊需求直接丢进来。我会先和你澄清，再给出团队规模、职责和推进方式。'}
               </p>
               <div className="pm-flow">
-                <span>多轮澄清</span>
+                <span>
+                  {recruitment?.phase === 'confirmed' ? '推进任务' : '多轮澄清'}
+                </span>
                 <ArrowRight size={13} />
-                <span>Team Charter</span>
+                <span>
+                  {recruitment?.phase === 'confirmed'
+                    ? '跟踪进展'
+                    : 'Team Charter'}
+                </span>
                 <ArrowRight size={13} />
-                <span>确认创建</span>
+                <span>
+                  {recruitment?.phase === 'confirmed' ? '验收交付' : '确认创建'}
+                </span>
               </div>
             </div>
-            {timelineItems.length > 0 && (
-              <div
-                className={`team-timeline ${teamTimeline.length === 0 ? 'team-timeline-fallback' : ''}`}
-                aria-label={
-                  teamTimeline.length > 0 ? '团队统一时间线' : '团队动态'
-                }
-              >
-                <div className="team-timeline-toolbar">
-                  <div className="team-activity-title">
-                    <History size={14} />{' '}
-                    {teamTimeline.length > 0 ? '统一时间线' : '团队动态'}
-                  </div>
-                  <div
-                    className="timeline-filters"
-                    role="tablist"
-                    aria-label="时间线筛选"
-                  >
-                    {timelineFilterOptions.map((option) => (
-                      <button
-                        key={option.id}
-                        type="button"
-                        role="tab"
-                        aria-selected={timelineFilter === option.id}
-                        className={`timeline-filter-button ${timelineFilter === option.id ? 'active' : ''}`}
-                        onClick={() => setTimelineFilter(option.id)}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                    {teamTimelineHasMore && (
-                      <button
-                        type="button"
-                        className="timeline-load-more"
-                        onClick={() => void loadOlderTeamTimeline()}
-                        disabled={timelineLoading}
-                      >
-                        {timelineLoading ? '加载中…' : '更早动态'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-                {visibleTeamTimeline.length > 0 ? (
-                  visibleTeamTimeline.map(renderTeamTimelineItem)
-                ) : (
-                  <div className="timeline-filter-empty">当前筛选没有记录</div>
-                )}
-              </div>
-            )}
-            {!timelineItems.length && (
-              <div className="team-empty">
-                <MessageSquare size={18} />{' '}
-                还没有团队动态。完成一次任务后，进展会显示在这里。
-              </div>
+            {teamSpace && (
+              <TeamTimelinePanel
+                key={teamSpace.id}
+                teamId={teamSpace.id}
+                revision={teamActivityRevision}
+                renderItem={renderTeamTimelineItem}
+              />
             )}
           </div>
           <div className="team-readonly-note">
@@ -396,7 +339,11 @@ export function TeamActivity({
               <MessageSquare size={16} />
             </div>
             <div>
-              <strong>新的需求从团队招募发起</strong>
+              <strong>
+                {recruitment?.phase === 'confirmed'
+                  ? '继续与当前团队协作'
+                  : '新的需求从团队招募发起'}
+              </strong>
               <p>这里专门查看项目经理的拆解、成员状态和任务结果。</p>
             </div>
             <button className="text-button" onClick={openTeamConversation}>

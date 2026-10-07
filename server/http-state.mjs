@@ -29,7 +29,7 @@ export function createStateResponder({
     const etag = `"${createHash('sha256').update(body).digest('base64url')}"`;
     res.setHeader('ETag', etag);
     res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('Vary', 'X-GGB-State-Delta, If-None-Match');
+    res.setHeader('Vary', 'X-GGB-State-View, X-GGB-State-Delta, If-None-Match');
     for (const [key, snapshot] of snapshots)
       if (now() - snapshot.at > ttlMs) discard(key);
     const validators = String(req.headers['if-none-match'] || '')

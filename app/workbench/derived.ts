@@ -19,9 +19,6 @@ export function deriveWorkbenchState(input: Record<string, any>) {
     selectedReviewTaskIds,
     mobileTeamQuery,
     selectedSpaceId,
-    timelineHistory,
-    timelineHasMore,
-    timelineFilter,
     expandedCharters,
     recruitmentApprovals,
   } = input;
@@ -91,105 +88,7 @@ export function deriveWorkbenchState(input: Record<string, any>) {
             Number(a.id === teamSpace.pmRoleId),
         )
     : activeRoles;
-  const teamMessages = [...(teamSpace?.messages || [])].sort((a, b) =>
-    a.createdAt.localeCompare(b.createdAt),
-  );
-  const currentServerTimeline = teamSpace?.timeline || [];
-  const currentTimelineHistory = teamSpace
-    ? timelineHistory[teamSpace.id] || []
-    : [];
-  const teamTimeline = [
-    ...currentTimelineHistory,
-    ...currentServerTimeline,
-  ].sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id));
-  const teamTimelineHasMore = teamSpace
-    ? (timelineHasMore[teamSpace.id] ?? currentServerTimeline.length >= 120)
-    : false;
   const teamTasks = tasks.filter((task) => task.spaceId === teamSpace?.id);
-  const legacyTeamTimeline: TeamTimelineItem[] = [
-    ...teamMessages.map((message) => ({
-      id: `message:${message.id}`,
-      type: 'message' as const,
-      at: message.createdAt,
-      messageId: message.id,
-      clientMessageId: message.clientMessageId || null,
-      senderType: message.senderType,
-      senderId: message.senderId,
-      fromTeamId: message.fromTeamId || null,
-      toTeamId: message.toTeamId || null,
-      relatedMessageId: message.relatedMessageId || null,
-      kind: message.kind,
-      taskId: message.taskId || null,
-      content: message.content,
-      status: message.status,
-      error: message.error || null,
-      attachmentIds: message.attachmentIds || [],
-      attachments: message.attachments || [],
-    })),
-    ...teamTasks.slice(0, 8).map((task) => ({
-      id: `task:${task.id}`,
-      type: 'task' as const,
-      at: task.createdAt,
-      taskId: task.id,
-      role: task.role,
-      title: task.title,
-      status: task.status,
-      result: task.result || '',
-      error: task.error || '',
-      workspaceMode: task.workspaceMode || null,
-      artifactCount: task.artifactCount || 0,
-      verificationStatus: task.verificationStatus || null,
-      deliveryStatus: task.deliveryStatus || null,
-      acceptanceDecision: task.acceptanceDecision || null,
-      acceptanceNote: task.acceptanceNote || null,
-    })),
-  ];
-  const timelineItems =
-    teamTimeline.length > 0 ? teamTimeline : legacyTeamTimeline;
-  const timelineNeedsAttention = (item: TeamTimelineItem) => {
-    if (item.type === 'message')
-      return item.status === 'blocked' || Boolean(item.error);
-    if (item.type === 'task') {
-      return (
-        [
-          'blocked',
-          'failed',
-          'interrupted',
-          'state_unknown',
-          'budget-exceeded',
-          'budget_exceeded',
-        ].includes(item.status || '') ||
-        item.deliveryStatus === 'rejected' ||
-        Boolean(item.error)
-      );
-    }
-    if (item.type === 'task-event')
-      return /fail|error|block|interrupt|budget/i.test(item.eventType || '');
-    if (item.type === 'acceptance')
-      return item.acceptanceDecision === 'rejected';
-    if (item.type === 'attention') return item.status !== 'resolved';
-    return false;
-  };
-  const visibleTeamTimeline = timelineItems.filter((item) => {
-    if (timelineFilter === 'messages') return item.type === 'message';
-    if (timelineFilter === 'execution')
-      return item.type === 'task' || item.type === 'task-event';
-    if (timelineFilter === 'evidence')
-      return (
-        item.type === 'artifact' ||
-        item.type === 'verification' ||
-        item.type === 'acceptance'
-      );
-    if (timelineFilter === 'risk') return timelineNeedsAttention(item);
-    return true;
-  });
-  const timelineFilterOptions: Array<{ id: TimelineFilter; label: string }> = [
-    { id: 'all', label: '全部' },
-    { id: 'messages', label: '消息' },
-    { id: 'execution', label: '执行' },
-    { id: 'evidence', label: '证据' },
-    { id: 'risk', label: '风险' },
-  ];
   const teamOpenTasks = teamTasks.filter(isActive);
   const teamReviewTasks = teamTasks.filter(taskNeedsOwnerAction);
   const teamRiskTasks = teamTasks.filter(taskNeedsAttention);
@@ -292,12 +191,7 @@ export function deriveWorkbenchState(input: Record<string, any>) {
     running,
     rosterReady,
     teamMembers,
-    teamTimeline,
-    teamTimelineHasMore,
     teamTasks,
-    timelineItems,
-    visibleTeamTimeline,
-    timelineFilterOptions,
     teamOpenTasks,
     teamReviewTasks,
     teamRiskTasks,

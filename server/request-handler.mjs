@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { teamTimelinePage } from './http-team-timeline.mjs';
 import { createStateResponder } from './http-state.mjs';
 import os from 'node:os';
 import path from 'node:path';
@@ -221,7 +222,14 @@ export function createRequestHandler({
       });
       if (managed) return send(managed.status, managed.body);
       if (req.method === 'GET' && parts[1] === 'state')
-        return sendState(req, res, getState());
+        return sendState(
+          req,
+          res,
+          getState({
+            includeTeamActivity:
+              req.headers['x-ggb-state-view'] !== 'workbench',
+          }),
+        );
       if (req.method === 'GET' && parts[1] === 'risks')
         return send(
           200,
@@ -360,21 +368,11 @@ export function createRequestHandler({
                 .filter((job) => job.spaceId === space.id),
             });
           }
-          if (req.method === 'GET' && parts[3] === 'timeline') {
-            const requestedLimit = Math.max(
-              1,
-              Math.min(120, Number(options.query.get('limit')) || 60),
+          if (req.method === 'GET' && parts[3] === 'timeline')
+            return send(
+              200,
+              teamTimelinePage(space.id, options.query, publicTeamTimeline),
             );
-            const page = publicTeamTimeline(space.id, {
-              limit: requestedLimit + 1,
-              before: options.query.get('before') || null,
-            });
-            const hasMore = page.length > requestedLimit;
-            return send(200, {
-              items: hasMore ? page.slice(1) : page,
-              hasMore,
-            });
-          }
           if (req.method === 'GET' && parts[3] === 'recruitment' && !parts[4]) {
             const page = store.recruitmentPage(space.id, {
               after: options.query.get('after') || null,

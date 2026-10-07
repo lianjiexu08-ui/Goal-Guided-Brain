@@ -79,12 +79,6 @@ export function createWorkbenchActions(deps: Record<string, any>) {
     selectedSpaceId,
     tasks,
     setTaskDetail,
-    setTimelineFilter,
-    timelineLoading,
-    setTimelineLoading,
-    teamTimeline,
-    setTimelineHistory,
-    setTimelineHasMore,
     setEditingAssistant,
   } = deps;
   async function action(fn: () => Promise<void>) {
@@ -626,38 +620,7 @@ export function createWorkbenchActions(deps: Record<string, any>) {
     setView('team');
     if (isMobile) setOpenMobile(false);
   }
-  async function loadOlderTeamTimeline() {
-    const space = teamSpace;
-    const earliest = teamTimeline[0];
-    if (!space || !earliest || timelineLoading) return;
-    setTimelineLoading(true);
-    try {
-      const cursor = encodeURIComponent(`${earliest.at}|${earliest.id}`);
-      const page = await api<{ items: TeamTimelineItem[]; hasMore: boolean }>(
-        `spaces/${space.id}/timeline?limit=60&before=${cursor}`,
-      );
-      setTimelineHistory((current) => {
-        const existing = current[space.id] || [];
-        const merged = new Map(
-          [...existing, ...(page.items || [])].map((item) => [item.id, item]),
-        );
-        return {
-          ...current,
-          [space.id]: [...merged.values()].sort(
-            (a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id),
-          ),
-        };
-      });
-      setTimelineHasMore((current) => ({
-        ...current,
-        [space.id]: page.hasMore === true,
-      }));
-    } catch (error) {
-      setNotice(`加载更早团队动态失败：${(error as Error).message}`);
-    } finally {
-      setTimelineLoading(false);
-    }
-  }
+
   function selectTeam(id: string) {
     const next = data?.spaces?.find((space) => space.id === id);
     if (!next || next.status === 'archived') return;
@@ -665,7 +628,6 @@ export function createWorkbenchActions(deps: Record<string, any>) {
     // Execution records belong to the selected team. Never leave an open
     // inspector from Team A visible while the user is browsing Team B.
     setTaskDetail(null);
-    setTimelineFilter('all');
     setSelectedSpaceId(next.id);
     setRole(next.pmRoleId);
   }
@@ -727,7 +689,6 @@ export function createWorkbenchActions(deps: Record<string, any>) {
     startRecruitment,
     openTeamConversation,
     openTeamOverview,
-    loadOlderTeamTimeline,
     selectTeam,
     showTask,
     openRiskTeam,

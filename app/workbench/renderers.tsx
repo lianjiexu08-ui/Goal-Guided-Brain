@@ -169,7 +169,7 @@ export function createWorkbenchRenderers(deps: WorkbenchRendererDeps) {
             )}
             {(item.result || item.error) && (
               <small className="team-task-result">
-                {(item.result || item.error || '')
+                {(item.error || item.result || '')
                   .replace(/\s+/g, ' ')
                   .slice(0, 180)}
               </small>

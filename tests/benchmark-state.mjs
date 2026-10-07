@@ -63,6 +63,27 @@ try {
     conditionalTimes.push(performance.now() - conditionalStart);
   }
   const url = `http://127.0.0.1:${app.server.address().port}/api/state`;
+  const workbenchTimes = [];
+  let workbenchStateBytes = 0;
+  for (let i = 0; i < 5; i++) {
+    const start = performance.now();
+    const response = await fetch(url, {
+      headers: { 'X-GGB-State-View': 'workbench' },
+    });
+    assert.equal(response.status, 200);
+    const body = await response.text();
+    const compact = JSON.parse(body);
+    workbenchTimes.push(performance.now() - start);
+    workbenchStateBytes = Buffer.byteLength(body);
+    const full = await (await fetch(url)).json();
+    assert.deepEqual(compact, {
+      ...full,
+      teamActivityDeferred: true,
+      spaces: full.spaces.map(
+        ({ messages: _messages, timeline: _timeline, ...space }) => space,
+      ),
+    });
+  }
   const initial = await fetch(url);
   let snapshot = await initial.json();
   let etag = initial.headers.get('etag');
@@ -100,6 +121,8 @@ try {
         httpMedianMs: median(httpTimes),
         conditionalHttpMedianMs: median(conditionalTimes),
         conditionalBodyBytes,
+        workbenchStateBytes,
+        workbenchHttpMedianMs: median(workbenchTimes),
         changedStateHttpMedianMs: median(changedTimes),
         changedStateBodyMedianBytes: median(changedBytes),
         collectionReads: scans,
