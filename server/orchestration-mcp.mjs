@@ -117,8 +117,23 @@ const tools = [
   },
   {
     name: 'read_team_task',
-    description: '读取已获准协作团队中的一个委派任务状态和结果。',
+    description:
+      '只读取当前团队实际委派且仍获准的任务状态、结果、共享回传和收尾状态；不能读取目标团队其他工作或私有消息。收尾决定仅限所有者。',
     inputSchema: objectSchema({ taskId: string }, ['taskId']),
+  },
+  {
+    name: 'list_team_collaborations',
+    description:
+      '分页查看当前团队自己的协作请求、回传摘要和收尾状态。默认查看发出的请求；可按方向及 open/closed/stale/unlinked 筛选。nextCursor 用作下一页 before，变更团队或筛选须重读。closed 不应重复跟进；stale 交由所有者复核。只读，不授予收尾或目标团队私有任务权限。',
+    inputSchema: objectSchema({
+      direction: { type: 'string', enum: ['outgoing', 'incoming', 'all'] },
+      status: {
+        type: 'string',
+        enum: ['all', 'open', 'closed', 'stale', 'unlinked'],
+      },
+      limit: { type: 'integer', minimum: 1, maximum: 50 },
+      before: string,
+    }),
   },
   {
     name: 'read_team_roster',
@@ -558,6 +573,9 @@ export function createOrchestrationServer({ control, token, capabilities }) {
           break;
         case 'read_team_task':
           response = control.readTeamTask(input, principal);
+          break;
+        case 'list_team_collaborations':
+          response = control.listTeamCollaborations(input, principal);
           break;
         case 'read_team_roster':
           response = control.readTeamRoster(principal);

@@ -30,7 +30,7 @@ Goal-Guided Brain 是一个让个人通过项目经理使用多支智能体团�
 
 后端同时提供 `/api/teams`（兼容 `/api/spaces`）接口：`POST /api/teams` 创建团队，`PUT /api/teams/:id` 更新配置，`GET /api/teams/:id/collaborators` 查看允许协作的团队，`POST /api/teams/:id/collaborate` 将请求投递给目标团队项目经理。跨团队请求受源团队 `collaboration.enabled` 和 `allowedTeamIds` 限制；开启协作且白名单为空时会包含之后新建的活动团队，并在目标团队生成独立任务组。委派消息会在源团队和目标团队各保留一条关联记录，双方可以通过同一个 `taskId` 查看进度；目标团队完成、失败、停止或中断时，结果摘要会回写到源团队并将委派标记为已处理。
 
-运行中的智能体还可以通过编排 MCP 的 `list_teams`、`delegate_to_team` 和 `read_team_task` 发现、委派和读取获准的团队任务。委派任务使用目标团队自己的项目经理、模型、能力、预算和工作目录；来源团队不能直接读取目标团队的私有消息。
+运行中的智能体还可以通过编排 MCP 的 `list_teams`、`delegate_to_team`、`list_team_collaborations` 和 `read_team_task` 发现、委派、按方向/状态分页跟进本团队协作，并读取自己实际委派且仍获准的任务。委派任务使用目标团队自己的项目经理、模型、能力、预算和工作目录；来源团队不能读取目标团队其他工作或内部消息。智能体能看到所有者收尾状态、失效结论和可否继续追问，但不能代替所有者关闭、重新打开或验收。权限关闭后本团队已收到的回传仍作为历史保留，不授予继续读取对方新结果的权限。
 
 ## 模型选择
 

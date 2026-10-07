@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 235/235, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 240/240, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Cross-platform CI matrix runs lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
@@ -46,6 +46,44 @@ They are not sign-off for the separate real deployment gates below.
 - [ ] Real cloud continues scheduled work while the owner's computer is offline.
 
 ## Local Release Record
+
+Agent collaboration visibility and scoped reading on 2026-10-07: the new
+`list_team_collaborations` MCP tool lists the current confirmed team's own
+incoming/outgoing requests with open/closed/stale/unlinked filters, bounded
+pages, counts, shared reply excerpts and advisory next actions. Cursors are
+bound to team/direction/status; equal timestamps use the same code-point ID
+ordering as cursor comparisons. Pages reflect current data, not frozen snapshots.
+Owner-only closure flags do not grant write authority. Project-manager skill
+instructions now cover closed/stale/unlinked handling and safe follow-up.
+
+`read_team_task` previously checked only collaboration access to the target
+team, allowing inspection of unrelated target work. It now verifies the actual
+source-owned handoff, paired messages and task metadata, and rechecks the live
+lease. Its message output contains only the original handoff and matched shared
+replies, excluding target-private notes. The list retains locally held request
+and reply history after peer access is revoked, but disables detailed reads and
+follow-up. New, unshared target output is absent from those historical excerpts.
+
+Five authenticated loopback MCP cases cover foreign/private work rejection,
+incoming/outgoing visibility, filter-first pagination with equal timestamps and
+mixed-case/non-ASCII IDs, cursor scope, owner closure and result-change freshness,
+read-only behavior, revoked access, unlinked records, source-team state and lease
+revocation. The focused suite passed 12/12; full backend regression passed
+240/240, including a repeat after strengthening cursor ordering. No paid models
+or production delegation was used. Evidence is retained in
+`/tmp/ggb-collaboration-read-evidence` for this session.
+Lint, typecheck and the 281-file source-size gate passed. The new collaboration
+reader keeps `server/control.mjs` at 883 lines; that legacy module remains in the
+formatting backlog. All ten other changed files pass targeted formatting.
+Formatting the project-manager skill reduced the tracked-file backlog to 53.
+Full desktop/mobile browser regression passed 226/226 in 9.1m. The five new
+authenticated MCP cases also passed after replacing a default-sort expectation
+with an explicit mixed-case/Unicode expected order to satisfy the lint rule.
+Production build passed. The local service restarted after verifying zero active
+tasks/jobs. UI, API health, proxied state and both collaborator-list endpoints
+returned 200. Existing data remains 11 tasks, 10 jobs and two unconfirmed spaces;
+agent reading was verified with isolated authenticated fixtures, not production
+delegations. No remote push or deployment was performed.
 
 Owner collaboration closure on 2026-10-07: source-team history now exposes
 processing controls and shared closure status. Completing a request requires
@@ -512,7 +550,7 @@ format checks for changed code, file-size checks and production build passed.
 The subsequent full 126-run browser regression includes this mobile refinement,
 the ordinary attention-resolution workflow and cross-team overview recovery.
 
-Latest full local regression on 2026-10-07: `npm test` 235/235 and Playwright
+Latest full local regression on 2026-10-07: `npm test` 240/240 and Playwright
 desktop/mobile baseline 226/226 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines`, `npm run build` and
 `git diff --check` also passed. The model metrics regression includes task-type
@@ -540,7 +578,7 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 235 passing tests. The latest
+The current deterministic suite contains 240 passing tests. The latest
 full Playwright baseline passed 226 desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,

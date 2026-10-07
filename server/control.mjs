@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { delegateToTeam } from './control/team-delegation.mjs';
+import { readTeamTask, listTeamCollaborations } from './control/team-collaboration-read.mjs';
 import { hashToken } from './auth.mjs';
 import { SKILLS } from './roles.mjs';
 import { assessCapabilityRisk, capabilityFingerprint } from './capabilities.mjs';
@@ -755,39 +756,11 @@ export class ControlPlane {
   delegateToTeam(body, principal) {
     return delegateToTeam(this, body, principal);
   }
+  listTeamCollaborations(body, principal) {
+    return listTeamCollaborations(this, body, principal);
+  }
   readTeamTask(body, principal) {
-    const { team: source } = this.currentTeam(principal);
-    const taskId = required(body.taskId, '目标任务', 150);
-    const task = this.store.task(taskId);
-    if (!task) throw fail('目标任务不存在。', 404);
-    const meta = teamMeta(this.store, taskId);
-    const target = findTeam(this.store, meta.teamId || meta.spaceId);
-    if (!target || target.status !== 'active' || target.id === source.id || !this.collaborationAllowed(source, target))
-      throw fail('当前团队无权读取该任务。', 403);
-    const job = meta.jobId ? this.records.get('jobs', meta.jobId) : null;
-    const delivery = this.store.taskDelivery(task);
-    return {
-      taskId: task.id,
-      jobId: meta.jobId || null,
-      teamId: target.id,
-      status: task.status,
-      title: task.title,
-      result: String(task.result || '').slice(0, 50000),
-      error: String(task.error || '').slice(0, 10000),
-      jobStatus: job?.status || null,
-      delivery: {
-        deliveryStatus: delivery.deliveryStatus,
-        verificationStatus: delivery.acceptanceStatus,
-        acceptanceDecision: delivery.acceptanceDecision,
-        acceptanceNote: delivery.acceptanceNote,
-        currentRequirementVersion: delivery.currentRequirementVersion,
-        verificationRequirementVersion: delivery.verificationRequirementVersion,
-        hasCurrentVerificationEvidence: delivery.hasCurrentVerificationEvidence,
-        latestVerificationId: delivery.latestVerificationId,
-        latestVerificationAt: delivery.latestVerificationAt,
-      },
-      messages: this.store.teamMessages(target.id).filter(message => message.taskId === task.id).slice(-20),
-    };
+    return readTeamTask(this, body, principal);
   }
   sendMessage(body, principal) {
     this.ensureCurrent(principal);
