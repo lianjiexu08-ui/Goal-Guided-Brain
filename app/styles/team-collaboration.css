@@ -504,3 +504,11 @@
 .team-timeline > output {
   display: block;
 }
+
+.team-collaboration-draft-status {
+  display: block;
+  margin-top: 12px;
+  color: #607b77;
+  font-size: 12px;
+  line-height: 1.6;
+}

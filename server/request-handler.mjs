@@ -1,3 +1,4 @@
+import { createTeamHandoff } from './team-handoff.mjs';
 import fs from 'node:fs';
 import { teamTimelinePage } from './http-team-timeline.mjs';
 import { createStateResponder } from './http-state.mjs';
@@ -507,132 +508,14 @@ export function createRequestHandler({
             return send(200, collaborators);
           }
           if (req.method === 'POST' && parts[3] === 'collaborate') {
-            if (space.status !== 'active')
-              throw new Error('团队空间当前不可发起协作。');
-            if (space.recruitment?.phase !== 'confirmed')
-              throw Object.assign(new Error('当前团队尚未完成招募。'), {
-                status: 409,
-              });
-            if (space.collaboration?.enabled === false)
-              throw Object.assign(new Error('当前团队未启用跨团队协作。'), {
-                status: 409,
-              });
-            const targetId = required(
-              body.targetTeamId || body.teamId,
-              '目标团队',
-            );
-            const target = store
-              .teamSpaces()
-              .find(
-                (candidate) =>
-                  candidate.id === targetId || candidate.chatId === targetId,
-              );
-            if (!target || target.status !== 'active')
-              throw new Error('目标团队不存在或已暂停。');
-            if (target.recruitment.phase !== 'confirmed')
-              throw Object.assign(new Error('目标团队尚未完成招募。'), {
-                status: 409,
-              });
-            if (target.id === space.id)
-              throw new Error('目标团队不能是当前团队。');
-            const allowed = Array.isArray(space.collaboration?.allowedTeamIds)
-              ? space.collaboration.allowedTeamIds
-              : [];
-            if (
-              allowed.length &&
-              !allowed.includes(target.id) &&
-              !allowed.includes(target.chatId)
-            )
-              throw new Error('当前团队未允许与目标团队协作。');
-            const prompt = required(body.content, '协作目标', 32000);
-            const acceptance =
-              typeof body.acceptance === 'string' ? body.acceptance.trim() : '';
-            if (acceptance.length > 20000)
-              throw new Error('验收标准不能超过 20000 个字符。');
-            const content = acceptance
-              ? `${prompt}\n\n验收标准：\n${acceptance}`
-              : prompt;
-            if (content.length > 32000)
-              throw new Error('协作目标和验收标准合计不能超过 32000 个字符。');
-            const clientMessageId = required(
-              body.clientMessageId || randomUUID(),
-              '消息 ID',
-              200,
-            );
-            const handoffId = `handoff:${space.id}:${target.id}:${clientMessageId}`;
-            const previous = store.records.get('space-messages', handoffId);
-            if (previous && previous.status !== 'blocked') {
-              const sourceMessageId = `${handoffId}:source`;
-              if (!store.records.get('space-messages', sourceMessageId)) {
-                store.saveTeamMessage(
-                  {
-                    ...previous,
-                    spaceId: space.id,
-                    teamId: space.id,
-                    relatedMessageId: previous.id,
-                    taskId: previous.taskId,
-                  },
-                  sourceMessageId,
-                );
-              }
-              return send(200, {
-                ...previous,
-                sourceTeamId: space.id,
-                targetTeamId: target.id,
-                sourceMessageId,
-              });
-            }
-            const targetJobs = store.records
-              .list('jobs')
-              .filter((job) => (job.teamId || job.spaceId) === target.id);
-            if (targetJobs.length >= (target.autonomy?.maxJobs || 32))
-              throw new Error('目标团队已达到任务上限。');
-            const message = store.saveTeamMessage(
-              {
-                spaceId: target.id,
-                teamId: target.id,
-                clientMessageId,
-                kind: 'handoff',
-                senderType: 'team',
-                senderId: space.id,
-                fromTeamId: space.id,
-                toTeamId: target.id,
-                content,
-                status: 'sent',
-              },
-              handoffId,
-            );
-            const task = newTask({
-              role: target.pmRoleId,
-              prompt: `团队「${space.name}」向本团队发起协作请求。请阅读请求并自主判断是否接受、拆解和安排执行。\n\n协作目标：\n${content}`,
-              workspace: target.workspace,
-              teamId: target.id,
-              spaceId: target.id,
-              sourceMessageId: message.id,
-              acceptance,
+            const result = createTeamHandoff({
+              store,
+              space,
+              body,
+              newTask,
+              required,
             });
-            const linked = store.saveTeamMessage(
-              { ...message, taskId: task.id },
-              message.id,
-            );
-            const sourceLinked = store.saveTeamMessage(
-              {
-                ...message,
-                spaceId: space.id,
-                teamId: space.id,
-                relatedMessageId: message.id,
-                taskId: task.id,
-              },
-              `${handoffId}:source`,
-            );
-            return send(201, {
-              ...linked,
-              taskId: task.id,
-              sessionId: task.sessionId,
-              sourceTeamId: space.id,
-              targetTeamId: target.id,
-              sourceMessageId: sourceLinked.id,
-            });
+            return send(result.status, result.body);
           }
           if (req.method === 'POST' && parts[3] === 'messages') {
             if (space.status !== 'active')

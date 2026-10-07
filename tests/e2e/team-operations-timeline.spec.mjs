@@ -265,7 +265,10 @@ test.describe('团队运营与协作：时间线与协作', () => {
     await expect(console).toBeVisible();
     await expect(
       console.getByRole('combobox', { name: '选择协作目标团队', exact: true }),
-    ).toHaveValue(teams.target.id);
+    ).toHaveValue('');
+    await console
+      .getByRole('combobox', { name: '选择协作目标团队', exact: true })
+      .selectOption(teams.target.id);
     await expect(
       console
         .locator('.team-collaboration-target')

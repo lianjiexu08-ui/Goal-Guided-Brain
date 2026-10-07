@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowRight, Check, Users, Workflow } from 'lucide-react';
 import { api } from '../workbench-api';
+import { useCollaborationDraft } from './use-collaboration-draft';
 import { useTeamTimeline } from './use-team-timeline';
 
 type TeamMessage = {
@@ -94,10 +95,20 @@ export function TeamCollaborationConsole({
   revision?: number;
 }) {
   const [collaborators, setCollaborators] = useState<TeamCollaborator[]>([]);
-  const [targetTeamId, setTargetTeamId] = useState('');
-  const [content, setContent] = useState('');
-  const [acceptance, setAcceptance] = useState('');
-  const [reviewing, setReviewing] = useState(false);
+  const draftStore = useCollaborationDraft(team.id);
+  const { targetTeamId, content, acceptance, clientMessageId } =
+    draftStore.draft;
+  const inFlight = useRef(false);
+  const [loadError, setLoadError] = useState('');
+  const loadRequest = useRef<{
+    sequence: number;
+    controller: AbortController | null;
+  }>({ sequence: 0, controller: null });
+  const fingerprint = JSON.stringify([targetTeamId, content, acceptance]);
+  const [reviewed, setReviewed] = useState('');
+  const reviewing = reviewed === fingerprint;
+  const setReviewing = (value: boolean) =>
+    setReviewed(value ? fingerprint : '');
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -117,41 +128,52 @@ export function TeamCollaborationConsole({
   const taskById = new Map(tasks.map((item) => [item.id, item]));
 
   const loadCollaborators = useCallback(async () => {
+    const request = loadRequest.current;
+    const sequence = ++request.sequence;
+    request.controller?.abort();
     if (!confirmed || !enabled) {
       setCollaborators([]);
-      setTargetTeamId('');
       return;
     }
+    const controller = new AbortController();
+    request.controller = controller;
+    const timeout = window.setTimeout(() => controller.abort(), 15_000);
     setLoading(true);
-    setError('');
+    setLoadError('');
     try {
       const result = await api<TeamCollaborator[]>(
         `teams/${team.id}/collaborators`,
+        'GET',
+        undefined,
+        controller.signal,
       );
+      if (request.sequence !== sequence) return;
+      if (!Array.isArray(result))
+        throw new Error('目标团队列表返回不完整，请重试。');
       setCollaborators(Array.isArray(result) ? result : []);
     } catch (rawError) {
+      if (request.sequence !== sequence) return;
       setCollaborators([]);
-      setError((rawError as Error).message);
+      setLoadError(
+        controller.signal.aborted
+          ? '读取目标团队超时，请重试。'
+          : (rawError as Error).message,
+      );
     } finally {
-      setLoading(false);
+      window.clearTimeout(timeout);
+      if (request.sequence === sequence) setLoading(false);
     }
   }, [confirmed, enabled, team.id]);
 
   useEffect(() => {
+    const request = loadRequest.current;
     const timer = window.setTimeout(() => void loadCollaborators(), 0);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      request.sequence++;
+      request.controller?.abort();
+    };
   }, [loadCollaborators]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setTargetTeamId((current) => {
-        if (current && collaborators.some((item) => item.id === current))
-          return current;
-        return collaborators[0]?.id || '';
-      });
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [collaborators]);
 
   const messages: TeamMessage[] = (history.page?.items || [])
     .map((item) => ({
@@ -175,6 +197,7 @@ export function TeamCollaborationConsole({
 
   async function submitCollaboration(event: { preventDefault: () => void }) {
     event.preventDefault();
+    if (inFlight.current || !draftStore.ready) return;
     const trimmed = content.trim();
     if (!targetTeamId) {
       setError('请先选择目标团队。');
@@ -184,39 +207,64 @@ export function TeamCollaborationConsole({
       setError('请说明希望目标团队完成的协作目标。');
       return;
     }
-    if (!reviewing) {
+    if (!reviewing && !clientMessageId) {
       setError('');
       setReviewing(true);
       return;
     }
+    inFlight.current = true;
     setSubmitting(true);
     setError('');
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15_000);
+    let pendingId: string | undefined;
     try {
-      const clientMessageId =
-        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-          ? crypto.randomUUID()
-          : `handoff-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const pending = draftStore.confirm();
+      pendingId = pending.clientMessageId;
       const created = await api<
         TeamMessage & {
           sourceTeamId?: string;
           targetTeamId?: string;
           sessionId?: string;
         }
-      >(`teams/${team.id}/collaborate`, 'POST', {
-        targetTeamId,
-        content: trimmed,
-        ...(acceptance.trim() ? { acceptance: acceptance.trim() } : {}),
-        clientMessageId,
-      });
-      setContent('');
-      setAcceptance('');
+      >(
+        `teams/${team.id}/collaborate`,
+        'POST',
+        {
+          targetTeamId: pending.targetTeamId,
+          content: pending.content.trim(),
+          ...(pending.acceptance.trim()
+            ? { acceptance: pending.acceptance.trim() }
+            : {}),
+          clientMessageId: pending.clientMessageId,
+        },
+        controller.signal,
+      );
+      if (!created?.taskId)
+        throw new Error('未收到完整的任务回执，请重试确认送达。');
+      draftStore.complete(pending.clientMessageId!);
       setReviewing(false);
       setLastCreated(created);
       history.refresh();
-      await onChanged?.();
+      try {
+        await onChanged?.();
+      } catch {
+        setError('协作已送达，但工作台刷新失败，请稍后刷新查看进展。');
+      }
     } catch (rawError) {
-      setError((rawError as Error).message);
+      setError(
+        controller.signal.aborted
+          ? '确认送达超时，请重试确认。'
+          : (rawError as Error).message,
+      );
+      const status = (rawError as Error & { status?: number }).status;
+      if (status && status >= 400 && status < 500) {
+        if (pendingId) draftStore.release(pendingId);
+        setReviewing(false);
+      }
     } finally {
+      window.clearTimeout(timeout);
+      inFlight.current = false;
       setSubmitting(false);
     }
   }
@@ -262,13 +310,25 @@ export function TeamCollaborationConsole({
               aria-label="选择协作目标团队"
               value={targetTeamId}
               onChange={(event) => {
-                setTargetTeamId(event.target.value);
+                draftStore.update({ targetTeamId: event.target.value });
                 setReviewing(false);
               }}
-              disabled={loading || submitting || collaborators.length === 0}
+              disabled={
+                !draftStore.ready ||
+                loading ||
+                submitting ||
+                Boolean(clientMessageId) ||
+                collaborators.length === 0
+              }
             >
-              {!collaborators.length && (
-                <option value="">暂无可协作团队</option>
+              <option value="">
+                {loading ? '正在读取目标团队…' : '请选择目标团队'}
+              </option>
+              {targetTeamId && !target && (
+                <option value={targetTeamId}>
+                  {teamById.get(targetTeamId)?.name || '原目标团队'}
+                  （当前不可选）
+                </option>
               )}
               {collaborators.map((item) => (
                 <option key={item.id} value={item.id}>
@@ -301,11 +361,16 @@ export function TeamCollaborationConsole({
             <textarea
               aria-label="协作目标"
               value={content}
-              onChange={(event) => setContent(event.target.value)}
+              onChange={(event) => {
+                draftStore.update({ content: event.target.value });
+                setReviewing(false);
+              }}
               placeholder="例如：请检查本次发布的监控、回滚和故障响应清单，并回传可执行建议。"
               rows={3}
               maxLength={32000}
-              disabled={submitting || collaborators.length === 0}
+              disabled={
+                !draftStore.ready || submitting || Boolean(clientMessageId)
+              }
             />
           </label>
           <label className="team-collaboration-acceptance">
@@ -314,16 +379,18 @@ export function TeamCollaborationConsole({
               aria-label="协作验收标准"
               value={acceptance}
               onChange={(event) => {
-                setAcceptance(event.target.value);
+                draftStore.update({ acceptance: event.target.value });
                 setReviewing(false);
               }}
               placeholder="例如：回传检查清单、风险等级和可执行的回滚步骤。"
               rows={2}
               maxLength={20000}
-              disabled={submitting || collaborators.length === 0}
+              disabled={
+                !draftStore.ready || submitting || Boolean(clientMessageId)
+              }
             />
           </label>
-          {reviewing && target && (
+          {reviewing && !clientMessageId && target && (
             <section
               className="team-collaboration-review"
               aria-label="协作发送前审阅"
@@ -355,7 +422,7 @@ export function TeamCollaborationConsole({
               目标团队会在自己的任务队列中看到这条请求；发送前可以审阅输入和验收标准。
             </small>
             <div className="team-collaboration-form-actions">
-              {reviewing && (
+              {reviewing && !clientMessageId && (
                 <button
                   type="button"
                   className="secondary-button"
@@ -368,20 +435,54 @@ export function TeamCollaborationConsole({
               <button
                 className="primary-button"
                 type="submit"
-                disabled={submitting || loading || collaborators.length === 0}
+                disabled={
+                  !draftStore.ready ||
+                  submitting ||
+                  (!clientMessageId && (loading || !target))
+                }
               >
                 {submitting
                   ? '发送中…'
-                  : reviewing
-                    ? '确认并发起协作'
-                    : '预览并发起协作'}{' '}
+                  : clientMessageId
+                    ? '重试确认送达'
+                    : reviewing
+                      ? '确认并发起协作'
+                      : '预览并发起协作'}{' '}
                 <ArrowRight size={14} />
               </button>
             </div>
           </div>
         </form>
       )}
-      {error && <div className="team-collaboration-error">{error}</div>}
+      {loadError && (
+        <div className="overview-load-error" role="alert">
+          <span>{loadError}</span>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={loading}
+            onClick={() => void loadCollaborators()}
+          >
+            重新读取目标团队
+          </button>
+        </div>
+      )}
+      {error && (
+        <div className="team-collaboration-error" role="alert">
+          {error}
+        </div>
+      )}
+      {clientMessageId && !submitting && (
+        <output className="team-collaboration-error">
+          尚未确认请求是否送达。请重试确认，原目标和内容已锁定，使用同一请求不会重复派发。
+        </output>
+      )}
+      <output className="team-collaboration-draft-status">
+        {draftStore.storageError ||
+          (!draftStore.ready
+            ? '正在恢复协作草稿…'
+            : '协作草稿保存在当前浏览器，按来源团队分别恢复。')}
+      </output>
       {lastCreated && (
         <output className="team-collaboration-success">
           <Check size={15} />
