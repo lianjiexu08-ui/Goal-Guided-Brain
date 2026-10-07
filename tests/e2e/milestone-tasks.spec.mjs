@@ -129,7 +129,7 @@ test('里程碑关联本团队任务并区分手动完成与实际验收', async
   await plan
     .getByRole('button', { name: '发布可验收版本：进行中', exact: true })
     .click();
-  await expect(plan).toContainText('1/1 项手动标记完成');
+  await expect(plan).toContainText('1/1 项阶段完成');
   await expect(links).toContainText('1/2 项任务已验收');
   await page.reload();
   await expect(links).toContainText('1/2 项任务已验收');

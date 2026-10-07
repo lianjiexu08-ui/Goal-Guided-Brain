@@ -37,6 +37,12 @@ type TeamPlanData = {
   budgetTokens?: number | null;
   milestones: Milestone[];
   revision: number;
+  lastAgentUpdate?: {
+    note: string;
+    at: string;
+    milestoneTitle: string;
+    planRevision: number;
+  };
 };
 
 const statusLabels: Record<MilestoneStatus, string> = {
@@ -278,10 +284,36 @@ export function TeamPlan({
         <div className="team-plan-progress">
           <strong>{progress}%</strong>
           <span>
-            {completedCount}/{plan?.milestones.length || 0} 项手动标记完成
+            {completedCount}/{plan?.milestones.length || 0} 项阶段完成
           </span>
         </div>
       </div>
+      {plan && (teamSpace.planRevision || 0) > plan.revision && (
+        <output className="team-plan-update">
+          <span>团队计划有新版本。当前输入会保留，请加载后核对再保存。</span>
+          <button
+            type="button"
+            className="text-button"
+            disabled={saving || loading}
+            onClick={() => {
+              setLoading(true);
+              setReload((value) => value + 1);
+            }}
+          >
+            加载最新计划
+          </button>
+        </output>
+      )}
+      {plan?.lastAgentUpdate && (
+        <div className="team-plan-agent-note" aria-label="最近项目经理更新">
+          <strong>项目经理更新 · {plan.lastAgentUpdate.milestoneTitle}</strong>
+          <p>{plan.lastAgentUpdate.note}</p>
+          <small>
+            计划版本 {plan.lastAgentUpdate.planRevision} ·{' '}
+            {new Date(plan.lastAgentUpdate.at).toLocaleString('zh-CN')}
+          </small>
+        </div>
+      )}
       <div className="team-plan-guardrails">
         {editingControls ? (
           <div className="team-plan-controls-form">
@@ -380,7 +412,7 @@ export function TeamPlan({
         <span style={{ width: `${progress}%` }} />
       </div>
       <p className="team-plan-evidence-note">
-        阶段状态由你确认；关联任务的交付验收单独追踪。
+        阶段状态由你或项目经理维护；任务验收以当前版本证据和你的决定为准。
       </p>
       {error && (
         <div className="team-plan-error" role="alert">

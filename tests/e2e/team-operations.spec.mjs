@@ -76,6 +76,14 @@ test.describe('团队运营与协作回归', () => {
 
     page.once('dialog', (dialog) => dialog.accept());
     await page.getByRole('button', { name: '归档团队', exact: true }).click();
+    await expect(
+      page.getByText(
+        `团队“${teams.development.name}”已归档，历史记录仍可恢复。`,
+        {
+          exact: true,
+        },
+      ),
+    ).toBeVisible();
     await openMobileSidebar(page);
     await expect(
       page.getByRole('button', {
@@ -653,7 +661,6 @@ test.describe('团队运营与协作回归', () => {
       page.getByText(/最近一次连通性检查失败：接口返回 HTTP 503/),
     ).toBeVisible();
   });
-
 
   test('知识库按当前团队隔离团队专属知识', async ({ page }) => {
     const teams = seedTeamKnowledge();

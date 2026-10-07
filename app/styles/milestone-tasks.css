@@ -169,3 +169,41 @@
     min-height: 44px;
   }
 }
+.team-plan-update {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px;
+  margin: 12px 0;
+  border: 1px solid #d5e6df;
+  border-radius: 10px;
+  color: #41695b;
+  background: #f2f8f5;
+  font-size: 13px;
+}
+.team-plan-update .text-button {
+  min-height: 44px;
+}
+.team-plan-agent-note {
+  padding: 12px;
+  margin: 12px 0;
+  border-left: 3px solid #83b4a5;
+  border-radius: 6px;
+  background: #f7faf8;
+  overflow-wrap: anywhere;
+}
+.team-plan-agent-note strong {
+  color: #42675a;
+  font-size: 13px;
+}
+.team-plan-agent-note p {
+  margin: 5px 0;
+  color: #637b71;
+  font-size: 13px;
+}
+.team-plan-agent-note small {
+  color: #81928a;
+  font-size: 11px;
+}

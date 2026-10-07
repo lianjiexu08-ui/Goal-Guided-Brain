@@ -279,7 +279,7 @@ export class Store {
       budgetTokens: saved.budgetTokens ?? null,
     };
   }
-  saveTeamPlan(spaceId, input = {}) {
+  saveTeamPlan(spaceId, input = {}, { agentUpdate } = {}) {
     const space = this.teamSpace(spaceId);
     if (!space) throw new Error('团队空间不存在。');
     if (space.status === 'archived') throw new Error('归档团队不能编辑计划。');
@@ -350,6 +350,7 @@ export class Store {
       : undefined;
     const saved = this.records.save('team-plans', {
       ...existing,
+      ...(agentUpdate ? { lastAgentUpdate: agentUpdate } : {}),
       id: spaceId,
       teamId: spaceId,
       version: 1,

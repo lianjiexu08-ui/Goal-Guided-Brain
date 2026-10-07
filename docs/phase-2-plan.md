@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 196/196, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 202/202, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Cross-platform CI matrix runs lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
@@ -46,6 +46,23 @@ They are not sign-off for the separate real deployment gates below.
 - [ ] Real cloud continues scheduled work while the owner's computer is offline.
 
 ## Local Release Record
+
+Agent plan maintenance on 2026-10-07: confirmed team members can read a live
+plan through MCP; only the active team's project manager can upsert a milestone
+with the latest revision and a reason. Completion requires nonempty task links
+with current-version owner acceptance. Protected settings, foreign links,
+paused plans and revoked actors are rejected, and failed writes roll back both
+plan and audit. Runtime context contains a bounded starting plan snapshot and
+now correctly scopes checkpoint/board records even without a job ID. The UI
+prompts to load new plan revisions, preserves edits and shows the last project
+manager update. The focused desktop/mobile suite passed 10/10 with a real HTTP
+MCP client, owner acceptance through the execution inspector and persisted UI
+state. This is deterministic orchestration evidence, not a real-model quality
+claim. Mobile navigation regression helpers now wait for the closing drawer
+state instead of adding 350 ms to every switch, and archive tests wait for the
+confirmed result before opening the drawer. The focused navigation suite passed
+10/10 without increasing timeouts or reducing the 20-switch assertions. The
+subsequent full regression passed 202/202 backend tests and 134/134 browser runs.
 
 Milestone-to-delivery workflow on 2026-10-07: milestones now link to up to 40
 existing tasks in their own team. The browser separates manual phase progress
@@ -79,8 +96,8 @@ format checks for changed code, file-size checks and production build passed.
 The subsequent full 126-run browser regression includes this mobile refinement,
 the ordinary attention-resolution workflow and cross-team overview recovery.
 
-Latest full local regression on 2026-10-07: `npm test` 196/196 and Playwright
-desktop/mobile baseline 132/132 passed on macOS. `npm run lint`,
+Latest full local regression on 2026-10-07: `npm test` 202/202 and Playwright
+desktop/mobile baseline 134/134 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines`, `npm run build` and
 `git diff --check` also passed. The model metrics regression includes task-type
 runtime comparisons, alias filtering, delayed response isolation, retry and
@@ -107,8 +124,8 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 196 passing tests. The latest
-full Playwright baseline passed 132 desktop/mobile runs covering team
+The current deterministic suite contains 202 passing tests. The latest
+full Playwright baseline passed 134 desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
 binary drag-and-drop attachments, conversation scroll recovery, evidence quality summaries, Team Charter confirmation and high-risk

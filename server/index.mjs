@@ -502,6 +502,7 @@ export function createWorkbench({
     knowledge: store.knowledge(),
     spaces: store.teamSpaces().map((space) => ({
       ...space,
+      planRevision: store.records.get('team-plans', space.id)?.revision || 0,
       autonomyUsage: teamUsageSummary(space),
       messages: store.teamMessages(space.id).map((message) => ({
         ...message,

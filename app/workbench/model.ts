@@ -204,6 +204,7 @@ export type TeamRecruitment = {
 };
 export type TeamSpace = {
   id: string;
+  planRevision?: number;
   name: string;
   goal: string;
   workspace: string;

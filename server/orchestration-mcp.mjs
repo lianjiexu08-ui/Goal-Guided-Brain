@@ -5,6 +5,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { bearer } from './auth.mjs';
 import { SKILLS } from './roles.mjs';
 import { assessCapabilityRisk } from './capabilities.mjs';
+import { readTeamPlan, upsertTeamMilestone } from './team-plan-progress.mjs';
 
 const string = { type: 'string' };
 const objectSchema = (properties = {}, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
@@ -57,6 +58,8 @@ const tools = [
   { name: 'delegate_to_team', description: '把明确的协作目标委派给另一个长期团队的项目经理；目标团队使用自己的模型、能力、预算和权限。', inputSchema: objectSchema({ teamId: string, prompt: string, acceptance: string, idempotencyKey: string }, ['teamId', 'prompt', 'idempotencyKey']) },
   { name: 'read_team_task', description: '读取已获准协作团队中的一个委派任务状态和结果。', inputSchema: objectSchema({ taskId: string }, ['taskId']) },
   { name: 'read_team_roster', description: '读取当前已确认团队的成员实例、职责和可用角色模板；招募阶段只返回模板和当前方案。', inputSchema: objectSchema() },
+  { name: 'read_team_plan', description: '读取当前已确认团队的目标、里程碑、关联任务当前版本验收证据和最近更新。候选任务分页返回；不能读取其他团队的计划。', inputSchema: objectSchema({ before: string, limit: { type: 'integer', minimum: 1, maximum: 100 } }) },
+  { name: 'upsert_team_milestone', description: '仅当前团队项目经理可创建或更新一个里程碑，必须提供最新计划 revision 和更新原因。不能修改团队目标、预算或权限；只有关联任务全部通过当前版本验收才能标记 completed。暂停的计划不可修改。', inputSchema: objectSchema({ id: string, expectedRevision: { type: 'integer', minimum: 0 }, title: string, description: string, status: { type: 'string', enum: ['planned', 'active', 'blocked', 'completed'] }, taskIds: { type: 'array', maxItems: 40, items: string }, note: string }, ['id', 'expectedRevision', 'note']) },
   { name: 'propose_team', description: '在多轮澄清完成后保存待用户确认的 Team Charter。用 skillIds、capabilityIds、providerIds 和 toolAccess 写入实际权限，skills/tools 仅作展示说明。只保存招募草案，不创建成员、不分派任务；最终确认必须由用户在团队招募界面完成。', inputSchema: objectSchema({
     teamName: string, goal: string, purpose: string,
     members: { type: 'array', minItems: 1, maxItems: 8, items: objectSchema({
@@ -243,6 +246,12 @@ export function createOrchestrationServer({ control, token, capabilities }) {
           break;
         case 'read_team_roster':
           response = control.readTeamRoster(principal);
+          break;
+        case 'read_team_plan':
+          response = readTeamPlan(control, input, principal);
+          break;
+        case 'upsert_team_milestone':
+          response = upsertTeamMilestone(control, input, principal);
           break;
         case 'propose_team':
           response = control.proposeTeam(input, principal);

@@ -12,27 +12,15 @@ export function sidebarLocator(page) {
 export async function openMobileSidebar(page) {
   const sidebar = sidebarLocator(page);
   if ((page.viewportSize()?.width || 1024) < 768) {
-    // A previous navigation closes the Sheet with a short exit animation. Let
-    // that portal settle before deciding whether a fresh open is required.
-    await page.waitForTimeout(350);
-    const visible = await sidebar.isVisible().catch(() => false);
-    const hasNavigation =
-      visible &&
-      (await sidebar
-        .locator('button')
-        .filter({ hasText: '团队招募' })
-        .count()
-        .catch(() => 0));
-    if (hasNavigation) return sidebar;
-    if (visible)
-      await expect(sidebar)
-        .toBeHidden({ timeout: 1_000 })
-        .catch(() => {});
+    // Wait for the actual closing portal instead of adding a delay to every
+    // navigation. A visible exiting Sheet must not be mistaken for an open one.
+    await expect(sidebar.and(page.locator('[data-closed]'))).toHaveCount(0);
+    if (await sidebar.isVisible()) return sidebar;
     const trigger = page
       .getByRole('button', { name: 'Toggle Sidebar', exact: true })
       .first();
     await expect(trigger).toBeVisible();
-    await trigger.click({ force: true });
+    await trigger.click();
     await expect(sidebar).toBeVisible();
     await expect(
       sidebar.locator('button').filter({ hasText: '团队招募' }).first(),
@@ -51,7 +39,7 @@ export async function clickNavigation(page, label) {
     .filter({ hasText: label })
     .first();
   await expect(navigation).toBeVisible();
-  await navigation.click({ force: true });
+  await navigation.click();
 }
 
 export async function recruitmentPage(page) {
