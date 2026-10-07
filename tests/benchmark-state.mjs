@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
+import { applyStateDelta } from '../lib/state-delta.mjs';
+import assert from 'node:assert/strict';
 import { createWorkbench } from '../server/index.mjs';
 import { seedStateLoad } from './fixtures/state-load.mjs';
 
@@ -60,6 +62,29 @@ try {
     conditionalBodyBytes += (await unchanged.arrayBuffer()).byteLength;
     conditionalTimes.push(performance.now() - conditionalStart);
   }
+  const url = `http://127.0.0.1:${app.server.address().port}/api/state`;
+  const initial = await fetch(url);
+  let snapshot = await initial.json();
+  let etag = initial.headers.get('etag');
+  const changedTimes = [];
+  const changedBytes = [];
+  for (let i = 0; i < 5; i++) {
+    app.store.updateTask(snapshot.tasks[0].id, {
+      result: `交付进度 ${i}：` + '已完成实现并提供验证记录。'.repeat(30),
+    });
+    const start = performance.now();
+    const response = await fetch(url, {
+      headers: { 'If-None-Match': etag, 'X-GGB-State-Delta': '1' },
+    });
+    const text = await response.text();
+    if (response.headers.get('x-ggb-state-format') !== 'delta-v1')
+      throw new Error('Expected a delta for this small change');
+    snapshot = applyStateDelta(snapshot, JSON.parse(text), etag);
+    changedTimes.push(performance.now() - start);
+    changedBytes.push(Buffer.byteLength(text));
+    etag = response.headers.get('etag');
+    assert.deepEqual(snapshot, await (await fetch(url)).json());
+  }
   const median = (values) =>
     Math.round(
       values.sort((a, b) => a - b)[Math.floor(values.length / 2)] * 100,
@@ -75,6 +100,8 @@ try {
         httpMedianMs: median(httpTimes),
         conditionalHttpMedianMs: median(conditionalTimes),
         conditionalBodyBytes,
+        changedStateHttpMedianMs: median(changedTimes),
+        changedStateBodyMedianBytes: median(changedBytes),
         collectionReads: scans,
       },
       null,

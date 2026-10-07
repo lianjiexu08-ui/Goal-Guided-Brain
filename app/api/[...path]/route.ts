@@ -32,6 +32,7 @@ async function forward(request: Request) {
     'mcp-protocol-version',
     'last-event-id',
     'if-none-match',
+    'x-ggb-state-delta',
   ]) {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
@@ -53,6 +54,8 @@ async function forward(request: Request) {
     'content-disposition',
     'mcp-session-id',
     'etag',
+    'x-ggb-state-format',
+    'vary',
   ]) {
     const value = upstream.headers.get(name);
     if (value) responseHeaders.set(name, value);

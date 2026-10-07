@@ -1,9 +1,9 @@
 import fs from 'node:fs';
-import { sendState } from './http-state.mjs';
+import { createStateResponder } from './http-state.mjs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { c as createTar } from 'tar';
+import { streamBackupDownload } from './http-backup.mjs';
 import {
   assessCapabilityRisk,
   capabilityFingerprint,
@@ -30,6 +30,7 @@ export function createRequestHandler({
   required,
   roleValue,
 } = {}) {
+  const sendState = createStateResponder();
   const handle = async function handle(req, res) {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -211,20 +212,7 @@ export function createRequestHandler({
             .backups.some((backup) => backup.filename === filename)
         )
           return send(404, { error: '备份不存在。' });
-        const directory = path.join(dataDir, 'backups');
-        const files = [
-          filename,
-          ...(fs.existsSync(path.join(directory, `${filename}.vault.json`))
-            ? [`${filename}.vault.json`]
-            : []),
-        ];
-        res.writeHead(200, {
-          'Content-Type': 'application/gzip',
-          'Content-Disposition': `attachment; filename="${filename}.tar.gz"`,
-        });
-        createTar({ cwd: directory, gzip: true, portable: true }, files)
-          .on('error', (error) => res.destroy(error))
-          .pipe(res);
+        streamBackupDownload(res, dataDir, filename);
         return;
       }
       const managed = await platform.handle({

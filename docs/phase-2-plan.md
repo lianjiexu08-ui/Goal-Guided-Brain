@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 212/212, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 217/217, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Cross-platform CI matrix runs lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
@@ -46,6 +46,39 @@ They are not sign-off for the separate real deployment gates below.
 - [ ] Real cloud continues scheduled work while the owner's computer is offline.
 
 ## Local Release Record
+
+Changed-state transport on 2026-10-07: background reads opt into entity deltas
+against the exact accepted ETag. The server still authorizes, reads and hashes
+fresh public state; a per-workbench cache only retains diff bases, capped at
+8 entries, 8 MiB of serialized bodies and 60 seconds. This bounds serialized
+cache content, not total process heap. Missing/evicted bases and restarts fall
+back to full responses; deltas are only sent when smaller than the full body.
+The client preserves unchanged row identity, applies insertions/updates/deletions
+and order atomically, and checks the base version and overall state shape.
+Malformed or late responses cannot replace the accepted snapshot; explicit
+retry remains a full read. The UI proxy forwards negotiation/format headers.
+Backup response streaming was extracted to keep the request handler below the
+1000-line gate with no route behavior change.
+
+In isolated five-sample runs, 10 teams/200 tasks used a 1,158,429-byte full state
+and a 70,936-byte median changed-state body. At 20 teams/800 tasks those sizes
+were 3,457,309 and 82,099 bytes. Every merged response was compared against an
+independent full read. The corresponding changed-state HTTP medians were 12.27ms
+and 44.07ms; full HTTP medians in those runs were 11.26ms and 34.8ms. Diffing adds
+compute cost; these are local transport measurements, not mobile UX timings.
+Unchanged request bodies remain empty. First load, explicit refresh and full
+fallback still transfer all history; server pagination remains outstanding.
+Backend regression passed 217/217, plus lint, types, all 262 source-file limits
+and formatting for the 16 changed files. The 30-run desktop/mobile focused suite
+passed, covering real proxied deltas, isolated teams, retained reading/drafts,
+malformed responses, delayed responses and full retry. Initial browser failures
+were incorrect test selectors for the existing background-error banner; tests
+now use its actual retained-content message and Retry action. The full final
+desktop/mobile suite passed 202/202. Production build passed and the local
+service restarted after confirming zero active tasks/jobs. UI, API health and
+proxied state returned 200; delta-opted unchanged reads returned empty 304s,
+and unknown bases returned complete matching state. All 11 local tasks remained
+present. No remote changes were made.
 
 Conversation search on 2026-10-07: the header now opens a search dialog scoped to
 the current conversation, including turns outside the rendered history window.
@@ -287,8 +320,8 @@ format checks for changed code, file-size checks and production build passed.
 The subsequent full 126-run browser regression includes this mobile refinement,
 the ordinary attention-resolution workflow and cross-team overview recovery.
 
-Latest full local regression on 2026-10-07: `npm test` 212/212 and Playwright
-desktop/mobile baseline 192/192 passed on macOS. `npm run lint`,
+Latest full local regression on 2026-10-07: `npm test` 217/217 and Playwright
+desktop/mobile baseline 202/202 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines`, `npm run build` and
 `git diff --check` also passed. The model metrics regression includes task-type
 runtime comparisons, alias filtering, delayed response isolation, retry and
@@ -315,8 +348,8 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 212 passing tests. The latest
-full Playwright baseline passed 192 desktop/mobile runs covering team
+The current deterministic suite contains 217 passing tests. The latest
+full Playwright baseline passed 202 desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
 binary drag-and-drop attachments, conversation scroll recovery, evidence quality summaries, Team Charter confirmation and high-risk

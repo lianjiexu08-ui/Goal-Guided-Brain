@@ -110,3 +110,64 @@ test('time-based knowledge expiry changes the state validator even without datab
   assert.notEqual(expired.headers.get('etag'), etag);
   assert.equal((await expired.json()).knowledge[0].expired, true);
 });
+
+test('opted-in HTTP deltas preserve the complete state after external writes and deletions, with authorization checked first', async (t) => {
+  const { app, read } = await fixture(t);
+  const { spaces, tasks } = seedStateLoad(app.store, {
+    teams: 4,
+    tasksPerTeam: 10,
+  });
+  const initial = await read();
+  const etag = initial.headers.get('etag');
+  const base = await initial.json();
+  const db = new DatabaseSync(path.join(app.store.dir, 'workspace.sqlite'));
+  try {
+    const records = new Records(db);
+    records.save(
+      'spaces',
+      { ...records.get('spaces', spaces[0].id), name: '外部更新的团队' },
+      spaces[0].id,
+    );
+    db.prepare('UPDATE tasks SET result = ? WHERE id = ?').run(
+      '外部更新的结果',
+      tasks[0].id,
+    );
+    db.prepare('DELETE FROM tasks WHERE id = ?').run(tasks[1].id);
+    const response = await fetch(
+      `http://127.0.0.1:${app.server.address().port}/api/state`,
+      {
+        headers: { 'If-None-Match': etag, 'X-GGB-State-Delta': '1' },
+      },
+    );
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('x-ggb-state-format'), 'delta-v1');
+    const text = await response.text();
+    const { applyStateDelta } = await import('../lib/state-delta.mjs');
+    const merged = applyStateDelta(base, JSON.parse(text), etag);
+    const complete = await read();
+    assert.deepEqual(merged, await complete.json());
+    assert.equal(merged.tasks.length, 39);
+    assert.equal(
+      merged.tasks.find((task) => task.id === tasks[0].id).result,
+      '外部更新的结果',
+    );
+    assert.equal(
+      merged.spaces.find((space) => space.id === spaces[0].id).name,
+      '外部更新的团队',
+    );
+    assert.ok(
+      Buffer.byteLength(text) < Buffer.byteLength(JSON.stringify(merged)) / 2,
+    );
+    app.platform.auth.requireAuth = true;
+    const denied = await fetch(
+      `http://127.0.0.1:${app.server.address().port}/api/state`,
+      {
+        headers: { 'If-None-Match': etag, 'X-GGB-State-Delta': '1' },
+      },
+    );
+    assert.equal(denied.status, 401);
+    assert.equal(denied.headers.get('x-ggb-state-format'), null);
+  } finally {
+    db.close();
+  }
+});

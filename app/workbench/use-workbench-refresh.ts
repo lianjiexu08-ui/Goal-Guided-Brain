@@ -34,6 +34,7 @@ export function useWorkbenchRefresh(onSnapshot: (snapshot: State) => void) {
       const promise = readWorkbenchState(
         controller.signal,
         replace ? null : etag.current,
+        replace ? null : lastSnapshot.current,
       )
         .then(({ snapshot, etag: nextEtag }) => {
           if (!current()) return;
