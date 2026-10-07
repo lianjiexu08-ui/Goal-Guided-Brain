@@ -102,6 +102,14 @@ flowchart TD
 | 网页       | `app/page.tsx`、`app/management.tsx`                         | 团队招募、团队动态、任务、助手、模型和能力管理。                                                            |
 | CLI        | `scripts/cli.mjs`                                            | `ggb run`、`ggb chat`、`ggb rpc`、`ggb events`、`ggb providers`、`ggb doctor`、`ggb decide` 和 `ggb node`。 |
 
+控制平面保留 `ControlPlane` 作为调用入口，通过 `server/control/` 下的职责模块实现业务流程：
+
+- `execution-lifecycle.mjs`：执行资格、领取、心跳、结果提交和撤销。
+- `job-lifecycle.mjs`：逻辑作业创建、子任务完成后的汇总和团队暂停/恢复。
+- `team-recruitment.mjs`：团队方案、所有者确认和成员名册。
+
+这些模块复用入口的存储、事务和权限校验，不建立独立状态副本。
+
 ## 从需求到交付
 
 一次典型工作流如下：

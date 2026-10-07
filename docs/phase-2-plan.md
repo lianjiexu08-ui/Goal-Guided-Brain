@@ -47,6 +47,39 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Local Release Record
 
+Control-plane responsibility split on 2026-10-07: execution eligibility, leases
+and result submission now live in `server/control/execution-lifecycle.mjs`;
+logical jobs and parent summaries in `job-lifecycle.mjs`; Team Charter proposal,
+confirmation and roster reading in `team-recruitment.mjs`. The `ControlPlane`
+public methods remain forwarding entry points, retaining shared transactions,
+permissions and injected services. No product behavior is intentionally changed.
+
+The formatted entry point is 649 lines; the three modules are 266, 391 and 615
+lines. A local AST comparison matched all 13 extracted method bodies and
+parameter lists after replacing the class context with the explicit plane
+parameter; all 28 retained class members also match their original AST.
+This structural check supplements the existing regression tests;
+it is not an end-to-end behavior guarantee. Focused tests passed 46/46 and the
+full backend suite passed 240/240 with no skips. Lint, typecheck and the 284-file
+source-size gate passed. The tracked formatting backlog fell from 53 to 52;
+full-repository formatting is still an unmet gate.
+
+The first browser run ended at 221 passed / 5 failed in 49.4m. macOS sleep
+records align with all five failures: 568s, 454s, 31s, 1005s and 320s sleep
+intervals overlap the failing trace timestamps. The same five scenarios passed
+on both desktop and mobile in a focused 10/10 rerun (41.2s), without code or
+assertion changes. Original screenshots and traces remain under
+`/tmp/ggb-control-refactor-evidence/first-full`; the focused rerun is in
+`focused-recheck`. A fresh full run uses `caffeinate -i` only for the test
+process lifetime; no persistent power setting is changed. The fresh full run
+passed 226/226 in 9.0m, with unchanged code and assertions; evidence is retained
+under `final-full`. Production build passed. The local service restarted only
+after confirming zero active tasks/jobs; UI, API health, proxied state and both
+collaborator endpoints returned 200. Existing task, job and space IDs are
+unchanged: 11 tasks, 10 jobs and two unconfirmed spaces. Team recruitment and
+execution workflows were tested against isolated fixtures, not production
+confirmed teams. No remote push or deployment was performed.
+
 Agent collaboration visibility and scoped reading on 2026-10-07: the new
 `list_team_collaborations` MCP tool lists the current confirmed team's own
 incoming/outgoing requests with open/closed/stale/unlinked filters, bounded
