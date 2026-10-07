@@ -3,6 +3,7 @@
 import {
   useEffect,
   useLayoutEffect,
+  useImperativeHandle,
   useRef,
   useState,
   type ReactNode,
@@ -13,7 +14,13 @@ import type { Task } from './model';
 
 const PAGE_SIZE = 30;
 
+export type ConversationHistoryHandle = {
+  revealTask: (id: string) => void;
+  getTargetElement: () => HTMLElement | null;
+};
+
 type Props = {
+  navigationRef: RefObject<ConversationHistoryHandle | null>;
   tasks: Task[];
   endRef: RefObject<HTMLDivElement | null>;
   renderTask: (task: Task) => ReactNode;
@@ -22,6 +29,7 @@ type Props = {
 
 export function ConversationHistory({
   tasks,
+  navigationRef,
   endRef,
   renderTask,
   empty,
@@ -32,6 +40,7 @@ export function ConversationHistory({
   const appliedScrollTop = useRef<number | null>(null);
   const anchor = useRef<{ id: string; offset: number } | null>(null);
   const [expandedStart, setExpandedStart] = useState<string | null>(null);
+  const [targetId, setTargetId] = useState<string | null>(null);
   const [showJump, setShowJump] = useState(false);
   const start = expandedStart
     ? Math.max(
@@ -80,7 +89,38 @@ export function ConversationHistory({
     if (!anchor.current) rememberAnchor();
   };
 
-  useLayoutEffect(reconcile, [version, expandedStart]);
+  useLayoutEffect(reconcile, [version, expandedStart, targetId]);
+  useImperativeHandle(navigationRef, () => ({
+    revealTask(id) {
+      const index = tasks.findIndex((task) => task.id === id);
+      if (index < 0) return;
+      followLatest.current = false;
+      anchor.current = { id, offset: 12 };
+      setExpandedStart(tasks[Math.min(start, index)].id);
+      setTargetId(id);
+      setShowJump(true);
+      reconcile();
+    },
+    getTargetElement() {
+      return (
+        [
+          ...(areaRef.current?.querySelectorAll<HTMLElement>(
+            '[data-turn-id]',
+          ) || []),
+        ].find((node) => node.dataset.turnId === targetId) || null
+      );
+    },
+  }));
+  useEffect(() => {
+    const nodes =
+      areaRef.current?.querySelectorAll<HTMLElement>('[data-turn-id]');
+    nodes?.forEach((node) => {
+      node.toggleAttribute(
+        'data-search-target',
+        node.dataset.turnId === targetId,
+      );
+    });
+  }, [targetId, version]);
   useEffect(() => {
     const area = areaRef.current;
     const content = contentRef.current;
@@ -123,6 +163,7 @@ export function ConversationHistory({
     followLatest.current = true;
     setShowJump(false);
     setExpandedStart(null);
+    setTargetId(null);
     reconcile();
   };
 

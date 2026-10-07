@@ -72,3 +72,39 @@
   padding-top: 10px;
   padding-bottom: 10px;
 }
+
+/* Give recruitment guidance the full width instead of squeezing it beside
+   header actions when the desktop workbench also shows the context sidebar. */
+@media (min-width: 768px) {
+  .conversation-top.is-compact:has(.recruitment-context) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0 16px;
+  }
+
+  .conversation-top.is-compact:has(.recruitment-context) > div:first-child {
+    display: contents;
+  }
+
+  .conversation-top.is-compact:has(.recruitment-context) h1 {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  .conversation-top.is-compact .recruitment-sync-status {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .conversation-top.is-compact .recruitment-context {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+
+  .conversation-top.is-compact:has(.recruitment-context)
+    .conversation-controls {
+    grid-column: 2;
+    grid-row: 1 / 3;
+  }
+}

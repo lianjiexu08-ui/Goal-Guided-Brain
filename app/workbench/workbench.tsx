@@ -131,6 +131,7 @@ export function Workbench() {
   const [editingAssistant, setEditingAssistant] = useState<Assistant | null>(
     null,
   );
+  const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [taskFilter, setTaskFilter] = useState('all');
   const [selectedReviewTaskIds, setSelectedReviewTaskIds] = useState<string[]>(
@@ -268,7 +269,8 @@ export function Workbench() {
       editingAssistant ||
       taskDetail ||
       quickRenameKnowledge ||
-      knowledgeToDelete,
+      knowledgeToDelete ||
+      conversationSearchOpen,
     );
   useEffect(() => {
     if (!isMobile || typeof window === 'undefined') return undefined;
@@ -282,6 +284,7 @@ export function Workbench() {
       setTaskDetail(null);
       setQuickRenameKnowledge(null);
       setKnowledgeToDelete(null);
+      setConversationSearchOpen(false);
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -855,6 +858,8 @@ export function Workbench() {
     data,
     connectionError,
     refreshing,
+    conversationSearchOpen,
+    setConversationSearchOpen,
     setSelected,
     selectedSpaceId,
     setSelectedSpaceId,

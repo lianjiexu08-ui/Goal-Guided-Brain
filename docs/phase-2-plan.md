@@ -47,6 +47,36 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Local Release Record
 
+Conversation search on 2026-10-07: the header now opens a search dialog scoped to
+the current conversation, including turns outside the rendered history window.
+Literal case-insensitive matching covers prompts, answers and titles; result
+snippets identify the matched field and highlight the term as escaped React text.
+Results show newest first in batches of 20 with access to every match. Selecting
+a result expands history as needed, anchors and marks the original message, and
+returns keyboard focus to the message itself. Drafts remain intact, and switching
+team or member session resets search state. Empty, clear, close and no-match
+states are included. The mobile dialog uses a top-aligned constrained viewport
+and shares the workbench overlay history: system Back closes search while
+retaining the current workspace. A reduced-height viewport check covers control
+visibility, but does not replace physical-device keyboard testing.
+The first browser pass exposed overlapping translation styles on mobile and the
+dialog library preferring a child action for return focus; both were corrected.
+A full run also exposed reduced desktop reading space when long configured-model
+controls combined with the new search action. Compact recruitment guidance now
+spans the entire header below its title/actions, preserving the existing >180px
+message-area requirement without hiding instructions.
+This searches the current in-memory conversation; server-side pagination and
+search indexing remain outstanding. The final scoped regression passed 34/34
+across desktop/mobile search, long configured-model layouts, history anchoring,
+team/member isolation, mobile Back and offline draft recovery. Backend tests
+passed 212/212; lint, typecheck, all 258 source-file line limits and formatting
+for the 13 changed files passed. An earlier scoped run had a draft API timeout;
+the unchanged case passed in the subsequent scoped run. The final full browser
+regression passed 192/192 on the complete change. Production build passed; the
+local service was restarted only after confirming zero active tasks/jobs. UI,
+API health and proxied state returned 200; all 11 local tasks remained present
+and an unchanged state request returned an empty 304. No remote was updated.
+
 Conversation history on 2026-10-07: the initial conversation window renders
 30 recent turns and exposes an explicit earlier-history control. Scrolling up
 pins the window start; loading earlier turns and growing content above the
@@ -258,7 +288,7 @@ The subsequent full 126-run browser regression includes this mobile refinement,
 the ordinary attention-resolution workflow and cross-team overview recovery.
 
 Latest full local regression on 2026-10-07: `npm test` 212/212 and Playwright
-desktop/mobile baseline 188/188 passed on macOS. `npm run lint`,
+desktop/mobile baseline 192/192 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines`, `npm run build` and
 `git diff --check` also passed. The model metrics regression includes task-type
 runtime comparisons, alias filtering, delayed response isolation, retry and
@@ -286,7 +316,7 @@ and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
 The current deterministic suite contains 212 passing tests. The latest
-full Playwright baseline passed 188 desktop/mobile runs covering team
+full Playwright baseline passed 192 desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
 binary drag-and-drop attachments, conversation scroll recovery, evidence quality summaries, Team Charter confirmation and high-risk

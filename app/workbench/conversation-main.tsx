@@ -3,7 +3,11 @@
 'use client';
 // Focused presentation modules receive a controller context assembled by Workbench.
 /* oxlint-disable no-explicit-any, no-unused-vars */
-import { ConversationHistory } from './conversation-history';
+import {
+  ConversationHistory,
+  type ConversationHistoryHandle,
+} from './conversation-history';
+import { ConversationSearch } from './conversation-search';
 import { RecruitmentStatus } from './recruitment-status';
 import { useEffect, useRef, useState } from 'react';
 import { ConversationMarkdown } from './conversation-markdown';
@@ -152,8 +156,11 @@ export function ConversationMain({ context }: { context: WorkbenchContext }) {
     recruitmentApprovals,
     setRecruitmentApprovals,
     recruitmentSyncState,
+    conversationSearchOpen,
+    setConversationSearchOpen,
   } = context;
   const conversationRef = useRef<HTMLElement>(null);
+  const historyRef = useRef<ConversationHistoryHandle>(null);
   const conversationKey = `${teamSpace?.id || recruitmentSpace?.id || 'standalone'}:${role}:${isTeamConversation ? 'team' : currentSession || 'new'}`;
 
   useEffect(() => {
@@ -273,6 +280,16 @@ export function ConversationMain({ context }: { context: WorkbenchContext }) {
           >
             <Plus size={15} /> {isRecruitmentView ? '另起需求' : '发布新需求'}
           </button>
+          <ConversationSearch
+            key={conversationKey}
+            open={conversationSearchOpen}
+            onOpenChange={setConversationSearchOpen}
+            tasks={currentTasks}
+            onSelect={(id) => historyRef.current?.revealTask(id)}
+            getTargetElement={() =>
+              historyRef.current?.getTargetElement() || null
+            }
+          />
           {!isRecruitmentView && (
             <button
               className="text-button"
@@ -611,6 +628,7 @@ export function ConversationMain({ context }: { context: WorkbenchContext }) {
       )}
       <ConversationHistory
         key={conversationKey}
+        navigationRef={historyRef}
         tasks={currentTasks}
         endRef={endRef}
         empty={
@@ -679,7 +697,13 @@ export function ConversationMain({ context }: { context: WorkbenchContext }) {
           </div>
         }
         renderTask={(task) => (
-          <article className="turn" key={task.id} data-turn-id={task.id}>
+          <article
+            className="turn"
+            key={task.id}
+            data-turn-id={task.id}
+            tabIndex={-1}
+            aria-label={`对话：${task.title}`}
+          >
             <div className="user-message">
               <span className="message-label">
                 你 <small>{formatTime(task.createdAt)}</small>
