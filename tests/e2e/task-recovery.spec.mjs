@@ -74,7 +74,9 @@ function seedFailedJob() {
         credentialId: null,
         enabled: true,
         priority: 1,
-        models: [{ id: 'e2e-recovery-model', name: 'E2E recovery model', tools: true }],
+        models: [
+          { id: 'e2e-recovery-model', name: 'E2E recovery model', tools: true },
+        ],
       },
       'e2e-recovery-provider',
     );
@@ -123,7 +125,10 @@ function seedFailedJob() {
   }
 }
 
-function seedAcceptanceJob({ rejected = false, title = '交付验收闭环任务' } = {}) {
+function seedAcceptanceJob({
+  rejected = false,
+  title = '交付验收闭环任务',
+} = {}) {
   const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
   try {
     const groupId = randomUUID();
@@ -180,52 +185,68 @@ function seedAcceptanceJob({ rejected = false, title = '交付验收闭环任务
       status: 'completed',
       result: '测试已通过，等待所有者验收。',
     });
-    const verification = store.records.save('artifacts', {
-      taskId: task.id,
-      groupId,
-      requirementVersion: 1,
-      kind: 'verification',
-      name: 'npm test',
-      status: 'verified',
-      verified: true,
-      output: '140 tests passed',
-      finishedAt: new Date().toISOString(),
-    }, `e2e-acceptance-verification-${groupId}`);
+    const verification = store.records.save(
+      'artifacts',
+      {
+        taskId: task.id,
+        groupId,
+        requirementVersion: 1,
+        kind: 'verification',
+        name: 'npm test',
+        status: 'verified',
+        verified: true,
+        output: '140 tests passed',
+        finishedAt: new Date().toISOString(),
+      },
+      `e2e-acceptance-verification-${groupId}`,
+    );
     if (rejected) {
-      store.records.save('task-acceptance', {
-        taskId: task.id,
-        groupId,
-        jobId: job.id,
-        decision: 'rejected',
-        status: 'active',
-        note: '请补充边界场景验证后重新提交。',
-        requirementVersion: 1,
-        verificationId: verification.id,
-        decidedBy: 'owner',
-        decidedAt: new Date().toISOString(),
-      }, task.id);
+      store.records.save(
+        'task-acceptance',
+        {
+          taskId: task.id,
+          groupId,
+          jobId: job.id,
+          decision: 'rejected',
+          status: 'active',
+          note: '请补充边界场景验证后重新提交。',
+          requirementVersion: 1,
+          verificationId: verification.id,
+          decidedBy: 'owner',
+          decidedAt: new Date().toISOString(),
+        },
+        task.id,
+      );
       const attentionId = `acceptance:${task.id}:1`;
-      store.records.save('attention', {
-        taskId: task.id,
-        groupId,
-        jobId: job.id,
-        status: 'open',
-        kind: 'acceptance',
-        title: notificationTitle,
-        detail: '请补充边界场景验证后重新提交。',
-        requirementVersion: 1,
-      }, attentionId);
-      store.records.save('notifications', {
-        name: notificationTitle,
-        kind: 'acceptance',
-        message: '请补充边界场景验证后重新提交。',
+      store.records.save(
+        'attention',
+        {
+          taskId: task.id,
+          groupId,
+          jobId: job.id,
+          status: 'open',
+          kind: 'acceptance',
+          title: notificationTitle,
+          detail: '请补充边界场景验证后重新提交。',
+          requirementVersion: 1,
+        },
         attentionId,
-        taskId: task.id,
-        jobId: job.id,
-        groupId,
-        read: false,
-        occurredAt: new Date().toISOString(),
-      }, `attention:${attentionId}`);
+      );
+      store.records.save(
+        'notifications',
+        {
+          name: notificationTitle,
+          kind: 'acceptance',
+          message: '请补充边界场景验证后重新提交。',
+          attentionId,
+          taskId: task.id,
+          jobId: job.id,
+          groupId,
+          read: false,
+          occurredAt: new Date().toISOString(),
+        },
+        `attention:${attentionId}`,
+      );
     }
     return { taskId: task.id, notificationTitle, title };
   } finally {
@@ -243,11 +264,13 @@ function seedBatchAcceptanceJobs({ includeInvalid = false } = {}) {
       `批量交付复核任务 B · ${suffix}`,
       ...(includeInvalid ? [`缺少验证证据的批量任务 · ${suffix}`] : []),
     ];
-    const tasks = titles.map((title) => store.createTask({
-      role: 'developer',
-      prompt: title,
-      workspace: process.cwd(),
-    }));
+    const tasks = titles.map((title) =>
+      store.createTask({
+        role: 'developer',
+        prompt: title,
+        workspace: process.cwd(),
+      }),
+    );
     tasks.forEach((task, index) => {
       const job = store.records.save(
         'jobs',
@@ -297,17 +320,21 @@ function seedBatchAcceptanceJobs({ includeInvalid = false } = {}) {
         result: '测试已通过，等待批量验收。',
       });
       if (index < 2) {
-        store.records.save('artifacts', {
-          taskId: task.id,
-          groupId: job.groupId,
-          requirementVersion: 1,
-          kind: 'verification',
-          name: 'npm test',
-          status: 'verified',
-          verified: true,
-          output: '批量复核 fixture passed',
-          finishedAt: new Date().toISOString(),
-        }, `e2e-batch-verification-${groupId}-${index}`);
+        store.records.save(
+          'artifacts',
+          {
+            taskId: task.id,
+            groupId: job.groupId,
+            requirementVersion: 1,
+            kind: 'verification',
+            name: 'npm test',
+            status: 'verified',
+            verified: true,
+            output: '批量复核 fixture passed',
+            finishedAt: new Date().toISOString(),
+          },
+          `e2e-batch-verification-${groupId}-${index}`,
+        );
       }
     });
     return { taskIds: tasks.map((task) => task.id), titles };
@@ -320,22 +347,23 @@ function seedTaskCenterFilterJobs() {
   const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
   try {
     const suffix = randomUUID().slice(0, 8);
-    const createTeam = (name, goal) => store.saveTeamSpace({
-      name: `${name} ${suffix}`,
-      goal,
-      purpose: goal,
-      workspace: process.cwd(),
-      pmRoleId: 'project_manager',
-      memberRoleIds: ['project_manager'],
-      recruitment: {
-        phase: 'confirmed',
-        sessionId: null,
-        turns: 1,
-        brief: goal,
-        proposal: null,
-        confirmedAt: new Date().toISOString(),
-      },
-    });
+    const createTeam = (name, goal) =>
+      store.saveTeamSpace({
+        name: `${name} ${suffix}`,
+        goal,
+        purpose: goal,
+        workspace: process.cwd(),
+        pmRoleId: 'project_manager',
+        memberRoleIds: ['project_manager'],
+        recruitment: {
+          phase: 'confirmed',
+          sessionId: null,
+          turns: 1,
+          brief: goal,
+          proposal: null,
+          confirmedAt: new Date().toISOString(),
+        },
+      });
     const teams = {
       development: createTeam('筛选研发团队', '负责筛选回归的开发交付。'),
       operations: createTeam('筛选运维团队', '负责筛选回归的运维保障。'),
@@ -346,40 +374,48 @@ function seedTaskCenterFilterJobs() {
         prompt: title,
         workspace: process.cwd(),
       });
-      const job = store.records.save('jobs', {
-        title,
-        goal: `验证${title}可以按团队和状态定位。`,
-        role: 'project_manager',
-        groupId: randomUUID(),
-        batchId: randomUUID(),
-        status,
-        taskId: task.id,
-        nodeId: 'local',
-        workspace: process.cwd(),
-        workspaceKey: 'default',
-        requirementVersion: 1,
-        depth: 0,
-        budgetTokens: 200000,
-        maxDurationMinutes: 30,
-        permissions: [],
-        spaceId: team.id,
-        teamId: team.id,
-      }, `e2e-task-filter-${randomUUID()}`);
-      store.records.save('task-meta', {
-        jobId: job.id,
-        groupId: job.groupId,
-        batchId: job.batchId,
-        nodeId: 'local',
-        workspaceKey: 'default',
-        workspaceMode: 'isolated',
-        requirementVersion: 1,
-        dependencies: [],
-        permissions: [],
-        contextExtra: '',
-        attachmentIds: [],
-        spaceId: team.id,
-        teamId: team.id,
-      }, task.id);
+      const job = store.records.save(
+        'jobs',
+        {
+          title,
+          goal: `验证${title}可以按团队和状态定位。`,
+          role: 'project_manager',
+          groupId: randomUUID(),
+          batchId: randomUUID(),
+          status,
+          taskId: task.id,
+          nodeId: 'local',
+          workspace: process.cwd(),
+          workspaceKey: 'default',
+          requirementVersion: 1,
+          depth: 0,
+          budgetTokens: 200000,
+          maxDurationMinutes: 30,
+          permissions: [],
+          spaceId: team.id,
+          teamId: team.id,
+        },
+        `e2e-task-filter-${randomUUID()}`,
+      );
+      store.records.save(
+        'task-meta',
+        {
+          jobId: job.id,
+          groupId: job.groupId,
+          batchId: job.batchId,
+          nodeId: 'local',
+          workspaceKey: 'default',
+          workspaceMode: 'isolated',
+          requirementVersion: 1,
+          dependencies: [],
+          permissions: [],
+          contextExtra: '',
+          attachmentIds: [],
+          spaceId: team.id,
+          teamId: team.id,
+        },
+        task.id,
+      );
       store.updateTask(task.id, {
         status,
         result: `${title} fixture result`,
@@ -389,8 +425,16 @@ function seedTaskCenterFilterJobs() {
     return {
       teams,
       jobs: {
-        development: createJob(teams.development, `筛选开发任务 ${suffix}`, 'completed'),
-        operations: createJob(teams.operations, `筛选运维任务 ${suffix}`, 'failed'),
+        development: createJob(
+          teams.development,
+          `筛选开发任务 ${suffix}`,
+          'completed',
+        ),
+        operations: createJob(
+          teams.operations,
+          `筛选运维任务 ${suffix}`,
+          'failed',
+        ),
       },
     };
   } finally {
@@ -403,29 +447,59 @@ test('协作任务详情提供失败原因和执行实例重试入口', async ({
   await page.goto('/');
   const mobile = (page.viewportSize()?.width || 1024) < 768;
   if (mobile) {
-    await page.getByRole('button', { name: 'Toggle Sidebar', exact: true }).click();
-    await expect(page.locator('[data-sidebar="sidebar"][data-mobile="true"]')).toBeVisible();
+    await page
+      .getByRole('button', { name: 'Toggle Sidebar', exact: true })
+      .click();
+    await expect(
+      page.locator('[data-sidebar="sidebar"][data-mobile="true"]'),
+    ).toBeVisible();
   }
   const sidebar = page.locator(
-    mobile ? '[data-sidebar="sidebar"][data-mobile="true"]' : '[data-sidebar="sidebar"]',
+    mobile
+      ? '[data-sidebar="sidebar"][data-mobile="true"]'
+      : '[data-sidebar="sidebar"]',
   );
   await sidebar.getByRole('button', { name: '协作任务', exact: true }).click();
   await expect(page.getByRole('heading', { name: '协作任务' })).toBeVisible();
-  await page.getByRole('button', { name: '失败恢复验收任务', exact: true }).first().click();
+  await page
+    .getByRole('button', { name: '失败恢复验收任务', exact: true })
+    .first()
+    .click();
   const detail = page.getByRole('dialog', { name: '失败恢复验收任务' });
   await expect(detail.getByText('恢复说明', { exact: true })).toBeVisible();
-  await expect(detail.getByText('E2E fixture：模型供应商暂时不可用。', { exact: true }).first()).toBeVisible();
-  await expect(detail.getByRole('button', { name: '重试此执行实例', exact: true })).toBeVisible();
-  await detail.getByRole('button', { name: 'E2E 验证失败执行可以恢复并保留旧结果', exact: true }).click();
+  await expect(
+    detail
+      .getByText('E2E fixture：模型供应商暂时不可用。', { exact: true })
+      .first(),
+  ).toBeVisible();
+  await expect(
+    detail.getByRole('button', { name: '重试此执行实例', exact: true }),
+  ).toBeVisible();
+  await detail
+    .getByRole('button', {
+      name: 'E2E 验证失败执行可以恢复并保留旧结果',
+      exact: true,
+    })
+    .click();
   await expect(detail.getByText('模型路由', { exact: true })).toBeVisible();
-  await expect(detail.getByRole('definition').filter({ hasText: 'e2e-recovery-model' })).toBeVisible();
-  await expect(detail.getByText('已自动切换模型', { exact: true })).toBeVisible();
+  await expect(
+    detail.getByRole('definition').filter({ hasText: 'e2e-recovery-model' }),
+  ).toBeVisible();
+  await expect(
+    detail.getByText('已自动切换模型', { exact: true }),
+  ).toBeVisible();
 
-  await detail.getByRole('button', { name: '重试此执行实例', exact: true }).click();
-  await expect.poll(async () =>
-    page.locator('h3').filter({ hasText: '执行实例' }).textContent(),
-  ).toMatch(/· 2/);
-  await expect(detail.getByText(new RegExp(`恢复自执行实例 · ${fixture.taskId}`))).toBeVisible();
+  await detail
+    .getByRole('button', { name: '重试此执行实例', exact: true })
+    .click();
+  await expect
+    .poll(async () =>
+      page.locator('h3').filter({ hasText: '执行实例' }).textContent(),
+    )
+    .toMatch(/· 2/);
+  await expect(
+    detail.getByText(new RegExp(`恢复自执行实例 · ${fixture.taskId}`)),
+  ).toBeVisible();
 });
 
 test('协作任务详情会增量显示新到达的执行事件', async ({ page }) => {
@@ -433,49 +507,91 @@ test('协作任务详情会增量显示新到达的执行事件', async ({ page 
   await page.goto('/');
   const mobile = (page.viewportSize()?.width || 1024) < 768;
   if (mobile) {
-    await page.getByRole('button', { name: 'Toggle Sidebar', exact: true }).click();
-    await expect(page.locator('[data-sidebar="sidebar"][data-mobile="true"]')).toBeVisible();
+    await page
+      .getByRole('button', { name: 'Toggle Sidebar', exact: true })
+      .click();
+    await expect(
+      page.locator('[data-sidebar="sidebar"][data-mobile="true"]'),
+    ).toBeVisible();
   }
   const sidebar = page.locator(
-    mobile ? '[data-sidebar="sidebar"][data-mobile="true"]' : '[data-sidebar="sidebar"]',
+    mobile
+      ? '[data-sidebar="sidebar"][data-mobile="true"]'
+      : '[data-sidebar="sidebar"]',
   );
   await sidebar.getByRole('button', { name: '协作任务', exact: true }).click();
-  await page.getByRole('button', { name: '失败恢复验收任务', exact: true }).first().click();
+  await page
+    .getByRole('button', { name: '失败恢复验收任务', exact: true })
+    .first()
+    .click();
   const detail = page.getByRole('dialog', { name: '失败恢复验收任务' });
-  await detail.getByRole('button', { name: 'E2E 验证失败执行可以恢复并保留旧结果', exact: true }).click();
-  await expect(detail.getByText('已自动切换模型', { exact: true })).toBeVisible();
+  await detail
+    .getByRole('button', {
+      name: 'E2E 验证失败执行可以恢复并保留旧结果',
+      exact: true,
+    })
+    .click();
+  await expect(
+    detail.getByText('已自动切换模型', { exact: true }),
+  ).toBeVisible();
 
   const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
   try {
-    store.records.save('task-events', {
-      taskId: fixture.taskId,
-      type: 'routing/fallback',
-      data: {
-        from: { providerId: 'e2e-primary-provider', providerName: 'E2E primary provider', model: 'e2e-primary-model' },
-        to: { providerId: 'e2e-recovery-provider', providerName: 'E2E recovery provider', model: 'e2e-recovery-model' },
-        reason: 'E2E 增量事件已收到。',
+    store.records.save(
+      'task-events',
+      {
+        taskId: fixture.taskId,
+        type: 'routing/fallback',
+        data: {
+          from: {
+            providerId: 'e2e-primary-provider',
+            providerName: 'E2E primary provider',
+            model: 'e2e-primary-model',
+          },
+          to: {
+            providerId: 'e2e-recovery-provider',
+            providerName: 'E2E recovery provider',
+            model: 'e2e-recovery-model',
+          },
+          reason: 'E2E 增量事件已收到。',
+        },
+        at: new Date().toISOString(),
       },
-      at: new Date().toISOString(),
-    }, `e2e-live-event-${randomUUID()}`);
+      `e2e-live-event-${randomUUID()}`,
+    );
   } finally {
     store.close();
   }
-  await expect(detail.getByText('原因：E2E 增量事件已收到。', { exact: true })).toBeVisible({ timeout: 10000 });
+  await expect(
+    detail.getByText('原因：E2E 增量事件已收到。', { exact: true }),
+  ).toBeVisible({ timeout: 10000 });
 });
 
 test('协作任务可以归档并从历史中恢复', async ({ page }) => {
-  const fixture = seedAcceptanceJob({ title: `归档验收任务 ${randomUUID().slice(0, 8)}` });
+  const fixture = seedAcceptanceJob({
+    title: `归档验收任务 ${randomUUID().slice(0, 8)}`,
+  });
   await page.goto('/');
   const mobile = (page.viewportSize()?.width || 1024) < 768;
   if (mobile) {
-    await page.getByRole('button', { name: 'Toggle Sidebar', exact: true }).click();
-    await expect(page.locator('[data-sidebar="sidebar"][data-mobile="true"]')).toBeVisible();
+    await page
+      .getByRole('button', { name: 'Toggle Sidebar', exact: true })
+      .click();
+    await expect(
+      page.locator('[data-sidebar="sidebar"][data-mobile="true"]'),
+    ).toBeVisible();
   }
   const sidebar = page.locator(
-    mobile ? '[data-sidebar="sidebar"][data-mobile="true"]' : '[data-sidebar="sidebar"]',
+    mobile
+      ? '[data-sidebar="sidebar"][data-mobile="true"]'
+      : '[data-sidebar="sidebar"]',
   );
   await sidebar.getByRole('button', { name: '协作任务', exact: true }).click();
-  const row = () => page.locator('.manage-list .manage-row').filter({ hasText: fixture.title }).first();
+  const row = () =>
+    page
+      .locator('.manage-list .manage-row')
+      .filter({ hasText: fixture.title })
+      .first();
   await expect(row()).toBeVisible();
   await row().getByRole('button', { name: '归档任务', exact: true }).click();
   await expect(row()).toHaveCount(0);
@@ -483,7 +599,9 @@ test('协作任务可以归档并从历史中恢复', async ({ page }) => {
   await expect(row()).toBeVisible();
   await expect(row().getByText('已归档', { exact: true })).toBeVisible();
   await row().getByRole('button', { name: '恢复任务', exact: true }).click();
-  await expect(row().getByRole('button', { name: '归档任务', exact: true })).toBeVisible();
+  await expect(
+    row().getByRole('button', { name: '归档任务', exact: true }),
+  ).toBeVisible();
   await expect(row().getByText('已完成', { exact: true })).toBeVisible();
 });
 
@@ -492,17 +610,30 @@ test('协作任务可以按团队和状态快速筛选', async ({ page }) => {
   await page.goto('/');
   const mobile = (page.viewportSize()?.width || 1024) < 768;
   if (mobile) {
-    await page.getByRole('button', { name: 'Toggle Sidebar', exact: true }).click();
-    await expect(page.locator('[data-sidebar="sidebar"][data-mobile="true"]')).toBeVisible();
+    await page
+      .getByRole('button', { name: 'Toggle Sidebar', exact: true })
+      .click();
+    await expect(
+      page.locator('[data-sidebar="sidebar"][data-mobile="true"]'),
+    ).toBeVisible();
   }
   const sidebar = page.locator(
-    mobile ? '[data-sidebar="sidebar"][data-mobile="true"]' : '[data-sidebar="sidebar"]',
+    mobile
+      ? '[data-sidebar="sidebar"][data-mobile="true"]'
+      : '[data-sidebar="sidebar"]',
   );
   await sidebar.getByRole('button', { name: '协作任务', exact: true }).click();
   await expect(page.getByRole('heading', { name: '协作任务' })).toBeVisible();
-  const row = (title) => page.locator('.manage-list .manage-row').filter({ hasText: title }).first();
-  const teamFilter = page.getByRole('combobox', { name: '按团队筛选', exact: true });
-  const statusFilter = page.getByRole('combobox', { name: '按状态筛选', exact: true });
+  const row = (title) =>
+    page.locator('.manage-list .manage-row').filter({ hasText: title }).first();
+  const teamFilter = page.getByRole('combobox', {
+    name: '按团队筛选',
+    exact: true,
+  });
+  const statusFilter = page.getByRole('combobox', {
+    name: '按状态筛选',
+    exact: true,
+  });
   await expect(teamFilter).toBeVisible();
   await expect(statusFilter).toBeVisible();
 
@@ -521,25 +652,45 @@ test('协作任务详情支持所有者验收决定', async ({ page }) => {
   await page.goto('/');
   const mobile = (page.viewportSize()?.width || 1024) < 768;
   if (mobile) {
-    await page.getByRole('button', { name: 'Toggle Sidebar', exact: true }).click();
-    await expect(page.locator('[data-sidebar="sidebar"][data-mobile="true"]')).toBeVisible();
+    await page
+      .getByRole('button', { name: 'Toggle Sidebar', exact: true })
+      .click();
+    await expect(
+      page.locator('[data-sidebar="sidebar"][data-mobile="true"]'),
+    ).toBeVisible();
   }
   const sidebar = page.locator(
-    mobile ? '[data-sidebar="sidebar"][data-mobile="true"]' : '[data-sidebar="sidebar"]',
+    mobile
+      ? '[data-sidebar="sidebar"][data-mobile="true"]'
+      : '[data-sidebar="sidebar"]',
   );
   await sidebar.getByRole('button', { name: '协作任务', exact: true }).click();
   await expect(page.getByRole('heading', { name: '协作任务' })).toBeVisible();
-  await page.getByRole('button', { name: '交付验收闭环任务', exact: true }).first().click();
+  await page
+    .getByRole('button', { name: '交付验收闭环任务', exact: true })
+    .first()
+    .click();
   const detail = page.getByRole('dialog', { name: '交付验收闭环任务' });
-  await detail.getByRole('button', { name: 'E2E 验收决定可以通过交付或退回复核', exact: true }).click();
+  await detail
+    .getByRole('button', {
+      name: 'E2E 验收决定可以通过交付或退回复核',
+      exact: true,
+    })
+    .click();
   await expect(detail.getByText('交付判断', { exact: true })).toBeVisible();
-  await expect(detail.getByText('待你验收', { exact: true }).first()).toBeVisible();
+  await expect(
+    detail.getByText('待你验收', { exact: true }).first(),
+  ).toBeVisible();
   await expect(detail.getByText(/通过测试并由所有者确认交付。/)).toBeVisible();
   const note = detail.getByRole('textbox', { name: '验收备注' });
   await note.fill('已检查测试输出，确认交付。');
   await detail.getByRole('button', { name: '通过交付', exact: true }).click();
-  await expect(detail.getByText('已交付', { exact: true }).first()).toBeVisible();
-  await expect(detail.getByText(/已检查测试输出，确认交付。/).first()).toBeVisible();
+  await expect(
+    detail.getByText('已交付', { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    detail.getByText(/已检查测试输出，确认交付。/).first(),
+  ).toBeVisible();
 });
 
 test('后台任务支持批量通过有验证证据的交付', async ({ page }) => {
@@ -547,27 +698,47 @@ test('后台任务支持批量通过有验证证据的交付', async ({ page }) 
   await page.goto('/');
   const mobile = (page.viewportSize()?.width || 1024) < 768;
   if (mobile) {
-    await page.getByRole('button', { name: 'Toggle Sidebar', exact: true }).click();
-    await expect(page.locator('[data-sidebar="sidebar"][data-mobile="true"]')).toBeVisible();
+    await page
+      .getByRole('button', { name: 'Toggle Sidebar', exact: true })
+      .click();
+    await expect(
+      page.locator('[data-sidebar="sidebar"][data-mobile="true"]'),
+    ).toBeVisible();
   }
   const sidebar = page.locator(
-    mobile ? '[data-sidebar="sidebar"][data-mobile="true"]' : '[data-sidebar="sidebar"]',
+    mobile
+      ? '[data-sidebar="sidebar"][data-mobile="true"]'
+      : '[data-sidebar="sidebar"]',
   );
   await sidebar.getByRole('button', { name: '后台任务', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '让工作持续推进。' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: '让工作持续推进。' }),
+  ).toBeVisible();
   await page.getByRole('tab', { name: /待处理/ }).click();
   const reviewPanel = page.getByRole('tabpanel', { name: '待处理' });
   for (const title of fixture.titles) {
-    await expect(reviewPanel.getByRole('checkbox', { name: `选择交付验收任务 ${title}` })).toBeVisible();
-    await reviewPanel.getByRole('checkbox', { name: `选择交付验收任务 ${title}` }).check();
+    await expect(
+      reviewPanel.getByRole('checkbox', { name: `选择交付验收任务 ${title}` }),
+    ).toBeVisible();
+    await reviewPanel
+      .getByRole('checkbox', { name: `选择交付验收任务 ${title}` })
+      .check();
   }
   await expect(reviewPanel.getByText(/已选 2 \/ \d+ 项/)).toBeVisible();
-  await reviewPanel.getByRole('button', { name: '批量通过交付', exact: true }).click();
-  await expect(page.getByText('已通过 2 项交付。', { exact: true })).toBeVisible();
+  await reviewPanel
+    .getByRole('button', { name: '批量通过交付', exact: true })
+    .click();
+  await expect(
+    page.getByText('已通过 2 项交付。', { exact: true }),
+  ).toBeVisible();
   for (const taskId of fixture.taskIds) {
-    await expect.poll(async () =>
-      (await page.request.get(`/api/tasks/${taskId}`)).json().then((body) => body.delivery?.deliveryStatus),
-    ).toBe('accepted');
+    await expect
+      .poll(async () =>
+        (await page.request.get(`/api/tasks/${taskId}`))
+          .json()
+          .then((body) => body.delivery?.deliveryStatus),
+      )
+      .toBe('accepted');
   }
 });
 
@@ -576,31 +747,49 @@ test('后台任务批量复核失败会指出需要修正的任务', async ({ pa
   await page.goto('/');
   const mobile = (page.viewportSize()?.width || 1024) < 768;
   if (mobile) {
-    await page.getByRole('button', { name: 'Toggle Sidebar', exact: true }).click();
-    await expect(page.locator('[data-sidebar="sidebar"][data-mobile="true"]')).toBeVisible();
+    await page
+      .getByRole('button', { name: 'Toggle Sidebar', exact: true })
+      .click();
+    await expect(
+      page.locator('[data-sidebar="sidebar"][data-mobile="true"]'),
+    ).toBeVisible();
   }
   const sidebar = page.locator(
-    mobile ? '[data-sidebar="sidebar"][data-mobile="true"]' : '[data-sidebar="sidebar"]',
+    mobile
+      ? '[data-sidebar="sidebar"][data-mobile="true"]'
+      : '[data-sidebar="sidebar"]',
   );
   await sidebar.getByRole('button', { name: '后台任务', exact: true }).click();
   await page.getByRole('tab', { name: /待处理/ }).click();
   const reviewPanel = page.getByRole('tabpanel', { name: '待处理' });
   for (const title of fixture.titles) {
-    await reviewPanel.getByRole('checkbox', { name: `选择交付验收任务 ${title}` }).check();
+    await reviewPanel
+      .getByRole('checkbox', { name: `选择交付验收任务 ${title}` })
+      .check();
   }
-  await reviewPanel.getByRole('button', { name: '批量通过交付', exact: true }).click();
+  await reviewPanel
+    .getByRole('button', { name: '批量通过交付', exact: true })
+    .click();
   const toast = page.locator('output.toast');
   await expect(toast).toContainText('批量复核未执行');
   await expect(toast).toContainText(fixture.titles[2]);
   await expect(toast).toContainText('当前需求版本还没有通过的验收证据');
   for (const taskId of fixture.taskIds.slice(0, 2)) {
-    await expect.poll(async () =>
-      (await page.request.get(`/api/tasks/${taskId}`)).json().then((body) => body.delivery?.deliveryStatus),
-    ).toBe('awaiting-owner');
+    await expect
+      .poll(async () =>
+        (await page.request.get(`/api/tasks/${taskId}`))
+          .json()
+          .then((body) => body.delivery?.deliveryStatus),
+      )
+      .toBe('awaiting-owner');
   }
-  await expect.poll(async () =>
-    (await page.request.get(`/api/tasks/${fixture.taskIds[2]}`)).json().then((body) => body.delivery?.deliveryStatus),
-  ).toBe('pending-review');
+  await expect
+    .poll(async () =>
+      (await page.request.get(`/api/tasks/${fixture.taskIds[2]}`))
+        .json()
+        .then((body) => body.delivery?.deliveryStatus),
+    )
+    .toBe('pending-review');
 });
 
 test('需要你处理可以直接打开关联执行和交付状态', async ({ page }) => {
@@ -609,32 +798,67 @@ test('需要你处理可以直接打开关联执行和交付状态', async ({ pa
   const mobile = (page.viewportSize()?.width || 1024) < 768;
   const openNavigation = async (label) => {
     if (mobile) {
-      await page.getByRole('button', { name: 'Toggle Sidebar', exact: true }).click();
-      await expect(page.locator('[data-sidebar="sidebar"][data-mobile="true"]')).toBeVisible();
+      await page
+        .getByRole('button', { name: 'Toggle Sidebar', exact: true })
+        .click();
+      await expect(
+        page.locator('[data-sidebar="sidebar"][data-mobile="true"]'),
+      ).toBeVisible();
     }
     const currentSidebar = page.locator(
-      mobile ? '[data-sidebar="sidebar"][data-mobile="true"]' : '[data-sidebar="sidebar"]',
+      mobile
+        ? '[data-sidebar="sidebar"][data-mobile="true"]'
+        : '[data-sidebar="sidebar"]',
     );
-    await currentSidebar.getByRole('button', { name: label, exact: true }).click();
+    await currentSidebar
+      .getByRole('button', { name: label, exact: true })
+      .click();
   };
   await openNavigation('后台任务');
-  await expect(page.getByRole('heading', { name: '让工作持续推进。' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: '让工作持续推进。' }),
+  ).toBeVisible();
   await page.getByRole('tab', { name: /待处理/ }).click();
   const reviewPanel = page.getByRole('tabpanel', { name: '待处理' });
-  await expect(reviewPanel.getByRole('button', { name: /E2E 验收决定可以通过交付或退回复核/ }).first()).toBeVisible();
+  await expect(
+    reviewPanel
+      .getByRole('button', { name: /E2E 验收决定可以通过交付或退回复核/ })
+      .first(),
+  ).toBeVisible();
   await openNavigation('需要你处理');
   await expect(page.getByRole('heading', { name: '需要你处理' })).toBeVisible();
   await page.getByRole('tab', { name: '通知', exact: true }).click();
-  const notificationRow = page.locator('.manage-row').filter({ hasText: fixture.notificationTitle }).first();
-  await expect(notificationRow.getByRole('button', { name: fixture.notificationTitle, exact: true })).toBeVisible();
-  await notificationRow.getByRole('button', { name: '标记已读', exact: true }).click();
-  await expect(notificationRow.getByRole('button', { name: '标记已读', exact: true })).toHaveCount(0);
+  const notificationRow = page
+    .locator('.manage-row')
+    .filter({ hasText: fixture.notificationTitle })
+    .first();
+  await expect(
+    notificationRow.getByRole('button', {
+      name: fixture.notificationTitle,
+      exact: true,
+    }),
+  ).toBeVisible();
+  await notificationRow
+    .getByRole('button', { name: '标记已读', exact: true })
+    .click();
+  await expect(
+    notificationRow.getByRole('button', { name: '标记已读', exact: true }),
+  ).toHaveCount(0);
   await page.getByRole('tab', { name: '待处理事项', exact: true }).click();
-  await page.getByRole('button', { name: fixture.notificationTitle, exact: true }).first().click();
+  await page
+    .getByRole('button', { name: fixture.notificationTitle, exact: true })
+    .first()
+    .click();
   const detail = page.getByRole('dialog', { name: fixture.notificationTitle });
   await expect(detail.getByText('关联执行', { exact: true })).toBeVisible();
-  await expect(detail.getByText('交付验收闭环任务', { exact: true })).toBeVisible();
-  await detail.getByRole('button', { name: '查看执行与交付', exact: true }).click();
+  await expect(
+    detail.getByText('交付验收闭环任务', { exact: true }),
+  ).toBeVisible();
+  await detail
+    .getByRole('button', { name: '查看执行与交付', exact: true })
+    .click();
   await expect(detail.getByText('交付判断', { exact: true })).toBeVisible();
-  await expect(detail.getByText('已退回复核', { exact: true }).first()).toBeVisible();
+  await expect(
+    detail.getByText('已退回复核', { exact: true }).first(),
+  ).toBeVisible();
 });

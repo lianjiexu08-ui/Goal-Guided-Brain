@@ -25,7 +25,9 @@ test.describe('对话阅读位置回归', () => {
     await expect(messageArea).toBeVisible();
     await expect
       .poll(() =>
-        messageArea.evaluate((element) => element.scrollHeight > element.clientHeight),
+        messageArea.evaluate(
+          (element) => element.scrollHeight > element.clientHeight,
+        ),
       )
       .toBe(true);
     await messageArea.evaluate((element) => {

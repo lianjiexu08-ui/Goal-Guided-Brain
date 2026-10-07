@@ -30,10 +30,7 @@ test('personal profile has stable defaults, validates updates, and persists', ()
     assert.equal(updated.verbosity, 'concise');
     assert.equal(updated.responseFormat, 'markdown');
     assert.throws(() => store.saveProfile({ tone: 'casual' }), /语气/);
-    assert.throws(
-      () => store.saveProfile({ habits: [''] }),
-      /habits 列表无效/,
-    );
+    assert.throws(() => store.saveProfile({ habits: [''] }), /habits 列表无效/);
     store.close();
     const reopened = new Store(s.dataDir, s.workspace);
     try {

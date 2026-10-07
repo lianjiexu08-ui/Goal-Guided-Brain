@@ -220,27 +220,71 @@ test('TypeSafe decision provider stays out of text routing and returns typed dec
   const vault = new Vault(dir);
   const requests = [];
   const server = http.createServer(async (req, res) => {
-    let raw = ''; for await (const chunk of req) raw += chunk;
-    requests.push({ url: req.url, auth: req.headers.authorization, body: JSON.parse(raw) });
+    let raw = '';
+    for await (const chunk of req) raw += chunk;
+    requests.push({
+      url: req.url,
+      auth: req.headers.authorization,
+      body: JSON.parse(raw),
+    });
     res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify({ model: 'jev-latest', answers: { urgent: { noul: 0.91, confidence: 0.88 } }, usage: { input_tokens: 12 } }));
+    res.end(
+      JSON.stringify({
+        model: 'jev-latest',
+        answers: { urgent: { noul: 0.91, confidence: 0.88 } },
+        usage: { input_tokens: 12 },
+      }),
+    );
   });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  t.after(() => { server.close(); vault.lock(); db.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => {
+    server.close();
+    vault.lock();
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
   await vault.initialize('fixture-passphrase');
-  const credential = await vault.put({ name: 'typesafe', value: 'typesafe-secret' });
-  const service = new ProviderService({ store: { records: new Records(db) }, vault });
-  const provider = service.save({ name: 'TypeSafe', protocol: 'typesafe-system-one', baseUrl: `http://127.0.0.1:${server.address().port}/v1`, credentialId: credential.id, models: [{ id: 'jev-latest' }] });
-  const chat = service.save({ name: 'Chat', protocol: 'openai-completions', baseUrl: `http://127.0.0.1:${server.address().port}/v1`, models: [{ id: 'chat' }] });
-  assert.equal(service.select({ providerIds: [provider.id, chat.id], model: 'chat' }).providerId, chat.id);
-  const result = await service.evaluateDecision({ providerId: provider.id, state: { goal: 'ship feature' }, questions: { urgent: { type: 'noul', instructions: 'Is this urgent?' } } });
+  const credential = await vault.put({
+    name: 'typesafe',
+    value: 'typesafe-secret',
+  });
+  const service = new ProviderService({
+    store: { records: new Records(db) },
+    vault,
+  });
+  const provider = service.save({
+    name: 'TypeSafe',
+    protocol: 'typesafe-system-one',
+    baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
+    credentialId: credential.id,
+    models: [{ id: 'jev-latest' }],
+  });
+  const chat = service.save({
+    name: 'Chat',
+    protocol: 'openai-completions',
+    baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
+    models: [{ id: 'chat' }],
+  });
+  assert.equal(
+    service.select({ providerIds: [provider.id, chat.id], model: 'chat' })
+      .providerId,
+    chat.id,
+  );
+  const result = await service.evaluateDecision({
+    providerId: provider.id,
+    state: { goal: 'ship feature' },
+    questions: { urgent: { type: 'noul', instructions: 'Is this urgent?' } },
+  });
   assert.equal(result.answers.urgent.noul, 0.91);
   assert.equal(result.route.protocol, 'typesafe-system-one');
   assert.equal(requests[0].url, '/v1/systemone');
   assert.equal(requests[0].auth, 'Bearer typesafe-secret');
   assert.deepEqual(requests[0].body.state, { goal: 'ship feature' });
   assert.equal((await service.probe(provider.id)).structured, true);
-  await assert.rejects(service.probe(provider.id, { toolTest: true }), /结构化决策/);
+  await assert.rejects(
+    service.probe(provider.id, { toolTest: true }),
+    /结构化决策/,
+  );
 });
 
 test('automatic routing prefers healthy providers and keeps health evidence credential-free', () => {
@@ -248,19 +292,66 @@ test('automatic routing prefers healthy providers and keeps health evidence cred
   db.exec(RECORDS_SCHEMA);
   const service = new ProviderService({
     store: { records: new Records(db) },
-    vault: { get: () => 'should-not-be-exposed', status: () => ({ unlocked: false }) },
+    vault: {
+      get: () => 'should-not-be-exposed',
+      status: () => ({ unlocked: false }),
+    },
   });
-  const first = service.save({ name: 'First', protocol: 'openai-completions', baseUrl: 'http://127.0.0.1:1/v1', models: [{ id: 'shared' }], priority: 1 });
-  const second = service.save({ name: 'Second', protocol: 'openai-completions', baseUrl: 'http://127.0.0.1:2/v1', models: [{ id: 'shared' }], priority: 2 });
-  const third = service.save({ name: 'Third', protocol: 'openai-completions', baseUrl: 'http://127.0.0.1:3/v1', models: [{ id: 'shared' }], priority: 3 });
-  service.records.save('providers', { ...first, health: { ok: false, checkedAt: new Date().toISOString(), error: 'secret-value' } }, first.id);
-  service.records.save('providers', { ...second, health: { ok: true, checkedAt: new Date().toISOString(), status: 200 } }, second.id);
-  const route = service.select({ providerIds: [first.id, second.id, third.id] });
+  const first = service.save({
+    name: 'First',
+    protocol: 'openai-completions',
+    baseUrl: 'http://127.0.0.1:1/v1',
+    models: [{ id: 'shared' }],
+    priority: 1,
+  });
+  const second = service.save({
+    name: 'Second',
+    protocol: 'openai-completions',
+    baseUrl: 'http://127.0.0.1:2/v1',
+    models: [{ id: 'shared' }],
+    priority: 2,
+  });
+  const third = service.save({
+    name: 'Third',
+    protocol: 'openai-completions',
+    baseUrl: 'http://127.0.0.1:3/v1',
+    models: [{ id: 'shared' }],
+    priority: 3,
+  });
+  service.records.save(
+    'providers',
+    {
+      ...first,
+      health: {
+        ok: false,
+        checkedAt: new Date().toISOString(),
+        error: 'secret-value',
+      },
+    },
+    first.id,
+  );
+  service.records.save(
+    'providers',
+    {
+      ...second,
+      health: { ok: true, checkedAt: new Date().toISOString(), status: 200 },
+    },
+    second.id,
+  );
+  const route = service.select({
+    providerIds: [first.id, second.id, third.id],
+  });
   assert.equal(route.providerId, second.id);
   assert.equal(route.routingCandidates[0].providerId, second.id);
   assert.equal(route.routingCandidates[0].health.ok, true);
   assert.ok(!JSON.stringify(route.routingCandidates).includes('secret-value'));
-  assert.equal(service.select({ providerIds: [first.id, second.id] }, { modelOverride: 'shared', exactModel: true }).providerId, first.id);
+  assert.equal(
+    service.select(
+      { providerIds: [first.id, second.id] },
+      { modelOverride: 'shared', exactModel: true },
+    ).providerId,
+    first.id,
+  );
   db.close();
 });
 
@@ -273,28 +364,49 @@ test('provider model sync uses the remote catalog and removes unsupported modali
     assert.equal(req.method, 'GET');
     assert.equal(req.url, '/v1/models');
     res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify({ data: [
-      { id: 'gpt-5.4', supported_endpoint_types: ['openai'] },
-      { id: 'gpt-5.6', supported_endpoint_types: ['openai'] },
-      { id: 'gpt-4o-audio-preview', supported_endpoint_types: ['openai'] },
-      { id: 'gpt-image-1', supported_endpoint_types: ['openai'] },
-    ] }));
+    res.end(
+      JSON.stringify({
+        data: [
+          { id: 'gpt-5.4', supported_endpoint_types: ['openai'] },
+          { id: 'gpt-5.6', supported_endpoint_types: ['openai'] },
+          { id: 'gpt-4o-audio-preview', supported_endpoint_types: ['openai'] },
+          { id: 'gpt-image-1', supported_endpoint_types: ['openai'] },
+        ],
+      }),
+    );
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  t.after(() => { server.close(); vault.lock(); db.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  t.after(() => {
+    server.close();
+    vault.lock();
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
   await vault.initialize('fixture-passphrase');
   const credential = await vault.put({ name: 'sync', value: 'sync-secret' });
-  const service = new ProviderService({ store: { records: new Records(db) }, vault });
+  const service = new ProviderService({
+    store: { records: new Records(db) },
+    vault,
+  });
   const provider = service.save({
     name: 'Sync fixture',
     protocol: 'openai-completions',
     baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
     credentialId: credential.id,
-    models: [{ id: 'gpt-5.6', name: 'GPT 5.6', tools: true, contextWindow: 200000 }, { id: 'old-model' }],
+    models: [
+      { id: 'gpt-5.6', name: 'GPT 5.6', tools: true, contextWindow: 200000 },
+      { id: 'old-model' },
+    ],
   });
   const synced = await service.syncModels(provider.id);
-  assert.deepEqual(synced.provider.models.map((model) => model.id), ['gpt-5.4', 'gpt-5.6']);
-  assert.equal(synced.provider.models.find((model) => model.id === 'gpt-5.6').tools, true);
+  assert.deepEqual(
+    synced.provider.models.map((model) => model.id),
+    ['gpt-5.4', 'gpt-5.6'],
+  );
+  assert.equal(
+    synced.provider.models.find((model) => model.id === 'gpt-5.6').tools,
+    true,
+  );
   assert.deepEqual(synced.removed, ['old-model']);
   assert.equal(synced.provider.credentialId, credential.id);
 });

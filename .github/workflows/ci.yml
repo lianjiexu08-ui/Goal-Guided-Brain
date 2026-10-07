@@ -35,6 +35,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Formatting check
+        run: npm run format -- --check
+
       - name: Source file length gate
         run: npm run quality:lines -- --json
 

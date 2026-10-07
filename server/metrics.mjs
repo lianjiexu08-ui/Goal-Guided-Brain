@@ -23,8 +23,10 @@ const parseWindow = (query) => {
   const untilValue = query?.get?.('until') || '';
   const since = sinceValue ? timestampMs(sinceValue) : null;
   const until = untilValue ? timestampMs(untilValue) : null;
-  if (sinceValue && since === null) throw new Error('since 必须是有效的 ISO 时间。');
-  if (untilValue && until === null) throw new Error('until 必须是有效的 ISO 时间。');
+  if (sinceValue && since === null)
+    throw new Error('since 必须是有效的 ISO 时间。');
+  if (untilValue && until === null)
+    throw new Error('until 必须是有效的 ISO 时间。');
   if (since !== null && until !== null && since > until)
     throw new Error('since 不能晚于 until。');
   return {
@@ -52,7 +54,15 @@ const nameOf = (items, id, fallback = null) =>
 const routeKey = ({ providerId, model }) =>
   [providerId || '', model || ''].join('\u001f');
 
-const emptyBucket = ({ providerId, model, providerName, teamId, teamName, roleId, roleName }) => ({
+const emptyBucket = ({
+  providerId,
+  model,
+  providerName,
+  teamId,
+  teamName,
+  roleId,
+  roleName,
+}) => ({
   providerId: providerId || null,
   providerName: providerName || providerId || '未识别供应商',
   model: model || null,
@@ -85,10 +95,16 @@ const addCandidateDecision = (bucket, candidate) => {
     providerName: candidate.providerName || null,
     model: candidate.model || null,
     status: candidate.status || 'unknown',
-    reason: typeof candidate.reason === 'string' ? candidate.reason.slice(0, 500) : null,
+    reason:
+      typeof candidate.reason === 'string'
+        ? candidate.reason.slice(0, 500)
+        : null,
   };
   const key = JSON.stringify(normalized);
-  const existing = bucket.candidateDecisions.get(key) || { ...normalized, count: 0 };
+  const existing = bucket.candidateDecisions.get(key) || {
+    ...normalized,
+    count: 0,
+  };
   existing.count += 1;
   bucket.candidateDecisions.set(key, existing);
 };
@@ -146,12 +162,17 @@ const p50 = (values) => {
 };
 
 const publicBucket = (bucket) => {
-  const costKnown = bucket.usageRows.length > 0 && bucket.usageRows.every((row) => numberOrNull(row.cost) !== null);
+  const costKnown =
+    bucket.usageRows.length > 0 &&
+    bucket.usageRows.every((row) => numberOrNull(row.cost) !== null);
   const cost = costKnown
     ? bucket.usageRows.reduce((sum, row) => sum + numberOrNull(row.cost), 0)
     : null;
   const avgLatencyMs = bucket.latencies.length
-    ? Math.round(bucket.latencies.reduce((sum, value) => sum + value, 0) / bucket.latencies.length)
+    ? Math.round(
+        bucket.latencies.reduce((sum, value) => sum + value, 0) /
+          bucket.latencies.length,
+      )
     : null;
   return {
     providerId: bucket.providerId,
@@ -179,7 +200,14 @@ const publicBucket = (bucket) => {
     rejected: bucket.rejected,
     pending: bucket.pending,
     candidateDecisions: [...bucket.candidateDecisions.values()]
-      .sort((a, b) => b.count - a.count || String(a.providerId || '').localeCompare(String(b.providerId || '')) || String(a.model || '').localeCompare(String(b.model || '')))
+      .sort(
+        (a, b) =>
+          b.count - a.count ||
+          String(a.providerId || '').localeCompare(
+            String(b.providerId || ''),
+          ) ||
+          String(a.model || '').localeCompare(String(b.model || '')),
+      )
       .slice(0, 50),
   };
 };
@@ -207,12 +235,21 @@ const emptyTaskTypeComparison = (taskType) => ({
 });
 
 const publicTaskTypeComparison = (bucket) => {
-  const costKnown = bucket.usageRows.length > 0 && bucket.usageRows.every((row) => numberOrNull(row.cost) !== null);
+  const costKnown =
+    bucket.usageRows.length > 0 &&
+    bucket.usageRows.every((row) => numberOrNull(row.cost) !== null);
   const cost = costKnown
-    ? Number(bucket.usageRows.reduce((sum, row) => sum + numberOrNull(row.cost), 0).toFixed(10))
+    ? Number(
+        bucket.usageRows
+          .reduce((sum, row) => sum + numberOrNull(row.cost), 0)
+          .toFixed(10),
+      )
     : null;
   const avgLatencyMs = bucket.latencies.length
-    ? Math.round(bucket.latencies.reduce((sum, value) => sum + value, 0) / bucket.latencies.length)
+    ? Math.round(
+        bucket.latencies.reduce((sum, value) => sum + value, 0) /
+          bucket.latencies.length,
+      )
     : null;
   return {
     taskType: bucket.taskType,
@@ -261,8 +298,8 @@ const evidenceQualityCounts = (rows, store) => {
     const delivery = store.taskDelivery(row.task);
     const hasStaleEvidence = Boolean(
       delivery.hasVerificationEvidence &&
-        delivery.verificationRequirementVersion !==
-          delivery.currentRequirementVersion,
+      delivery.verificationRequirementVersion !==
+        delivery.currentRequirementVersion,
     );
     const failedEvidence = delivery.acceptanceStatus === 'failed';
     const currentVerified = delivery.hasCurrentVerificationEvidence;
@@ -294,7 +331,8 @@ const evidenceQualityTrend = (rows, store) => {
   const byDate = new Map();
   for (const row of rows) {
     if (row.task.status !== 'completed') continue;
-    const at = timestampMs(row.task.createdAt) ?? timestampMs(row.task.updatedAt);
+    const at =
+      timestampMs(row.task.createdAt) ?? timestampMs(row.task.updatedAt);
     if (at === null) continue;
     const date = new Date(at).toISOString().slice(0, 10);
     if (!byDate.has(date))
@@ -313,10 +351,7 @@ const evidenceQualityTrend = (rows, store) => {
   return [...byDate.values()]
     .map((bucket) => ({
       ...bucket,
-      coverageRate: percentage(
-        bucket.currentVerified,
-        bucket.completedTasks,
-      ),
+      coverageRate: percentage(bucket.currentVerified, bucket.completedTasks),
     }))
     .sort((a, b) => a.date.localeCompare(b.date));
 };
@@ -401,7 +436,8 @@ export function modelMetrics(store, query) {
     if (!withinWindow(task, window)) continue;
     const meta = store.records.get('task-meta', task.id) || {};
     const job = meta.jobId ? store.records.get('jobs', meta.jobId) : null;
-    const teamId = meta.teamId || meta.spaceId || job?.teamId || job?.spaceId || null;
+    const teamId =
+      meta.teamId || meta.spaceId || job?.teamId || job?.spaceId || null;
     const team = teamId ? teamById.get(teamId) : null;
     const role = roles.find((item) => item.id === task.role);
     if (teamFilter && teamId !== teamFilter) continue;
@@ -441,10 +477,21 @@ export function modelMetrics(store, query) {
     const execution = store.records.get('executions', task.id);
     const started = timestampMs(execution?.startedAt);
     const finished = timestampMs(execution?.finishedAt);
-    const latency = started !== null && finished !== null && finished >= started
-      ? finished - started
-      : null;
-    const row = { task, meta, job, context, groupId, execution, latency, route, usageGroups };
+    const latency =
+      started !== null && finished !== null && finished >= started
+        ? finished - started
+        : null;
+    const row = {
+      task,
+      meta,
+      job,
+      context,
+      groupId,
+      execution,
+      latency,
+      route,
+      usageGroups,
+    };
     allTaskRows.push(row);
     if (!usageGroups.size) continue;
     taskRows.push(row);
@@ -454,11 +501,19 @@ export function modelMetrics(store, query) {
 
   const finalRows = new Map();
   for (const [groupId, rows] of groups) {
-    const jobCurrent = rows.find((row) => row.job?.taskId && row.job.taskId === row.task.id);
-    const final = jobCurrent || [...rows].sort((a, b) =>
-      String(a.task.createdAt || '').localeCompare(String(b.task.createdAt || '')) ||
-      String(a.task.id).localeCompare(String(b.task.id)),
-    ).at(-1);
+    const jobCurrent = rows.find(
+      (row) => row.job?.taskId && row.job.taskId === row.task.id,
+    );
+    const final =
+      jobCurrent ||
+      [...rows]
+        .sort(
+          (a, b) =>
+            String(a.task.createdAt || '').localeCompare(
+              String(b.task.createdAt || ''),
+            ) || String(a.task.id).localeCompare(String(b.task.id)),
+        )
+        .at(-1);
     if (final) finalRows.set(groupId, final);
   }
 
@@ -474,16 +529,17 @@ export function modelMetrics(store, query) {
     );
     const final =
       jobCurrent ||
-      [...rows].sort(
-        (a, b) =>
-          String(a.task.createdAt || '').localeCompare(
-            String(b.task.createdAt || ''),
-          ) || String(a.task.id).localeCompare(String(b.task.id)),
-      ).at(-1);
+      [...rows]
+        .sort(
+          (a, b) =>
+            String(a.task.createdAt || '').localeCompare(
+              String(b.task.createdAt || ''),
+            ) || String(a.task.id).localeCompare(String(b.task.id)),
+        )
+        .at(-1);
     if (!final) continue;
-    const routeDimensionsFor = (row) => [
-      ...row.usageGroups.values(),
-    ].map((entry) => entry.dimensions);
+    const routeDimensionsFor = (row) =>
+      [...row.usageGroups.values()].map((entry) => entry.dimensions);
     const finalRoutes = routeDimensionsFor(final);
     if (final.route?.providerId || final.route?.model)
       finalRoutes.push(routeDimensions(final.route, final.context));
@@ -503,11 +559,19 @@ export function modelMetrics(store, query) {
       if (modelFilter && dimensions.model !== modelFilter) continue;
       selectedTaskIds.add(row.task.id);
       const bucket = addBucket(buckets, dimensions, providers);
-      const snapshotRoute = row.context && row.route
-        ? routeDimensions(row.route, row.context)
-        : null;
-      if (snapshotRoute && row.route && routeKey(snapshotRoute) === routeKey(dimensions) && Array.isArray(row.route.routingCandidates))
-        row.route.routingCandidates.forEach((candidate) => addCandidateDecision(bucket, candidate));
+      const snapshotRoute =
+        row.context && row.route
+          ? routeDimensions(row.route, row.context)
+          : null;
+      if (
+        snapshotRoute &&
+        row.route &&
+        routeKey(snapshotRoute) === routeKey(dimensions) &&
+        Array.isArray(row.route.routingCandidates)
+      )
+        row.route.routingCandidates.forEach((candidate) =>
+          addCandidateDecision(bucket, candidate),
+        );
       bucket.attempts.add(row.task.id);
       if (row.task.status === 'completed') bucket.completed += 1;
       if (row.task.status === 'failed') bucket.failed += 1;
@@ -516,26 +580,38 @@ export function modelMetrics(store, query) {
         bucket.usageRows.push(usage);
         bucket.inputTokens += numberOrNull(usage.inputTokens) || 0;
         bucket.outputTokens += numberOrNull(usage.outputTokens) || 0;
-        bucket.totalTokens += numberOrNull(usage.totalTokens) ||
-          (numberOrNull(usage.inputTokens) || 0) + (numberOrNull(usage.outputTokens) || 0);
+        bucket.totalTokens +=
+          numberOrNull(usage.totalTokens) ||
+          (numberOrNull(usage.inputTokens) || 0) +
+            (numberOrNull(usage.outputTokens) || 0);
       }
     }
   }
 
   for (const [groupId, row] of finalRows) {
     const delivery = store.taskDelivery(row.task);
-    const finalRoutes = [...row.usageGroups.values()].map((entry) => entry.dimensions);
+    const finalRoutes = [...row.usageGroups.values()].map(
+      (entry) => entry.dimensions,
+    );
     if (!finalRoutes.length && row.task) {
-      const snapshot = store.records.get('runtime-snapshots', row.task.id) || {};
-      if (snapshot.route) finalRoutes.push(routeDimensions(snapshot.route, row.context));
+      const snapshot =
+        store.records.get('runtime-snapshots', row.task.id) || {};
+      if (snapshot.route)
+        finalRoutes.push(routeDimensions(snapshot.route, row.context));
     }
-    const uniqueKeys = new Set(finalRoutes.map((dimensions) => routeKey(dimensions)));
+    const uniqueKeys = new Set(
+      finalRoutes.map((dimensions) => routeKey(dimensions)),
+    );
     for (const key of uniqueKeys) {
       const bucket = buckets.get(key);
       if (!bucket) continue;
       selectedFinalGroups.add(groupId);
       bucket.logicalGroups.add(groupId);
-      if (row.task.status === 'completed' && delivery.hasCurrentVerificationEvidence) bucket.verificationPassed += 1;
+      if (
+        row.task.status === 'completed' &&
+        delivery.hasCurrentVerificationEvidence
+      )
+        bucket.verificationPassed += 1;
       if (delivery.acceptanceDecision === 'accepted') bucket.accepted += 1;
       else if (delivery.acceptanceDecision === 'rejected') bucket.rejected += 1;
       else bucket.pending += 1;
@@ -545,7 +621,9 @@ export function modelMetrics(store, query) {
   const fallbackEvents = [];
   for (const event of store.records.list('task-events')) {
     if (event.type !== 'routing/fallback' || !event.taskId) continue;
-    const row = taskRows.find((candidate) => candidate.task.id === event.taskId);
+    const row = taskRows.find(
+      (candidate) => candidate.task.id === event.taskId,
+    );
     if (!row) continue;
     const data = event.data || {};
     const from = data.from || {};
@@ -565,11 +643,19 @@ export function modelMetrics(store, query) {
       (!modelFilter || dimensionsValue.model === modelFilter);
     if (fromDimensions.providerId || fromDimensions.model) {
       const bucket = addBucket(buckets, fromDimensions, providers);
-      if ((!providerFilter || fromDimensions.providerId === providerFilter) && (!modelFilter || fromDimensions.model === modelFilter)) bucket.fallbacks += 1;
+      if (
+        (!providerFilter || fromDimensions.providerId === providerFilter) &&
+        (!modelFilter || fromDimensions.model === modelFilter)
+      )
+        bucket.fallbacks += 1;
     }
     if (toDimensions.providerId || toDimensions.model) {
       const bucket = addBucket(buckets, toDimensions, providers);
-      if ((!providerFilter || toDimensions.providerId === providerFilter) && (!modelFilter || toDimensions.model === modelFilter)) bucket.fallbackTargets += 1;
+      if (
+        (!providerFilter || toDimensions.providerId === providerFilter) &&
+        (!modelFilter || toDimensions.model === modelFilter)
+      )
+        bucket.fallbackTargets += 1;
     }
     if (matches(fromDimensions) || matches(toDimensions))
       fallbackEvents.push({
@@ -581,7 +667,12 @@ export function modelMetrics(store, query) {
   const items = [...buckets.values()]
     .map(publicBucket)
     .filter((item) => item.attempts || item.fallbacks || item.fallbackTargets)
-    .sort((a, b) => b.totalTokens - a.totalTokens || b.attempts - a.attempts || String(a.model).localeCompare(String(b.model)));
+    .sort(
+      (a, b) =>
+        b.totalTokens - a.totalTokens ||
+        b.attempts - a.attempts ||
+        String(a.model).localeCompare(String(b.model)),
+    );
   const finalGroupRows = [...finalRows.entries()]
     .filter(([groupId]) => selectedFinalGroups.has(groupId))
     .map(([, row]) => row);
@@ -610,8 +701,10 @@ export function modelMetrics(store, query) {
         bucket.usageRows.push(usage);
         bucket.inputTokens += numberOrNull(usage.inputTokens) || 0;
         bucket.outputTokens += numberOrNull(usage.outputTokens) || 0;
-        bucket.totalTokens += numberOrNull(usage.totalTokens) ||
-          (numberOrNull(usage.inputTokens) || 0) + (numberOrNull(usage.outputTokens) || 0);
+        bucket.totalTokens +=
+          numberOrNull(usage.totalTokens) ||
+          (numberOrNull(usage.inputTokens) || 0) +
+            (numberOrNull(usage.outputTokens) || 0);
       }
     }
   }
@@ -642,11 +735,17 @@ export function modelMetrics(store, query) {
         (TASK_TYPES.findIndex((item) => item.id === a.taskType) + 1 || 999) -
         (TASK_TYPES.findIndex((item) => item.id === b.taskType) + 1 || 999),
     );
-  const totalUsageRows = taskRows.flatMap((row) => [...row.usageGroups.values()]
-    .filter((entry) => matchingUsage(entry.dimensions))
-    .flatMap((entry) => entry.rows));
-  const costKnown = totalUsageRows.length > 0 && totalUsageRows.every((row) => numberOrNull(row.cost) !== null);
-  const cost = costKnown ? totalUsageRows.reduce((sum, row) => sum + numberOrNull(row.cost), 0) : null;
+  const totalUsageRows = taskRows.flatMap((row) =>
+    [...row.usageGroups.values()]
+      .filter((entry) => matchingUsage(entry.dimensions))
+      .flatMap((entry) => entry.rows),
+  );
+  const costKnown =
+    totalUsageRows.length > 0 &&
+    totalUsageRows.every((row) => numberOrNull(row.cost) !== null);
+  const cost = costKnown
+    ? totalUsageRows.reduce((sum, row) => sum + numberOrNull(row.cost), 0)
+    : null;
   const totalLatency = taskRows
     .filter((row) => selectedTaskIds.has(row.task.id))
     .map((row) => row.latency)
@@ -654,30 +753,69 @@ export function modelMetrics(store, query) {
   return {
     generatedAt: new Date().toISOString(),
     window: { since: window.sinceIso, until: window.untilIso },
-    filters: { teamId: teamFilter || null, roleId: roleFilter || null, providerId: providerFilter || null, model: modelFilter || null, taskType: taskTypeFilter || null },
+    filters: {
+      teamId: teamFilter || null,
+      roleId: roleFilter || null,
+      providerId: providerFilter || null,
+      model: modelFilter || null,
+      taskType: taskTypeFilter || null,
+    },
     options: {
-      teams: teams.filter((team) => team.status !== 'archived').map((team) => ({ id: team.id, name: team.name })),
+      teams: teams
+        .filter((team) => team.status !== 'archived')
+        .map((team) => ({ id: team.id, name: team.name })),
       roles: roles.map((role) => ({ id: role.id, name: role.name })),
-      providers: providers.map((provider) => ({ id: provider.id, name: provider.name })),
-      models: [...new Set(providers.flatMap((provider) => (Array.isArray(provider.models) ? provider.models : []).map((model) => model.id).filter(Boolean)))].map((model) => ({ id: model, name: model })),
+      providers: providers.map((provider) => ({
+        id: provider.id,
+        name: provider.name,
+      })),
+      models: [
+        ...new Set(
+          providers.flatMap((provider) =>
+            (Array.isArray(provider.models) ? provider.models : [])
+              .map((model) => model.id)
+              .filter(Boolean),
+          ),
+        ),
+      ].map((model) => ({ id: model, name: model })),
       taskTypes: TASK_TYPES,
     },
     totals: {
       attempts: selectedTaskIds.size,
       logicalTasks: selectedFinalGroups.size,
-      completed: finalGroupRows.filter((row) => row.task.status === 'completed').length,
-      failed: finalGroupRows.filter((row) => row.task.status === 'failed').length,
-      accepted: finalGroupRows.filter((row) => store.taskDelivery(row.task).acceptanceDecision === 'accepted').length,
-      rejected: finalGroupRows.filter((row) => store.taskDelivery(row.task).acceptanceDecision === 'rejected').length,
-      pending: finalGroupRows.filter((row) => !['accepted', 'rejected'].includes(store.taskDelivery(row.task).acceptanceDecision)).length,
-      verificationPassed: finalGroupRows.filter((row) => row.task.status === 'completed' && store.taskDelivery(row.task).hasCurrentVerificationEvidence).length,
+      completed: finalGroupRows.filter((row) => row.task.status === 'completed')
+        .length,
+      failed: finalGroupRows.filter((row) => row.task.status === 'failed')
+        .length,
+      accepted: finalGroupRows.filter(
+        (row) => store.taskDelivery(row.task).acceptanceDecision === 'accepted',
+      ).length,
+      rejected: finalGroupRows.filter(
+        (row) => store.taskDelivery(row.task).acceptanceDecision === 'rejected',
+      ).length,
+      pending: finalGroupRows.filter(
+        (row) =>
+          !['accepted', 'rejected'].includes(
+            store.taskDelivery(row.task).acceptanceDecision,
+          ),
+      ).length,
+      verificationPassed: finalGroupRows.filter(
+        (row) =>
+          row.task.status === 'completed' &&
+          store.taskDelivery(row.task).hasCurrentVerificationEvidence,
+      ).length,
       fallbacks: fallbackEvents.length,
       inputTokens: items.reduce((sum, item) => sum + item.inputTokens, 0),
       outputTokens: items.reduce((sum, item) => sum + item.outputTokens, 0),
       totalTokens: items.reduce((sum, item) => sum + item.totalTokens, 0),
       cost,
       costKnown,
-      avgLatencyMs: totalLatency.length ? Math.round(totalLatency.reduce((sum, value) => sum + value, 0) / totalLatency.length) : null,
+      avgLatencyMs: totalLatency.length
+        ? Math.round(
+            totalLatency.reduce((sum, value) => sum + value, 0) /
+              totalLatency.length,
+          )
+        : null,
       p50LatencyMs: p50(totalLatency),
     },
     evidenceQuality: quality,

@@ -6,7 +6,9 @@ import path from 'node:path';
 import { createWorkbench } from '../server/index.mjs';
 
 async function fixture(t) {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ggb-model-metrics-'));
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'ggb-model-metrics-'),
+  );
   const app = createWorkbench({
     workspace: path.join(directory, 'workspace'),
     dataDir: path.join(directory, 'data'),
@@ -15,7 +17,11 @@ async function fixture(t) {
   await app.platform.ready;
   await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${app.server.address().port}`;
-  const request = async (route, body, method = body === undefined ? 'GET' : 'POST') => {
+  const request = async (
+    route,
+    body,
+    method = body === undefined ? 'GET' : 'POST',
+  ) => {
     const response = await fetch(`${base}/api/${route}`, {
       method,
       headers: { 'Content-Type': 'application/json' },
@@ -30,63 +36,84 @@ async function fixture(t) {
   return { app, request };
 }
 
-function saveAttempt(app, {
-  task,
-  teamId,
-  jobId,
-  groupId,
-  providerId,
-  providerName,
-  model,
-  status,
-  startedAt,
-  finishedAt,
-  inputTokens,
-  outputTokens,
-  cost,
-  routingCandidates = [],
-}) {
-  const { records } = app.store;
-  records.save('task-meta', {
+function saveAttempt(
+  app,
+  {
+    task,
+    teamId,
     jobId,
     groupId,
-    teamId,
-    spaceId: teamId,
-    providerIds: [providerId],
-    allowedProviderIds: [providerId],
-    requirementVersion: 1,
-  }, task.id);
-  records.save('runtime-snapshots', {
-    route: { providerId, providerName, model, routingCandidates },
-  }, task.id);
-  records.save('executions', {
-    taskId: task.id,
-    groupId,
+    providerId,
+    providerName,
+    model,
     status,
     startedAt,
     finishedAt,
-  }, task.id);
-  records.save('usage', {
-    taskId: task.id,
-    groupId,
-    jobId,
-    turn: 1,
     inputTokens,
     outputTokens,
-    totalTokens: inputTokens + outputTokens,
     cost,
-    providerId,
-    model,
-  }, `${task.id}:1`);
-  app.store.updateTask(task.id, { status, result: status === 'completed' ? '完成' : '', error: status === 'failed' ? '模型不可用' : '' });
+    routingCandidates = [],
+  },
+) {
+  const { records } = app.store;
+  records.save(
+    'task-meta',
+    {
+      jobId,
+      groupId,
+      teamId,
+      spaceId: teamId,
+      providerIds: [providerId],
+      allowedProviderIds: [providerId],
+      requirementVersion: 1,
+    },
+    task.id,
+  );
+  records.save(
+    'runtime-snapshots',
+    {
+      route: { providerId, providerName, model, routingCandidates },
+    },
+    task.id,
+  );
+  records.save(
+    'executions',
+    {
+      taskId: task.id,
+      groupId,
+      status,
+      startedAt,
+      finishedAt,
+    },
+    task.id,
+  );
+  records.save(
+    'usage',
+    {
+      taskId: task.id,
+      groupId,
+      jobId,
+      turn: 1,
+      inputTokens,
+      outputTokens,
+      totalTokens: inputTokens + outputTokens,
+      cost,
+      providerId,
+      model,
+    },
+    `${task.id}:1`,
+  );
+  app.store.updateTask(task.id, {
+    status,
+    result: status === 'completed' ? '完成' : '',
+    error: status === 'failed' ? '模型不可用' : '',
+  });
 }
 
-function saveQualityOnlyTask(app, {
-  id,
-  teamId,
-  requirementVersion = 1,
-  verification,
-}) {
+function saveQualityOnlyTask(
+  app,
+  { id, teamId, requirementVersion = 1, verification },
+) {
   const task = app.store.createTask({
     id,
     role: 'developer',
@@ -109,7 +136,8 @@ function saveQualityOnlyTask(app, {
       {
         taskId: task.id,
         groupId: id,
-        requirementVersion: verification.requirementVersion ?? requirementVersion,
+        requirementVersion:
+          verification.requirementVersion ?? requirementVersion,
         kind: 'verification',
         status: verification.status,
         verified: verification.status === 'verified',
@@ -183,8 +211,18 @@ test('model metrics aggregate retries by attempt and logical task, preserve unkn
     outputTokens: 50,
     cost: 0.1,
     routingCandidates: [
-      { providerId: alpha.id, providerName: alpha.name, model: 'metrics-alpha', status: 'selected' },
-      { providerId: beta.id, providerName: beta.name, status: 'ineligible', reason: '工具要求不满足' },
+      {
+        providerId: alpha.id,
+        providerName: alpha.name,
+        model: 'metrics-alpha',
+        status: 'selected',
+      },
+      {
+        providerId: beta.id,
+        providerName: beta.name,
+        status: 'ineligible',
+        reason: '工具要求不满足',
+      },
     ],
   });
   saveAttempt(app, {
@@ -202,40 +240,75 @@ test('model metrics aggregate retries by attempt and logical task, preserve unkn
     outputTokens: 80,
     cost: 0.2,
     routingCandidates: [
-      { providerId: alpha.id, providerName: alpha.name, model: 'metrics-alpha', status: 'unavailable', reason: 'HTTP 503' },
-      { providerId: beta.id, providerName: beta.name, model: 'metrics-beta', status: 'selected' },
+      {
+        providerId: alpha.id,
+        providerName: alpha.name,
+        model: 'metrics-alpha',
+        status: 'unavailable',
+        reason: 'HTTP 503',
+      },
+      {
+        providerId: beta.id,
+        providerName: beta.name,
+        model: 'metrics-beta',
+        status: 'selected',
+      },
     ],
   });
-  app.store.records.save('jobs', {
-    ...app.store.records.get('jobs', 'metrics-job'),
-    taskId: retry.id,
-    status: 'completed',
-  }, 'metrics-job');
-  app.store.records.save('task-events', {
-    taskId: first.id,
-    type: 'routing/fallback',
-    data: {
-      from: { providerId: alpha.id, providerName: alpha.name, model: 'metrics-alpha' },
-      to: { providerId: beta.id, providerName: beta.name, model: 'metrics-beta' },
+  app.store.records.save(
+    'jobs',
+    {
+      ...app.store.records.get('jobs', 'metrics-job'),
+      taskId: retry.id,
+      status: 'completed',
     },
-  }, 'metrics-fallback');
-  app.store.records.save('artifacts', {
-    taskId: retry.id,
-    groupId: 'metrics-group',
-    requirementVersion: 1,
-    kind: 'verification',
-    status: 'verified',
-    verified: true,
-    finishedAt: new Date(6000).toISOString(),
-  }, 'metrics-verification');
-  app.store.records.save('task-acceptance', {
-    taskId: retry.id,
-    groupId: 'metrics-group',
-    decision: 'accepted',
-    status: 'active',
-    requirementVersion: 1,
-    verificationId: 'metrics-verification',
-  }, retry.id);
+    'metrics-job',
+  );
+  app.store.records.save(
+    'task-events',
+    {
+      taskId: first.id,
+      type: 'routing/fallback',
+      data: {
+        from: {
+          providerId: alpha.id,
+          providerName: alpha.name,
+          model: 'metrics-alpha',
+        },
+        to: {
+          providerId: beta.id,
+          providerName: beta.name,
+          model: 'metrics-beta',
+        },
+      },
+    },
+    'metrics-fallback',
+  );
+  app.store.records.save(
+    'artifacts',
+    {
+      taskId: retry.id,
+      groupId: 'metrics-group',
+      requirementVersion: 1,
+      kind: 'verification',
+      status: 'verified',
+      verified: true,
+      finishedAt: new Date(6000).toISOString(),
+    },
+    'metrics-verification',
+  );
+  app.store.records.save(
+    'task-acceptance',
+    {
+      taskId: retry.id,
+      groupId: 'metrics-group',
+      decision: 'accepted',
+      status: 'active',
+      requirementVersion: 1,
+      verificationId: 'metrics-verification',
+    },
+    retry.id,
+  );
 
   const unknownCostTask = app.platform.newTask({
     role: 'project_manager',
@@ -425,14 +498,22 @@ test('model metrics aggregate retries by attempt and logical task, preserve unkn
       },
     ],
   });
-  const alphaItem = result.body.items.find((item) => item.model === 'metrics-alpha');
-  const betaItem = result.body.items.find((item) => item.model === 'metrics-beta');
+  const alphaItem = result.body.items.find(
+    (item) => item.model === 'metrics-alpha',
+  );
+  const betaItem = result.body.items.find(
+    (item) => item.model === 'metrics-beta',
+  );
   assert.ok(alphaItem);
   assert.ok(betaItem);
   assert.equal(alphaItem.attempts, 1);
   assert.equal(alphaItem.failed, 1);
   assert.equal(alphaItem.fallbacks, 1);
-  assert.equal(alphaItem.candidateDecisions.find((item) => item.status === 'ineligible').count, 1);
+  assert.equal(
+    alphaItem.candidateDecisions.find((item) => item.status === 'ineligible')
+      .count,
+    1,
+  );
   assert.equal(betaItem.attempts, 2);
   assert.equal(betaItem.accepted, 1);
   assert.equal(betaItem.costKnown, false);
@@ -440,7 +521,9 @@ test('model metrics aggregate retries by attempt and logical task, preserve unkn
   assert.equal(betaItem.avgLatencyMs, 2000);
   assert.equal(betaItem.p50LatencyMs, 2000);
 
-  const filtered = await request(`metrics/models?providerId=${encodeURIComponent(beta.id)}&roleId=project_manager`);
+  const filtered = await request(
+    `metrics/models?providerId=${encodeURIComponent(beta.id)}&roleId=project_manager`,
+  );
   assert.equal(filtered.status, 200);
   assert.equal(filtered.body.totals.attempts, 1);
   assert.equal(filtered.body.totals.logicalTasks, 1);
@@ -472,7 +555,10 @@ test('model metrics aggregate retries by attempt and logical task, preserve unkn
   assert.equal(development.status, 200);
   assert.equal(development.body.filters.taskType, 'development');
   assert.equal(development.body.evidenceQuality.completedTasks, 4);
-  assert.deepEqual(development.body.evidenceQuality.byTaskType.map((item) => item.taskType), ['development']);
+  assert.deepEqual(
+    development.body.evidenceQuality.byTaskType.map((item) => item.taskType),
+    ['development'],
+  );
   const developmentAlias = await request('metrics/models?taskType=dev');
   assert.equal(developmentAlias.status, 200);
   assert.equal(developmentAlias.body.filters.taskType, 'development');
@@ -499,18 +585,10 @@ test('model metrics evidence trend follows date and filters', async (t) => {
   });
   app.store.db
     .prepare('UPDATE tasks SET createdAt=?,updatedAt=? WHERE id=?')
-    .run(
-      '2026-01-02T12:00:00.000Z',
-      '2026-01-02T12:00:00.000Z',
-      current.id,
-    );
+    .run('2026-01-02T12:00:00.000Z', '2026-01-02T12:00:00.000Z', current.id);
   app.store.db
     .prepare('UPDATE tasks SET createdAt=?,updatedAt=? WHERE id=?')
-    .run(
-      '2026-01-03T12:00:00.000Z',
-      '2026-01-03T12:00:00.000Z',
-      missing.id,
-    );
+    .run('2026-01-03T12:00:00.000Z', '2026-01-03T12:00:00.000Z', missing.id);
 
   const result = await request(
     'metrics/models?teamId=trend-team&since=2026-01-01T00:00:00.000Z&until=2026-01-04T00:00:00.000Z',

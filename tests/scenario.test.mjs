@@ -239,12 +239,19 @@ test(
     );
     const parentMcp = await connect(parentRun);
     const capabilities = await call(parentMcp, 'list_capabilities');
-    assert.ok(capabilities.capabilities.some((item) => item.id === skill.id && item.kind === 'skill'));
+    assert.ok(
+      capabilities.capabilities.some(
+        (item) => item.id === skill.id && item.kind === 'skill',
+      ),
+    );
     assert.deepEqual(
       capabilities.capabilities.find((item) => item.id === mcp.id).tools,
       ['get_contract'],
     );
-    assert.doesNotMatch(JSON.stringify(capabilities), /credentialId|envRefs|url|"command"\s*:/);
+    assert.doesNotMatch(
+      JSON.stringify(capabilities),
+      /credentialId|envRefs|url|"command"\s*:/,
+    );
     const frontend = await call(parentMcp, 'delegate_task', {
       role: roles.frontend.id,
       prompt: 'Implement renderStatus with checkpointed handoff.',

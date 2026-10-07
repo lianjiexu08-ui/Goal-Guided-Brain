@@ -74,7 +74,9 @@ export class Records {
       ON CONFLICT(collection,id) DO UPDATE SET data=excluded.data,revision=records.revision+1,updatedAt=excluded.updatedAt`)
       .run(collection, id, JSON.stringify(data), now, now);
     const saved = this.get(collection, id);
-    try { this.onSave?.({ collection, record: saved, previous }); } catch {}
+    try {
+      this.onSave?.({ collection, record: saved, previous });
+    } catch {}
     return saved;
   }
   remove(collection, id) {

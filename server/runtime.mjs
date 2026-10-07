@@ -24,49 +24,70 @@ export function dshCandidates({
   pathValue = process.env.PATH || '',
   configured = process.env.DSH_EXECUTABLE,
 } = {}) {
-  const names = platform === 'win32' ? ['dsh.exe', 'dsh.cmd', 'dsh.bat', 'dsh'] : ['dsh'];
+  const names =
+    platform === 'win32' ? ['dsh.exe', 'dsh.cmd', 'dsh.bat', 'dsh'] : ['dsh'];
   const join = platform === 'win32' ? path.win32.join : path.join;
-  const homeCandidates = platform === 'win32'
-    ? [
-        join(homeDir, 'AppData', 'Roaming', 'npm', 'dsh.cmd'),
-        join(homeDir, '.local', 'bin', 'dsh.exe'),
-        join(homeDir, '.local', 'bin', 'dsh.cmd'),
-      ]
-    : [path.join(homeDir, '.local/bin/dsh')];
+  const homeCandidates =
+    platform === 'win32'
+      ? [
+          join(homeDir, 'AppData', 'Roaming', 'npm', 'dsh.cmd'),
+          join(homeDir, '.local', 'bin', 'dsh.exe'),
+          join(homeDir, '.local', 'bin', 'dsh.cmd'),
+        ]
+      : [path.join(homeDir, '.local/bin/dsh')];
   const pathEntries = String(pathValue)
     .split(platform === 'win32' ? ';' : path.delimiter)
     .filter(Boolean);
   const configuredValue = String(configured || '').trim();
-  const configuredInPath = configuredValue && !configuredValue.includes('/') && !configuredValue.includes('\\')
-    ? pathEntries.map((directory) => join(directory, configuredValue))
-    : [];
-  return [...new Set([
-    configuredValue,
-    ...configuredInPath,
-    ...homeCandidates,
-    ...pathEntries.flatMap((directory) => names.map((name) => join(directory, name))),
-  ].filter(Boolean))];
+  const configuredInPath =
+    configuredValue &&
+    !configuredValue.includes('/') &&
+    !configuredValue.includes('\\')
+      ? pathEntries.map((directory) => join(directory, configuredValue))
+      : [];
+  return [
+    ...new Set(
+      [
+        configuredValue,
+        ...configuredInPath,
+        ...homeCandidates,
+        ...pathEntries.flatMap((directory) =>
+          names.map((name) => join(directory, name)),
+        ),
+      ].filter(Boolean),
+    ),
+  ];
 }
 
 export function findDsh(options = {}) {
   const platform = options.platform || process.platform;
-  const access = options.access || ((filename) => {
-    if (!filename) return false;
-    try {
-      // Windows does not use executable permission bits.  Checking F_OK also
-      // lets an npm-generated `.cmd` shim be selected there.
-      fs.accessSync(filename, platform === 'win32' ? fs.constants.F_OK : fs.constants.X_OK);
-      return true;
-    } catch {
-      return false;
-    }
-  });
+  const access =
+    options.access ||
+    ((filename) => {
+      if (!filename) return false;
+      try {
+        // Windows does not use executable permission bits.  Checking F_OK also
+        // lets an npm-generated `.cmd` shim be selected there.
+        fs.accessSync(
+          filename,
+          platform === 'win32' ? fs.constants.F_OK : fs.constants.X_OK,
+        );
+        return true;
+      } catch {
+        return false;
+      }
+    });
   return dshCandidates(options).find((candidate) => access(candidate)) || '';
 }
 
 export function terminateProcessTree(
   pid,
-  { platform = process.platform, kill = process.kill, run = execFileSync, force = false } = {},
+  {
+    platform = process.platform,
+    kill = process.kill,
+    run = execFileSync,
+    force = false,
+  } = {},
 ) {
   if (!pid || !Number.isInteger(Number(pid))) return false;
   const value = Number(pid);
@@ -74,7 +95,11 @@ export function terminateProcessTree(
     try {
       // `taskkill /t` is the Windows equivalent of killing a detached Unix
       // process group.  It also handles npm/Node child trees correctly.
-      run('taskkill.exe', ['/pid', String(value), '/t', ...(force ? ['/f'] : [])], { stdio: 'ignore' });
+      run(
+        'taskkill.exe',
+        ['/pid', String(value), '/t', ...(force ? ['/f'] : [])],
+        { stdio: 'ignore' },
+      );
       return true;
     } catch {
       try {
@@ -502,7 +527,12 @@ export class DshRun {
       // other file types remain available at the staged workspace paths listed
       // in the context, so file-capable agents can inspect their original bytes.
       if (this.route?.modelSpec?.vision === true) {
-        const imageTypes = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+        const imageTypes = new Set([
+          'image/png',
+          'image/jpeg',
+          'image/webp',
+          'image/gif',
+        ]);
         for (const attachment of this.attachments) {
           const mimeType = String(attachment.mime || '').toLowerCase();
           if (!imageTypes.has(mimeType) || !attachment.path) continue;

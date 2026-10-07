@@ -1,20 +1,12 @@
 import test from 'node:test';
-import http from 'node:http';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { Store } from '../server/store.mjs';
 import { createWorkbench } from '../server/index.mjs';
+import { sandbox, tick } from './helpers/workbench-helpers.mjs';
 
-function sandbox() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-workbench-test-'));
-  const workspace = path.join(dir, 'project');
-  fs.mkdirSync(workspace);
-  return { dir, workspace, dataDir: path.join(dir, 'data') };
-}
-const tick = () => new Promise((r) => setTimeout(r, 20));
 test('assistant migration preserves existing instructions and only seeds defaults once', () => {
   const s = sandbox();
   fs.mkdirSync(s.dataDir);
@@ -22,16 +14,14 @@ test('assistant migration preserves existing instructions and only seeds default
   legacy.exec(
     'CREATE TABLE settings (id INTEGER PRIMARY KEY, data TEXT NOT NULL)',
   );
-  legacy
-    .prepare('INSERT INTO settings VALUES(1,?)')
-    .run(
-      JSON.stringify({
-        workspace: s.workspace,
-        model: 'deepseek-v4-flash',
-        maxConcurrent: 3,
-        roleInstructions: { product: '用户原先修改的工作规范' },
-      }),
-    );
+  legacy.prepare('INSERT INTO settings VALUES(1,?)').run(
+    JSON.stringify({
+      workspace: s.workspace,
+      model: 'deepseek-v4-flash',
+      maxConcurrent: 3,
+      roleInstructions: { product: '用户原先修改的工作规范' },
+    }),
+  );
   legacy.close();
   let store = new Store(s.dataDir, s.workspace);
   try {
@@ -211,8 +201,14 @@ test('batch delivery review accepts atomically and records rejection attention',
     return { status: response.status, body: await response.json() };
   };
   try {
-    const first = app.store.createTask({ role: 'developer', prompt: '批量交付一' });
-    const second = app.store.createTask({ role: 'developer', prompt: '批量交付二' });
+    const first = app.store.createTask({
+      role: 'developer',
+      prompt: '批量交付一',
+    });
+    const second = app.store.createTask({
+      role: 'developer',
+      prompt: '批量交付二',
+    });
     app.store.updateTask(first.id, { status: 'completed', result: '完成一' });
     app.store.updateTask(second.id, { status: 'completed', result: '完成二' });
     app.store.records.save('artifacts', {
@@ -239,13 +235,28 @@ test('batch delivery review accepts atomically and records rejection attention',
       accepted.body.items.map((item) => item.decision),
       ['accepted', 'accepted'],
     );
-    assert.equal(app.store.taskDelivery(app.store.task(first.id)).deliveryStatus, 'accepted');
-    assert.equal(app.store.taskDelivery(app.store.task(second.id)).deliveryStatus, 'accepted');
+    assert.equal(
+      app.store.taskDelivery(app.store.task(first.id)).deliveryStatus,
+      'accepted',
+    );
+    assert.equal(
+      app.store.taskDelivery(app.store.task(second.id)).deliveryStatus,
+      'accepted',
+    );
 
-    const valid = app.store.createTask({ role: 'developer', prompt: '有效批量任务' });
-    const missingEvidence = app.store.createTask({ role: 'developer', prompt: '缺验证批量任务' });
+    const valid = app.store.createTask({
+      role: 'developer',
+      prompt: '有效批量任务',
+    });
+    const missingEvidence = app.store.createTask({
+      role: 'developer',
+      prompt: '缺验证批量任务',
+    });
     app.store.updateTask(valid.id, { status: 'completed', result: '完成' });
-    app.store.updateTask(missingEvidence.id, { status: 'completed', result: '完成' });
+    app.store.updateTask(missingEvidence.id, {
+      status: 'completed',
+      result: '完成',
+    });
     app.store.records.save('artifacts', {
       taskId: valid.id,
       kind: 'verification',
@@ -260,8 +271,14 @@ test('batch delivery review accepts atomically and records rejection attention',
     assert.equal(atomicFailure.status, 409);
     assert.match(atomicFailure.body.error, /缺验证批量任务/);
     assert.match(atomicFailure.body.error, /验收证据/);
-    assert.equal(app.store.taskDelivery(app.store.task(valid.id)).deliveryStatus, 'awaiting-owner');
-    assert.equal(app.store.taskDelivery(app.store.task(missingEvidence.id)).deliveryStatus, 'pending-review');
+    assert.equal(
+      app.store.taskDelivery(app.store.task(valid.id)).deliveryStatus,
+      'awaiting-owner',
+    );
+    assert.equal(
+      app.store.taskDelivery(app.store.task(missingEvidence.id)).deliveryStatus,
+      'pending-review',
+    );
 
     const missingNote = await request('tasks/batch-review', {
       taskIds: [valid.id],
@@ -275,7 +292,10 @@ test('batch delivery review accepts atomically and records rejection attention',
     });
     assert.equal(rejected.status, 200);
     assert.equal(rejected.body.items[0].decision, 'rejected');
-    assert.equal(app.store.taskDelivery(app.store.task(valid.id)).deliveryStatus, 'rejected');
+    assert.equal(
+      app.store.taskDelivery(app.store.task(valid.id)).deliveryStatus,
+      'rejected',
+    );
     const managedAfterReject = await request('manage', undefined, 'GET');
     const rejectionNotification = managedAfterReject.body.notifications.find(
       (item) => item.attentionId === `acceptance:${valid.id}:1`,
@@ -285,7 +305,9 @@ test('batch delivery review accepts atomically and records rejection attention',
     const stateAfterReject = await request('state', undefined, 'GET');
     assert.equal(stateAfterReject.body.unreadNotificationCount, 1);
     assert.equal(stateAfterReject.body.openAttentionCount, 1);
-    const markedRead = await request(`notifications/${rejectionNotification.id}/read`);
+    const markedRead = await request(
+      `notifications/${rejectionNotification.id}/read`,
+    );
     assert.equal(markedRead.status, 200);
     assert.ok(markedRead.body.readAt);
     const stateAfterRead = await request('state', undefined, 'GET');
@@ -301,6 +323,7 @@ test('batch delivery review accepts atomically and records rejection attention',
     fs.rmSync(s.dir, { recursive: true, force: true });
   }
 });
+
 test('knowledge retrieval isolates role and project, preserves sources, and exports readable files', () => {
   const s = sandbox(),
     store = new Store(s.dataDir, s.workspace);
@@ -402,7 +425,10 @@ test('knowledge versions keep task references and expired entries out of new con
     const history = store.records
       .list('knowledge-history')
       .filter((entry) => entry.knowledgeId === first.id);
-    assert.deepEqual(history.map((entry) => entry.version), [2, 1]);
+    assert.deepEqual(
+      history.map((entry) => entry.version),
+      [2, 1],
+    );
 
     const expired = store.saveKnowledge({
       title: '过期发布约定',
@@ -421,7 +447,10 @@ test('knowledge versions keep task references and expired entries out of new con
     const context = store.prepareContext(freshTask);
     assert.match(context, /再验证回滚/);
     assert.doesNotMatch(context, /这条不能进入新任务/);
-    assert.deepEqual(store.task(freshTask.id).knowledgeRefs.map((ref) => ref.version), [2]);
+    assert.deepEqual(
+      store.task(freshTask.id).knowledgeRefs.map((ref) => ref.version),
+      [2],
+    );
   } finally {
     store.close();
     fs.rmSync(s.dir, { recursive: true, force: true });
@@ -464,20 +493,28 @@ test('team-scoped knowledge stays isolated when teams share a workspace', () => 
       state: 'confirmed',
       source: '运维团队确认',
     });
-    assert.throws(() => store.saveKnowledge({
-      title: '无效团队知识',
-      content: '不能保存',
-      scope: 'team',
-      teamId: 'missing-team',
-      state: 'confirmed',
-      source: 'fixture',
-    }), /有效的团队/);
+    assert.throws(
+      () =>
+        store.saveKnowledge({
+          title: '无效团队知识',
+          content: '不能保存',
+          scope: 'team',
+          teamId: 'missing-team',
+          state: 'confirmed',
+          source: 'fixture',
+        }),
+      /有效的团队/,
+    );
     const task = store.createTask({
       role: 'project_manager',
       prompt: '整理研发交付规范',
       workspace: s.workspace,
     });
-    store.records.save('task-meta', { teamId: teamA.id, spaceId: teamA.id }, task.id);
+    store.records.save(
+      'task-meta',
+      { teamId: teamA.id, spaceId: teamA.id },
+      task.id,
+    );
     const context = store.prepareContext(task);
     assert.match(context, /研发变更必须包含自动化测试/);
     assert.doesNotMatch(context, /生产发布必须先执行回滚演练/);
@@ -492,26 +529,52 @@ test('state exposes risk counts per confirmed team for workspace switching', asy
   const app = createWorkbench({ ...s, requireCredential: false });
   await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
   const request = async (route) => {
-    const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`);
+    const response = await fetch(
+      `http://127.0.0.1:${app.server.address().port}/api/${route}`,
+    );
     return { status: response.status, body: await response.json() };
   };
   try {
     const risky = app.store.saveTeamSpace({
-      name: '研发团队', goal: '交付代码', workspace: s.workspace,
-      pmRoleId: 'project_manager', memberRoleIds: ['project_manager', 'developer'],
+      name: '研发团队',
+      goal: '交付代码',
+      workspace: s.workspace,
+      pmRoleId: 'project_manager',
+      memberRoleIds: ['project_manager', 'developer'],
       recruitment: { phase: 'confirmed' },
     });
     const quiet = app.store.saveTeamSpace({
-      name: '资料团队', goal: '整理资料', workspace: s.workspace,
-      pmRoleId: 'project_manager', memberRoleIds: ['project_manager', 'assistant'],
+      name: '资料团队',
+      goal: '整理资料',
+      workspace: s.workspace,
+      pmRoleId: 'project_manager',
+      memberRoleIds: ['project_manager', 'assistant'],
       recruitment: { phase: 'confirmed' },
     });
-    const task = app.store.createTask({ role: 'project_manager', prompt: '失败的研发任务', workspace: s.workspace });
-    app.store.records.save('task-meta', { teamId: risky.id, spaceId: risky.id }, task.id);
-    app.store.updateTask(task.id, { status: 'failed', error: 'fixture failure' });
-    app.store.records.save('attention', {
-      teamId: risky.id, status: 'open', title: '需要补充验证', detail: 'fixture attention',
-    }, 'team-risk-attention');
+    const task = app.store.createTask({
+      role: 'project_manager',
+      prompt: '失败的研发任务',
+      workspace: s.workspace,
+    });
+    app.store.records.save(
+      'task-meta',
+      { teamId: risky.id, spaceId: risky.id },
+      task.id,
+    );
+    app.store.updateTask(task.id, {
+      status: 'failed',
+      error: 'fixture failure',
+    });
+    app.store.records.save(
+      'attention',
+      {
+        teamId: risky.id,
+        status: 'open',
+        title: '需要补充验证',
+        detail: 'fixture attention',
+      },
+      'team-risk-attention',
+    );
     const state = await request('state');
     assert.equal(state.status, 200);
     assert.equal(state.body.teamRiskCounts[risky.id], 2);
@@ -582,10 +645,13 @@ test('team knowledge freshness becomes an actionable risk and clears after revie
     assert.ok(risks.body.items.some((item) => item.status === 'expired'));
     const state = await request('state');
     assert.equal(state.body.teamRiskCounts[team.id], 2);
-    app.store.saveKnowledge({
-      ...expired,
-      expiresAt: null,
-    }, expired.id);
+    app.store.saveKnowledge(
+      {
+        ...expired,
+        expiresAt: null,
+      },
+      expired.id,
+    );
     const refreshed = await request(`risks?kind=knowledge&teamId=${team.id}`);
     assert.equal(refreshed.body.total, 1);
     assert.equal((await request('state')).body.teamRiskCounts[team.id], 1);
@@ -626,58 +692,96 @@ test('team plan persists a goal and milestone progress per team', async () => {
     assert.equal(initial.body.dueAt, null);
     assert.equal(initial.body.riskPreference, 'balanced');
     assert.equal(initial.body.budgetTokens, null);
-    const saved = await request(`spaces/${team.id}/plan`, {
-      revision: initial.body.revision,
-      summary: '完成首个可验证交付',
-      dueAt: '2030-06-30',
-      riskPreference: 'conservative',
-      budgetTokens: 50000,
-      milestones: [
-        { id: 'spec', title: '明确验收标准', status: 'completed', order: 0 },
-        { id: 'build', title: '完成实现与测试', status: 'active', order: 1 },
-      ],
-    }, 'PUT');
+    const saved = await request(
+      `spaces/${team.id}/plan`,
+      {
+        revision: initial.body.revision,
+        summary: '完成首个可验证交付',
+        dueAt: '2030-06-30',
+        riskPreference: 'conservative',
+        budgetTokens: 50000,
+        milestones: [
+          { id: 'spec', title: '明确验收标准', status: 'completed', order: 0 },
+          { id: 'build', title: '完成实现与测试', status: 'active', order: 1 },
+        ],
+      },
+      'PUT',
+    );
     assert.equal(saved.status, 200);
     assert.equal(saved.body.revision, 1);
     assert.equal(saved.body.dueAt, '2030-06-30');
     assert.equal(saved.body.riskPreference, 'conservative');
     assert.equal(saved.body.budgetTokens, 50000);
     assert.equal(saved.body.milestones[0].completedAt !== null, true);
-    assert.equal((await request(`spaces/${team.id}`, undefined, 'GET')).body.goal, '完成首个可验证交付');
-    const conflict = await request(`spaces/${team.id}/plan`, {
-      revision: initial.body.revision,
-      summary: '旧版本覆盖',
-      milestones: [],
-    }, 'PUT');
+    assert.equal(
+      (await request(`spaces/${team.id}`, undefined, 'GET')).body.goal,
+      '完成首个可验证交付',
+    );
+    const conflict = await request(
+      `spaces/${team.id}/plan`,
+      {
+        revision: initial.body.revision,
+        summary: '旧版本覆盖',
+        milestones: [],
+      },
+      'PUT',
+    );
     assert.equal(conflict.status, 400);
     assert.match(conflict.body.error, /记录已更新/);
     const fetched = await request(`spaces/${team.id}/plan`);
     assert.equal(fetched.body.summary, '完成首个可验证交付');
-    assert.deepEqual(fetched.body.milestones.map((item) => item.status), ['completed', 'active']);
-    const invalidDate = await request(`spaces/${team.id}/plan`, {
-      revision: fetched.body.revision,
-      dueAt: '2030-02-31',
-    }, 'PUT');
+    assert.deepEqual(
+      fetched.body.milestones.map((item) => item.status),
+      ['completed', 'active'],
+    );
+    const invalidDate = await request(
+      `spaces/${team.id}/plan`,
+      {
+        revision: fetched.body.revision,
+        dueAt: '2030-02-31',
+      },
+      'PUT',
+    );
     assert.equal(invalidDate.status, 400);
     assert.match(invalidDate.body.error, /有效的 YYYY-MM-DD/);
-    const excessiveBudget = await request(`spaces/${team.id}/plan`, {
-      revision: fetched.body.revision,
-      budgetTokens: team.autonomy.budgetTokens + 1,
-    }, 'PUT');
+    const excessiveBudget = await request(
+      `spaces/${team.id}/plan`,
+      {
+        revision: fetched.body.revision,
+        budgetTokens: team.autonomy.budgetTokens + 1,
+      },
+      'PUT',
+    );
     assert.equal(excessiveBudget.status, 400);
     assert.match(excessiveBudget.body.error, /团队自治预算/);
-    assert.equal((await request(`spaces/${team.id}/plan`, {
-      revision: fetched.body.revision,
-      status: 'completed',
-      summary: fetched.body.summary,
-      milestones: fetched.body.milestones.map((item) => ({ ...item, status: 'completed' })),
-    }, 'PUT')).body.status, 'completed');
+    assert.equal(
+      (
+        await request(
+          `spaces/${team.id}/plan`,
+          {
+            revision: fetched.body.revision,
+            status: 'completed',
+            summary: fetched.body.summary,
+            milestones: fetched.body.milestones.map((item) => ({
+              ...item,
+              status: 'completed',
+            })),
+          },
+          'PUT',
+        )
+      ).body.status,
+      'completed',
+    );
     await request(`spaces/${team.id}/archive`, {}, 'POST');
-    const archivedPlan = await request(`spaces/${team.id}/plan`, {
-      revision: fetched.body.revision + 1,
-      summary: '归档后不应修改',
-      milestones: [],
-    }, 'PUT');
+    const archivedPlan = await request(
+      `spaces/${team.id}/plan`,
+      {
+        revision: fetched.body.revision + 1,
+        summary: '归档后不应修改',
+        milestones: [],
+      },
+      'PUT',
+    );
     assert.equal(archivedPlan.status, 400);
     assert.match(archivedPlan.body.error, /归档团队不能编辑计划/);
   } finally {
@@ -698,193 +802,4 @@ test('running tasks become interrupted after a restart; queued work remains queu
   assert.equal(store.task(queued.id).status, 'queued');
   store.close();
   fs.rmSync(s.dir, { recursive: true, force: true });
-});
-test('HTTP journey: concurrent assistants, developer queue, cancellation, handoff, and secret boundary', async () => {
-  const s = sandbox(),
-    runtimes = [];
-  const app = createWorkbench({
-    ...s,
-    requireCredential: false,
-    runtimeFactory: (o) => {
-      const fake = {
-        options: o,
-        start(prompt) {
-          fake.prompt = prompt;
-          runtimes.push(fake);
-        },
-        cancel() {
-          o.onDone('cancelled', '已停止');
-        },
-        complete(result) {
-          o.onResult(result);
-          o.onDone('completed', '');
-        },
-      };
-      return fake;
-    },
-  });
-  await new Promise((r) => app.server.listen(0, '127.0.0.1', r));
-  const base = `http://127.0.0.1:${app.server.address().port}`;
-  const request = async (p, body, method = 'POST') => {
-    const r = await fetch(base + '/api/' + p, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
-    return { status: r.status, body: await r.json() };
-  };
-  try {
-    const p = (await request('tasks', { role: 'product', prompt: '记账需求' }))
-      .body;
-    const d = (
-      await request('tasks', { role: 'developer', prompt: '实现记账功能' })
-    ).body;
-    const d2 = (
-      await request('tasks', {
-        role: 'developer',
-        prompt: '同一项目的第二个开发任务',
-      })
-    ).body;
-    await tick();
-    assert.equal(runtimes.length, 2);
-    assert.equal(app.store.task(d2.id).status, 'queued');
-    runtimes
-      .find((r) => r.options.task.id === p.id)
-      .complete('需求：支持新增收支；验收：列表显示新增记录。');
-    const handoff = await request(`tasks/${p.id}/handoff`, {
-      role: 'developer',
-      note: '请实现这些需求并验证',
-    });
-    assert.equal(handoff.status, 201);
-    assert.equal(handoff.body.sourceTaskId, p.id);
-    assert.notEqual(handoff.body.sessionId, p.sessionId);
-    await request(`tasks/${d.id}/cancel`, {});
-    await tick();
-    assert.equal(app.store.task(d.id).status, 'cancelled');
-    assert.equal(app.store.task(d2.id).status, 'running');
-    runtimes.find((r) => r.options.task.id === d2.id).complete('完成');
-    await tick();
-    const receiver = runtimes.find(
-      (r) => r.options.task.id === handoff.body.id,
-    );
-    assert.match(receiver.prompt, /支持新增收支/);
-    assert.match(receiver.prompt, /请实现这些需求并验证/);
-    receiver.complete('已完成需求并验证。');
-    assert.equal(
-      (await request('tasks', { role: 'wrong', prompt: 'test' })).status,
-      400,
-    );
-    const rejected = await fetch(base + '/api/tasks', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Origin: 'https://evil.example',
-      },
-      body: JSON.stringify({ role: 'product', prompt: '恶意请求' }),
-    });
-    assert.equal(rejected.status, 403);
-    const badHost = await new Promise((resolve) => {
-      http.get(
-        base + '/api/state',
-        { headers: { Host: 'evil.example' } },
-        (r) => {
-          r.resume();
-          resolve(r.statusCode);
-        },
-      );
-    });
-    assert.equal(badHost, 403);
-    await request('vault/initialize', { passphrase: 'fixture-private-vault-password' });
-    const savedSettings = await request(
-      'settings',
-      {
-        workspace: s.workspace,
-        model: 'deepseek-v4-flash',
-        apiKey: 'fixture-private-key',
-      },
-      'PUT',
-    );
-    assert.equal(savedSettings.status, 200);
-    const state = await request('state', undefined, 'GET');
-    assert.equal(state.body.config.hasApiKey, true);
-    assert.ok(!JSON.stringify(state.body).includes('fixture-private-key'));
-    assert.ok(!('context' in state.body.tasks[0]));
-    assert.ok(state.body.tasks.every((task) => task.artifactCount === 0));
-    assert.ok(
-      state.body.tasks.every((task) => task.verificationStatus === null),
-    );
-    const inspectedTask = state.body.tasks[0];
-    assert.equal(
-      (await request(`tasks/${inspectedTask.id}/accept`, { note: '没有当前验证证据时不能交付。' })).status,
-      409,
-    );
-    app.store.records.save('artifacts', {
-      taskId: inspectedTask.id,
-      kind: 'verification',
-      status: 'verified',
-      name: 'npm test',
-    });
-    const withEvidence = await request('state', undefined, 'GET');
-    const evidenceTask = withEvidence.body.tasks.find(
-      (task) => task.id === inspectedTask.id,
-    );
-    assert.equal(evidenceTask.artifactCount, 1);
-    assert.equal(evidenceTask.verificationStatus, 'verified');
-    const inspectedDetail = await request(`tasks/${inspectedTask.id}`, undefined, 'GET');
-    assert.equal(inspectedDetail.body.delivery.executionStatus, inspectedDetail.body.status);
-    assert.equal(inspectedDetail.body.delivery.acceptanceStatus, 'verified');
-    assert.equal(inspectedDetail.body.delivery.deliveryStatus, 'awaiting-owner');
-    assert.equal(inspectedDetail.body.delivery.evidenceCount, 1);
-    assert.equal(inspectedDetail.body.delivery.hasVerificationEvidence, true);
-    const accepted = await request(`tasks/${inspectedTask.id}/accept`, {
-      note: '已检查验证输出，确认本次交付。',
-    });
-    assert.equal(accepted.status, 200);
-    assert.equal(accepted.body.decision, 'accepted');
-    assert.equal(accepted.body.delivery.deliveryStatus, 'accepted');
-    assert.equal(
-      (await request(`tasks/${inspectedTask.id}`, undefined, 'GET')).body.acceptance.decision,
-      'accepted',
-    );
-    assert.equal(
-      (await request(`tasks/${inspectedTask.id}/reject`, {})).status,
-      400,
-    );
-    const rejectedDelivery = await request(`tasks/${inspectedTask.id}/reject`, {
-      note: '请补充边界场景验证后重新提交。',
-    });
-    assert.equal(rejectedDelivery.status, 200);
-    assert.equal(rejectedDelivery.body.decision, 'rejected');
-    assert.equal(rejectedDelivery.body.delivery.deliveryStatus, 'rejected');
-    const attention = await request('attention', undefined, 'GET');
-    assert.ok(attention.body.items.some((item) => item.taskId === inspectedTask.id && item.kind === 'acceptance'));
-    const managed = await request('manage', undefined, 'GET');
-    const managedAcceptance = managed.body.attention.find(
-      (item) => item.taskId === inspectedTask.id && item.kind === 'acceptance',
-    );
-    assert.equal(managedAcceptance.taskTitle, inspectedTask.title);
-    assert.equal(managedAcceptance.deliveryStatus, 'rejected');
-    app.store.records.save('artifacts', {
-      taskId: inspectedTask.id,
-      kind: 'verification',
-      status: 'verified',
-      name: 'npm test (补充验证)',
-      requirementVersion: 1,
-    });
-    const resubmitted = await request(`tasks/${inspectedTask.id}`, undefined, 'GET');
-    assert.equal(resubmitted.body.delivery.deliveryStatus, 'awaiting-owner');
-    const acceptedAgain = await request(`tasks/${inspectedTask.id}/accept`, {
-      note: '补充验证已通过，确认重新交付。',
-    });
-    assert.equal(acceptedAgain.status, 200);
-    assert.equal(acceptedAgain.body.delivery.deliveryStatus, 'accepted');
-    assert.equal(
-      fs.statSync(path.join(s.dataDir, 'vault.json')).mode & 0o777,
-      0o600,
-    );
-    assert.equal(fs.existsSync(path.join(s.dataDir, 'secrets.json')), false);
-  } finally {
-    await app.close();
-    fs.rmSync(s.dir, { recursive: true, force: true });
-  }
 });

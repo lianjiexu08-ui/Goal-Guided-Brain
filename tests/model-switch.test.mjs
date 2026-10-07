@@ -56,7 +56,12 @@ test('an explicit provider and model are used for a task, including text-only mo
       web: false,
       terminal: false,
     });
-    assert.equal(runs[0].capabilityPatch.some((item) => item.id === 'workbench-orchestration'), false);
+    assert.equal(
+      runs[0].capabilityPatch.some(
+        (item) => item.id === 'workbench-orchestration',
+      ),
+      false,
+    );
   } finally {
     await app.close();
     fs.rmSync(dir, { recursive: true, force: true });
@@ -91,29 +96,40 @@ test('team Chat persists its model choice and sends it to the project manager', 
     priority: 1,
   });
   const request = async (route, body, method = 'GET') => {
-    const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
+    const response = await fetch(
+      `http://127.0.0.1:${app.server.address().port}/api/${route}`,
+      {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      },
+    );
     return { status: response.status, body: await response.json() };
   };
   try {
     const spaces = await request('spaces');
     const space = spaces.body[0];
-    const saved = await request(`spaces/${space.id}`, {
-      model: 'team-model',
-      providerId: provider.id,
-    }, 'PUT');
+    const saved = await request(
+      `spaces/${space.id}`,
+      {
+        model: 'team-model',
+        providerId: provider.id,
+      },
+      'PUT',
+    );
     assert.equal(saved.status, 200);
     assert.equal(saved.body.model, 'team-model');
     assert.equal(saved.body.providerId, provider.id);
-    const message = await request(`spaces/${space.id}/messages`, {
-      clientMessageId: 'model-choice-message',
-      content: '使用当前选中的模型回复。',
-      model: 'team-model',
-      providerId: provider.id,
-    }, 'POST');
+    const message = await request(
+      `spaces/${space.id}/messages`,
+      {
+        clientMessageId: 'model-choice-message',
+        content: '使用当前选中的模型回复。',
+        model: 'team-model',
+        providerId: provider.id,
+      },
+      'POST',
+    );
     assert.equal(message.status, 201);
     await waitFor(() => runs.length === 1);
     assert.equal(runs[0].route.providerId, provider.id);
@@ -152,38 +168,56 @@ test('team member conversations retain team context and member model bindings', 
     priority: 1,
   });
   const request = async (route, body, method = 'GET') => {
-    const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
+    const response = await fetch(
+      `http://127.0.0.1:${app.server.address().port}/api/${route}`,
+      {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      },
+    );
     return { status: response.status, body: await response.json() };
   };
   try {
-    const created = await request('teams', {
-      name: '成员模型团队',
-      goal: '验证团队成员对话的上下文与模型绑定。',
-      pmRoleId: 'project_manager',
-      memberRoleIds: ['project_manager', 'developer'],
-    }, 'POST');
-    assert.equal(created.status, 201);
-    const configured = await request(`teams/${created.body.id}`, {
-      memberSettings: {
-        project_manager: {},
-        developer: { modelHint: 'member-model', providerIds: [provider.id] },
+    const created = await request(
+      'teams',
+      {
+        name: '成员模型团队',
+        goal: '验证团队成员对话的上下文与模型绑定。',
+        pmRoleId: 'project_manager',
+        memberRoleIds: ['project_manager', 'developer'],
       },
-    }, 'PUT');
+      'POST',
+    );
+    assert.equal(created.status, 201);
+    const configured = await request(
+      `teams/${created.body.id}`,
+      {
+        memberSettings: {
+          project_manager: {},
+          developer: { modelHint: 'member-model', providerIds: [provider.id] },
+        },
+      },
+      'PUT',
+    );
     assert.equal(configured.status, 200);
-    const task = await request('tasks', {
-      role: 'developer',
-      teamId: created.body.id,
-      prompt: '在团队上下文中执行成员任务。',
-    }, 'POST');
+    const task = await request(
+      'tasks',
+      {
+        role: 'developer',
+        teamId: created.body.id,
+        prompt: '在团队上下文中执行成员任务。',
+      },
+      'POST',
+    );
     assert.equal(task.status, 201);
     await waitFor(() => runs.length === 1);
     assert.equal(runs[0].route.providerId, provider.id);
     assert.equal(runs[0].route.model, 'member-model');
-    assert.equal(app.platform.control.records.get('task-meta', task.body.id).teamId, created.body.id);
+    assert.equal(
+      app.platform.control.records.get('task-meta', task.body.id).teamId,
+      created.body.id,
+    );
   } finally {
     await app.close();
     fs.rmSync(dir, { recursive: true, force: true });

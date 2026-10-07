@@ -42,6 +42,7 @@ The HTTP proxy must preserve the request Host and Origin. Do not trust arbitrary
    ```
 
    The direct flags may also be passed to the worker itself. `--workspace` is repeatable, and `--max-concurrent` accepts 1–16.
+
 3. In the control plane, create a pairing code. Pair from the node using:
 
    ```sh

@@ -86,18 +86,44 @@ export function validateRole(input, existing) {
     providerIds: list('providerIds', 32, 160),
     capabilityIds,
     capabilityApprovals: (() => {
-      const approvals = value.capabilityApprovals ?? existing?.capabilityApprovals ?? {};
-      if (!approvals || typeof approvals !== 'object' || Array.isArray(approvals))
+      const approvals =
+        value.capabilityApprovals ?? existing?.capabilityApprovals ?? {};
+      if (
+        !approvals ||
+        typeof approvals !== 'object' ||
+        Array.isArray(approvals)
+      )
         throw new Error('助手的 capabilityApprovals 字段无效。');
-      return Object.fromEntries(Object.entries(approvals)
-        .filter(([id, item]) => typeof id === 'string' && capabilityIds.includes(id) && item && typeof item === 'object' && item.confirmed === true)
-        .slice(0, 100)
-        .map(([id, item]) => [id, {
-          confirmed: true,
-          digest: typeof item.digest === 'string' ? item.digest.slice(0, 128) : '',
-          riskLevel: typeof item.riskLevel === 'string' ? item.riskLevel.slice(0, 20) : 'unknown',
-          confirmedAt: typeof item.confirmedAt === 'string' ? item.confirmedAt.slice(0, 80) : '',
-        }]));
+      return Object.fromEntries(
+        Object.entries(approvals)
+          .filter(
+            ([id, item]) =>
+              typeof id === 'string' &&
+              capabilityIds.includes(id) &&
+              item &&
+              typeof item === 'object' &&
+              item.confirmed === true,
+          )
+          .slice(0, 100)
+          .map(([id, item]) => [
+            id,
+            {
+              confirmed: true,
+              digest:
+                typeof item.digest === 'string'
+                  ? item.digest.slice(0, 128)
+                  : '',
+              riskLevel:
+                typeof item.riskLevel === 'string'
+                  ? item.riskLevel.slice(0, 20)
+                  : 'unknown',
+              confirmedAt:
+                typeof item.confirmedAt === 'string'
+                  ? item.confirmedAt.slice(0, 80)
+                  : '',
+            },
+          ]),
+      );
     })(),
     nodeId: text('nodeId', 160),
     workspaceMode,

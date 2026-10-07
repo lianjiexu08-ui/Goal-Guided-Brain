@@ -53,23 +53,33 @@ test('task events expose an oldest-first incremental cursor', async (t) => {
     ['event-b', 'text/delta'],
     ['event-c', 'turn/end'],
   ]) {
-    app.store.records.save('task-events', {
-      taskId: task.id,
-      type,
-      data: { id },
-      at: new Date().toISOString(),
-    }, id);
+    app.store.records.save(
+      'task-events',
+      {
+        taskId: task.id,
+        type,
+        data: { id },
+        at: new Date().toISOString(),
+      },
+      id,
+    );
   }
   const first = await request(`tasks/${task.id}/events?limit=2`);
   assert.equal(first.status, 200);
-  assert.deepEqual(first.body.items.map((event) => event.type), ['turn/start', 'text/delta']);
+  assert.deepEqual(
+    first.body.items.map((event) => event.type),
+    ['turn/start', 'text/delta'],
+  );
   assert.equal(first.body.hasMore, true);
   assert.match(first.body.cursor, /\|event-b$/);
   const second = await request(
     `tasks/${task.id}/events?limit=2&after=${encodeURIComponent(first.body.cursor)}`,
   );
   assert.equal(second.status, 200);
-  assert.deepEqual(second.body.items.map((event) => event.type), ['turn/end']);
+  assert.deepEqual(
+    second.body.items.map((event) => event.type),
+    ['turn/end'],
+  );
   assert.equal(second.body.hasMore, false);
   assert.equal((await request('tasks/missing-task/events')).status, 404);
   assert.equal((await request('tasks/missing-task/events/stream')).status, 404);
@@ -86,33 +96,38 @@ test('task event stream replays from a cursor and pushes later events', async (t
     type: 'history/test',
     data: { source: 'history' },
   });
-  const connect = (route) => new Promise((resolve, reject) => {
-    const request = http.get(`${url}/api/${route}`);
-    request.once('response', (response) => {
-      response.setEncoding('utf8');
-      let buffer = '';
-      const readUntil = (pattern) => new Promise((done, fail) => {
-        const check = () => {
-          if (pattern.test(buffer)) {
-            response.off('data', onData);
-            done(buffer);
-          }
-        };
-        const onData = (chunk) => {
-          buffer += chunk;
-          check();
-        };
-        response.on('data', onData);
-        response.once('error', fail);
-        check();
+  const connect = (route) =>
+    new Promise((resolve, reject) => {
+      const request = http.get(`${url}/api/${route}`);
+      request.once('response', (response) => {
+        response.setEncoding('utf8');
+        let buffer = '';
+        const readUntil = (pattern) =>
+          new Promise((done, fail) => {
+            const check = () => {
+              if (pattern.test(buffer)) {
+                response.off('data', onData);
+                done(buffer);
+              }
+            };
+            const onData = (chunk) => {
+              buffer += chunk;
+              check();
+            };
+            response.on('data', onData);
+            response.once('error', fail);
+            check();
+          });
+        resolve({ request, response, readUntil });
       });
-      resolve({ request, response, readUntil });
+      request.once('error', reject);
     });
-    request.once('error', reject);
-  });
   const stream = await connect(`tasks/${task.id}/events/stream`);
   assert.equal(stream.response.statusCode, 200);
-  assert.match(stream.response.headers['content-type'] || '', /text\/event-stream/);
+  assert.match(
+    stream.response.headers['content-type'] || '',
+    /text\/event-stream/,
+  );
   const first = await stream.readUntil(/event: ready/);
   assert.match(first, /event: task_event/);
   assert.match(first, /history\/test/);
@@ -122,7 +137,9 @@ test('task event stream replays from a cursor and pushes later events', async (t
   stream.request.destroy();
   stream.response.destroy();
 
-  const resumed = await connect(`tasks/${task.id}/events/stream?after=${encodeURIComponent(cursor)}`);
+  const resumed = await connect(
+    `tasks/${task.id}/events/stream?after=${encodeURIComponent(cursor)}`,
+  );
   assert.equal(resumed.response.statusCode, 200);
   const ready = await resumed.readUntil(/event: ready/);
   assert.match(ready, /event: ready/);
@@ -140,48 +157,58 @@ test('task event stream replays from a cursor and pushes later events', async (t
 
 test('team event stream replays activity and pushes later messages', async (t) => {
   const { app, request, url, workspace } = await fixture(t);
-  const team = (await request('spaces', {
-    name: '团队事件流 fixture',
-    goal: '验证团队时间线可以实时同步。',
-    purpose: '验证团队时间线可以实时同步。',
-    workspace,
-    pmRoleId: 'project_manager',
-    memberRoleIds: ['project_manager'],
-    recruitment: { phase: 'confirmed' },
-  })).body;
-  const connect = (route) => new Promise((resolve, reject) => {
-    const request = http.get(`${url}/api/${route}`);
-    request.once('response', (response) => {
-      response.setEncoding('utf8');
-      let buffer = '';
-      const readUntil = (pattern) => new Promise((done, fail) => {
-        const check = () => {
-          if (pattern.test(buffer)) {
-            response.off('data', onData);
-            done(buffer);
-          }
-        };
-        const onData = (chunk) => {
-          buffer += chunk;
-          check();
-        };
-        response.on('data', onData);
-        response.once('error', fail);
-        check();
+  const team = (
+    await request('spaces', {
+      name: '团队事件流 fixture',
+      goal: '验证团队时间线可以实时同步。',
+      purpose: '验证团队时间线可以实时同步。',
+      workspace,
+      pmRoleId: 'project_manager',
+      memberRoleIds: ['project_manager'],
+      recruitment: { phase: 'confirmed' },
+    })
+  ).body;
+  const connect = (route) =>
+    new Promise((resolve, reject) => {
+      const request = http.get(`${url}/api/${route}`);
+      request.once('response', (response) => {
+        response.setEncoding('utf8');
+        let buffer = '';
+        const readUntil = (pattern) =>
+          new Promise((done, fail) => {
+            const check = () => {
+              if (pattern.test(buffer)) {
+                response.off('data', onData);
+                done(buffer);
+              }
+            };
+            const onData = (chunk) => {
+              buffer += chunk;
+              check();
+            };
+            response.on('data', onData);
+            response.once('error', fail);
+            check();
+          });
+        resolve({ request, response, readUntil });
       });
-      resolve({ request, response, readUntil });
+      request.once('error', reject);
     });
-    request.once('error', reject);
-  });
-  app.store.saveTeamMessage({
-    spaceId: team.id,
-    teamId: team.id,
-    clientMessageId: 'team-stream-history',
-    content: '历史团队消息',
-  }, 'team-stream-history');
+  app.store.saveTeamMessage(
+    {
+      spaceId: team.id,
+      teamId: team.id,
+      clientMessageId: 'team-stream-history',
+      content: '历史团队消息',
+    },
+    'team-stream-history',
+  );
   const stream = await connect(`spaces/${team.id}/events/stream`);
   assert.equal(stream.response.statusCode, 200);
-  assert.match(stream.response.headers['content-type'] || '', /text\/event-stream/);
+  assert.match(
+    stream.response.headers['content-type'] || '',
+    /text\/event-stream/,
+  );
   const first = await stream.readUntil(/event: ready/);
   assert.match(first, /event: team_event/);
   assert.match(first, /历史团队消息/);
@@ -191,16 +218,21 @@ test('team event stream replays activity and pushes later messages', async (t) =
   stream.request.destroy();
   stream.response.destroy();
 
-  const resumed = await connect(`spaces/${team.id}/events/stream?after=${encodeURIComponent(cursor)}`);
+  const resumed = await connect(
+    `spaces/${team.id}/events/stream?after=${encodeURIComponent(cursor)}`,
+  );
   assert.equal(resumed.response.statusCode, 200);
   const ready = await resumed.readUntil(/event: ready/);
   assert.match(ready, /event: ready/);
-  app.store.saveTeamMessage({
-    spaceId: team.id,
-    teamId: team.id,
-    clientMessageId: 'team-stream-live',
-    content: '实时团队消息',
-  }, 'team-stream-live');
+  app.store.saveTeamMessage(
+    {
+      spaceId: team.id,
+      teamId: team.id,
+      clientMessageId: 'team-stream-live',
+      content: '实时团队消息',
+    },
+    'team-stream-live',
+  );
   const live = await resumed.readUntil(/实时团队消息/);
   assert.match(live, /event: team_event/);
   assert.match(live, /实时团队消息/);
@@ -211,53 +243,79 @@ test('team event stream replays activity and pushes later messages', async (t) =
     workspace,
   });
   app.store.records.save('task-meta', { spaceId: team.id }, task.id);
-  app.store.records.save('artifacts', {
-    taskId: task.id,
-    kind: 'artifact',
-    name: 'live-artifact',
-    status: 'ready',
-  }, 'live-artifact');
+  app.store.records.save(
+    'artifacts',
+    {
+      taskId: task.id,
+      kind: 'artifact',
+      name: 'live-artifact',
+      status: 'ready',
+    },
+    'live-artifact',
+  );
   const artifact = await resumed.readUntil(/live-artifact/);
   assert.match(artifact, /event: team_event/);
   assert.match(artifact, /"type":"artifact"/);
-  app.store.records.save('attention', {
-    teamId: team.id,
-    kind: 'decision',
-    status: 'open',
-    title: '团队需要确认',
-    detail: '请确认实时交付证据。',
-  }, 'live-attention');
+  app.store.records.save(
+    'attention',
+    {
+      teamId: team.id,
+      kind: 'decision',
+      status: 'open',
+      title: '团队需要确认',
+      detail: '请确认实时交付证据。',
+    },
+    'live-attention',
+  );
   const attention = await resumed.readUntil(/live-attention/);
   assert.match(attention, /event: team_event/);
   assert.match(attention, /"type":"team-update"/);
-  app.store.updateTask(task.id, { status: 'failed', error: '实时状态更新 fixture' });
+  app.store.updateTask(task.id, {
+    status: 'failed',
+    error: '实时状态更新 fixture',
+  });
   const taskUpdate = await resumed.readUntil(/实时状态更新 fixture/);
   assert.match(taskUpdate, /event: team_event/);
   assert.match(taskUpdate, /"type":"task"/);
   resumed.request.destroy();
   resumed.response.destroy();
   assert.equal((await request('spaces/missing-team/events')).status, 404);
-  assert.equal((await request('spaces/missing-team/events/stream')).status, 404);
+  assert.equal(
+    (await request('spaces/missing-team/events/stream')).status,
+    404,
+  );
 });
 
 test('completed jobs can be archived and restored without losing history', async (t) => {
   const { app, request } = await fixture(t);
-  const job = app.store.records.save('jobs', {
-    title: '可归档任务',
-    goal: '验证长期任务历史治理。',
-    role: 'assistant',
-    groupId: 'archive-fixture-group',
-    status: 'completed',
-    budgetTokens: 200000,
-    maxDurationMinutes: 30,
-    archived: false,
-  }, 'archive-fixture-job');
-  const archived = await request(`jobs/${job.id}/archive`, { archived: true }, 'POST');
+  const job = app.store.records.save(
+    'jobs',
+    {
+      title: '可归档任务',
+      goal: '验证长期任务历史治理。',
+      role: 'assistant',
+      groupId: 'archive-fixture-group',
+      status: 'completed',
+      budgetTokens: 200000,
+      maxDurationMinutes: 30,
+      archived: false,
+    },
+    'archive-fixture-job',
+  );
+  const archived = await request(
+    `jobs/${job.id}/archive`,
+    { archived: true },
+    'POST',
+  );
   assert.equal(archived.status, 200);
   assert.equal(archived.body.archived, true);
   assert.ok(archived.body.archivedAt);
   assert.equal((await request(`jobs/${job.id}`)).body.archived, true);
-  const restored = await request(`jobs/${job.id}/archive`, { archived: false }, 'POST');
+  const restored = await request(
+    `jobs/${job.id}/archive`,
+    { archived: false },
+    'POST',
+  );
   assert.equal(restored.status, 200);
   assert.equal(restored.body.archived, false);
   assert.equal(restored.body.archivedAt, null);
@@ -290,16 +348,25 @@ test('management API synchronizes a provider catalog without exposing its creden
     assert.equal(req.method, 'GET');
     assert.equal(req.url, '/v1/models');
     res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify({ data: [
-      { id: 'catalog-model', context_window: 64000 },
-      { id: 'catalog-audio', modalities: ['audio'] },
-    ] }));
+    res.end(
+      JSON.stringify({
+        data: [
+          { id: 'catalog-model', context_window: 64000 },
+          { id: 'catalog-audio', modalities: ['audio'] },
+        ],
+      }),
+    );
   });
   await new Promise((resolve) => remote.listen(0, '127.0.0.1', resolve));
   t.after(() => remote.close());
-  await request('vault/initialize', { passphrase: 'fixture-vault-password-123' });
+  await request('vault/initialize', {
+    passphrase: 'fixture-vault-password-123',
+  });
   assert.equal(fs.existsSync(path.join(dataDir, '.vault_pass')), false);
-  const credential = await app.platform.vault.put({ name: 'catalog', value: 'catalog-secret' });
+  const credential = await app.platform.vault.put({
+    name: 'catalog',
+    value: 'catalog-secret',
+  });
   const created = await request('providers', {
     name: 'Catalog fixture',
     protocol: 'openai-completions',
@@ -308,9 +375,16 @@ test('management API synchronizes a provider catalog without exposing its creden
     models: [{ id: 'old-model', tools: true }],
   });
   assert.equal(created.status, 200);
-  const synced = await request(`providers/${created.body.id}/sync-models`, {}, 'POST');
+  const synced = await request(
+    `providers/${created.body.id}/sync-models`,
+    {},
+    'POST',
+  );
   assert.equal(synced.status, 200);
-  assert.deepEqual(synced.body.provider.models.map((model) => model.id), ['catalog-model']);
+  assert.deepEqual(
+    synced.body.provider.models.map((model) => model.id),
+    ['catalog-model'],
+  );
   assert.deepEqual(synced.body.removed, ['old-model']);
   assert.equal(authorization, 'Bearer catalog-secret');
   assert.equal(JSON.stringify(synced.body).includes('catalog-secret'), false);
@@ -392,14 +466,19 @@ test('management capability records expose assistant and team bindings', async (
   const created = await request('capabilities', {
     kind: 'skill',
     name: 'Bound workflow',
-    content: '---\nname: bound-workflow\ndescription: Bound workflow\n---\n\nRun the bound workflow.',
+    content:
+      '---\nname: bound-workflow\ndescription: Bound workflow\n---\n\nRun the bound workflow.',
     enabled: true,
   });
   assert.equal(created.status, 200);
   const capabilityId = created.body.id;
-  const updatedRole = await request('roles/product', {
-    capabilityIds: [capabilityId],
-  }, 'PUT');
+  const updatedRole = await request(
+    'roles/product',
+    {
+      capabilityIds: [capabilityId],
+    },
+    'PUT',
+  );
   assert.equal(updatedRole.status, 200);
   const team = await request('spaces', {
     name: '绑定检查团队',
@@ -415,23 +494,32 @@ test('management capability records expose assistant and team bindings', async (
   });
   assert.equal(team.status, 201);
   const managed = await request('manage');
-  const capability = managed.body.capabilities.find((item) => item.id === capabilityId);
-  assert.deepEqual(capability.bindings.assistants, [{ id: 'product', name: app.store.role('product').name }]);
-  assert.deepEqual(capability.bindings.teams, [{
-    id: `${team.body.id}:project_manager`,
-    teamId: team.body.id,
-    teamName: '绑定检查团队',
-    roleId: 'project_manager',
-    roleName: app.store.role('project_manager').name,
-  }]);
-  assert.deepEqual(managed.body.spaces.find((space) => space.id === team.body.id), {
-    id: team.body.id,
-    name: '绑定检查团队',
-    goal: '验证能力绑定来源可见。',
-    status: 'active',
-    teamType: 'custom',
-    recruitmentPhase: 'confirmed',
-  });
+  const capability = managed.body.capabilities.find(
+    (item) => item.id === capabilityId,
+  );
+  assert.deepEqual(capability.bindings.assistants, [
+    { id: 'product', name: app.store.role('product').name },
+  ]);
+  assert.deepEqual(capability.bindings.teams, [
+    {
+      id: `${team.body.id}:project_manager`,
+      teamId: team.body.id,
+      teamName: '绑定检查团队',
+      roleId: 'project_manager',
+      roleName: app.store.role('project_manager').name,
+    },
+  ]);
+  assert.deepEqual(
+    managed.body.spaces.find((space) => space.id === team.body.id),
+    {
+      id: team.body.id,
+      name: '绑定检查团队',
+      goal: '验证能力绑定来源可见。',
+      status: 'active',
+      teamType: 'custom',
+      recruitmentPhase: 'confirmed',
+    },
+  );
   assert.equal(capability.boundAssistantCount, 1);
   assert.equal(capability.boundTeamCount, 1);
 });
@@ -497,15 +585,27 @@ test('high-risk capability binding and enablement require explicit owner confirm
     enabled: false,
   });
   assert.equal(created.status, 200);
-  const rejectedEnable = await request(`capabilities/${created.body.id}/enable`, {}, 'POST');
+  const rejectedEnable = await request(
+    `capabilities/${created.body.id}/enable`,
+    {},
+    'POST',
+  );
   assert.equal(rejectedEnable.status, 409);
-  const enabled = await request(`capabilities/${created.body.id}/enable`, { confirmed: true }, 'POST');
+  const enabled = await request(
+    `capabilities/${created.body.id}/enable`,
+    { confirmed: true },
+    'POST',
+  );
   assert.equal(enabled.status, 200);
   const capability = enabled.body;
-  const rejectedBinding = await request('roles/product', {
-    capabilityIds: [capability.id],
-    capabilityApprovals: {},
-  }, 'PUT');
+  const rejectedBinding = await request(
+    'roles/product',
+    {
+      capabilityIds: [capability.id],
+      capabilityApprovals: {},
+    },
+    'PUT',
+  );
   assert.equal(rejectedBinding.status, 409);
   assert.match(rejectedBinding.body.error, /逐项确认/);
   const approval = {
@@ -516,21 +616,40 @@ test('high-risk capability binding and enablement require explicit owner confirm
       confirmedAt: new Date().toISOString(),
     },
   };
-  const bound = await request('roles/product', {
-    capabilityIds: [capability.id],
-    capabilityApprovals: approval,
-  }, 'PUT');
+  const bound = await request(
+    'roles/product',
+    {
+      capabilityIds: [capability.id],
+      capabilityApprovals: approval,
+    },
+    'PUT',
+  );
   assert.equal(bound.status, 200, JSON.stringify(bound));
   const managed = await request('manage');
-  const managedCapability = managed.body.capabilities.find((item) => item.id === capability.id);
+  const managedCapability = managed.body.capabilities.find(
+    (item) => item.id === capability.id,
+  );
   assert.equal(managedCapability.latestAudit.action, 'bind');
   assert.equal(managedCapability.latestAudit.confirmed, true);
-  assert.ok(managedCapability.audits.some((item) => item.action === 'bind' && item.roleId === 'product'));
-  assert.ok(managedCapability.audits.some((item) => item.action === 'enable' && item.confirmed === true));
+  assert.ok(
+    managedCapability.audits.some(
+      (item) => item.action === 'bind' && item.roleId === 'product',
+    ),
+  );
+  assert.ok(
+    managedCapability.audits.some(
+      (item) => item.action === 'enable' && item.confirmed === true,
+    ),
+  );
   const detail = await request(`capabilities/${capability.id}`);
   assert.equal(detail.body.risk.level, 'high');
   assert.ok(detail.body.audits.length >= 2);
-  assert.equal(app.store.records.list('capability-audits').filter((item) => item.capabilityId === capability.id).length, 2);
+  assert.equal(
+    app.store.records
+      .list('capability-audits')
+      .filter((item) => item.capabilityId === capability.id).length,
+    2,
+  );
 });
 
 test('knowledge changes and deletion retain versioned source snapshots', async (t) => {
@@ -546,7 +665,11 @@ test('knowledge changes and deletion retain versioned source snapshots', async (
   const created = await request('knowledge', original);
   await request(
     `knowledge/${created.body.id}`,
-    { ...original, content: 'Updated address', expiresAt: '2099-02-01T00:00:00.000Z' },
+    {
+      ...original,
+      content: 'Updated address',
+      expiresAt: '2099-02-01T00:00:00.000Z',
+    },
     'PUT',
   );
   let history = (await request(`knowledge/${created.body.id}/history`)).body;
@@ -554,7 +677,10 @@ test('knowledge changes and deletion retain versioned source snapshots', async (
     history.map((entry) => entry.snapshot.content),
     ['Updated address', 'First address'],
   );
-  assert.deepEqual(history.map((entry) => entry.version), [2, 1]);
+  assert.deepEqual(
+    history.map((entry) => entry.version),
+    [2, 1],
+  );
   assert.equal(history[0].snapshot.expiresAt, '2099-02-01T00:00:00.000Z');
   assert.equal(
     (await request(`knowledge/${created.body.id}`, {}, 'DELETE')).body.ok,
@@ -572,14 +698,16 @@ test('knowledge changes and deletion retain versioned source snapshots', async (
 
 test('team knowledge is persisted with its team scope and rejects unknown teams', async (t) => {
   const { app, request, workspace } = await fixture(t);
-  const team = (await request('spaces', {
-    name: '团队知识 fixture',
-    goal: '验证团队知识隔离。',
-    purpose: '验证团队知识隔离。',
-    workspace,
-    pmRoleId: 'project_manager',
-    memberRoleIds: ['project_manager'],
-  })).body;
+  const team = (
+    await request('spaces', {
+      name: '团队知识 fixture',
+      goal: '验证团队知识隔离。',
+      purpose: '验证团队知识隔离。',
+      workspace,
+      pmRoleId: 'project_manager',
+      memberRoleIds: ['project_manager'],
+    })
+  ).body;
   const created = await request('knowledge', {
     title: '团队发布约定',
     content: '发布前必须有回滚方案。',
@@ -616,7 +744,10 @@ test('team knowledge is persisted with its team scope and rejects unknown teams'
     },
   );
   const state = (await request('state')).body;
-  assert.deepEqual(state.knowledge.find((item) => item.id === created.body.id), created.body);
+  assert.deepEqual(
+    state.knowledge.find((item) => item.id === created.body.id),
+    created.body,
+  );
   const invalid = await request('knowledge', {
     title: '无效团队知识',
     content: '不能保存。',
@@ -631,53 +762,87 @@ test('team knowledge is persisted with its team scope and rejects unknown teams'
 
 test('recruitment endpoint provides a durable cursor for another device to catch up', async (t) => {
   const { app, request, workspace } = await fixture(t);
-  const team = (await request('spaces', {
-    name: '招募会话 fixture',
-    goal: '验证招募会话同步。',
-    purpose: '验证招募会话同步。',
-    workspace,
-    pmRoleId: 'project_manager',
-    memberRoleIds: ['project_manager'],
-    recruitment: { phase: 'discovery', sessionId: null, turns: 0, proposal: null },
-  })).body;
-  app.store.saveTeamMessage({
-    spaceId: team.id,
-    teamId: team.id,
-    clientMessageId: 'recruitment-device-one',
-    kind: 'request',
-    senderType: 'owner',
-    senderId: 'owner',
-    content: '第一台设备的需求',
-    status: 'sent',
-  }, 'recruitment-device-one');
-  app.store.saveTeamMessage({
-    spaceId: team.id,
-    teamId: team.id,
-    clientMessageId: 'recruitment-device-two',
-    kind: 'reply',
-    senderType: 'agent',
-    senderId: 'project_manager',
-    content: '第二台设备可以继续看到这条回复',
-    status: 'answered',
-  }, 'recruitment-device-two');
+  const team = (
+    await request('spaces', {
+      name: '招募会话 fixture',
+      goal: '验证招募会话同步。',
+      purpose: '验证招募会话同步。',
+      workspace,
+      pmRoleId: 'project_manager',
+      memberRoleIds: ['project_manager'],
+      recruitment: {
+        phase: 'discovery',
+        sessionId: null,
+        turns: 0,
+        proposal: null,
+      },
+    })
+  ).body;
+  app.store.saveTeamMessage(
+    {
+      spaceId: team.id,
+      teamId: team.id,
+      clientMessageId: 'recruitment-device-one',
+      kind: 'request',
+      senderType: 'owner',
+      senderId: 'owner',
+      content: '第一台设备的需求',
+      status: 'sent',
+    },
+    'recruitment-device-one',
+  );
+  app.store.saveTeamMessage(
+    {
+      spaceId: team.id,
+      teamId: team.id,
+      clientMessageId: 'recruitment-device-two',
+      kind: 'reply',
+      senderType: 'agent',
+      senderId: 'project_manager',
+      content: '第二台设备可以继续看到这条回复',
+      status: 'answered',
+    },
+    'recruitment-device-two',
+  );
   const first = await request(`spaces/${team.id}/recruitment?limit=1`);
   assert.equal(first.status, 200);
   assert.equal(first.body.messages.length, 1);
   assert.equal(first.body.hasMore, true);
   assert.equal(first.body.recruitment.phase, 'discovery');
   assert.ok(first.body.cursor);
-  const second = await request(`spaces/${team.id}/recruitment?limit=10&after=${encodeURIComponent(first.body.cursor)}`);
+  const second = await request(
+    `spaces/${team.id}/recruitment?limit=10&after=${encodeURIComponent(first.body.cursor)}`,
+  );
   assert.equal(second.status, 200);
   assert.equal(second.body.messages.length, 1);
-  assert.equal(second.body.messages[0].content, '第二台设备可以继续看到这条回复');
+  assert.equal(
+    second.body.messages[0].content,
+    '第二台设备可以继续看到这条回复',
+  );
   assert.equal(second.body.hasMore, false);
 });
 
-test('persisted assistant requirements constrain provider selection after editing', async t => {
+test('persisted assistant requirements constrain provider selection after editing', async (t) => {
   const { app, request } = await fixture(t);
-  const small = await request('providers', { name: 'Small', protocol: 'openai-completions', baseUrl: 'http://127.0.0.1:1/v1', models: [{ id: 'small', tools: true, vision: false, contextWindow: 1024 }] });
-  const large = await request('providers', { name: 'Large vision', protocol: 'anthropic-messages', baseUrl: 'http://127.0.0.1:1/v1', models: [{ id: 'large', tools: true, vision: true, contextWindow: 16000 }] });
-  const role = await request('roles', { name: 'Image reviewer', instructions: 'Review the supplied evidence', providerIds: [small.body.id, large.body.id], requiredContextWindow: 8000, requiresVision: true });
+  const small = await request('providers', {
+    name: 'Small',
+    protocol: 'openai-completions',
+    baseUrl: 'http://127.0.0.1:1/v1',
+    models: [{ id: 'small', tools: true, vision: false, contextWindow: 1024 }],
+  });
+  const large = await request('providers', {
+    name: 'Large vision',
+    protocol: 'anthropic-messages',
+    baseUrl: 'http://127.0.0.1:1/v1',
+    models: [{ id: 'large', tools: true, vision: true, contextWindow: 16000 }],
+  });
+  const role = await request('roles', {
+    name: 'Image reviewer',
+    instructions: 'Review the supplied evidence',
+    providerIds: [small.body.id, large.body.id],
+    requiredContextWindow: 8000,
+    requiresVision: true,
+  });
   assert.equal(role.status, 201);
   await request(`roles/${role.body.id}`, { name: 'Renamed reviewer' }, 'PUT');
   const saved = app.store.role(role.body.id);
@@ -707,7 +872,7 @@ test('manual monitor checks keep disabled rules disabled and record history', as
 
 test('resource and credential probes validate project paths and tcp connection', async (t) => {
   const { request, workspace } = await fixture(t);
-  
+
   // 1. 测试项目目录探测
   const projectProbe = await request('resources/probe', {
     kind: 'project',
@@ -727,7 +892,8 @@ test('resource and credential probes validate project paths and tcp connection',
   // 3. 测试凭据格式校验（如 SSH 私钥）
   const sshProbe = await request('credentials/probe', {
     kind: 'ssh_key',
-    value: '-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----',
+    value:
+      '-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----',
   });
   assert.equal(sshProbe.status, 200);
   assert.equal(sshProbe.body.ok, true);

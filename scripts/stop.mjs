@@ -21,11 +21,14 @@ if (process.platform === 'win32') {
   // check before sending SIGTERM.
   const query = `$process = Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}"; if ($process) { $process.CommandLine }`;
   try {
-    command = execFileSync('powershell.exe', [
-      '-NoProfile', '-NonInteractive', '-Command', query,
-    ], { encoding: 'utf8' }).trim();
+    command = execFileSync(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', query],
+      { encoding: 'utf8' },
+    ).trim();
   } catch (error) {
-    if (error.code === 'ENOENT') throw new Error('Windows PowerShell 不可用，无法安全检查服务进程。');
+    if (error.code === 'ENOENT')
+      throw new Error('Windows PowerShell 不可用，无法安全检查服务进程。');
     throw error;
   }
   if (!command) {
@@ -47,7 +50,8 @@ if (process.platform === 'win32') {
 
 const normalizedCommand = command.trimEnd().toLowerCase().replaceAll('\\', '/');
 const startScript = fileURLToPath(new URL('./start.mjs', import.meta.url))
-  .toLowerCase().replaceAll('\\', '/');
+  .toLowerCase()
+  .replaceAll('\\', '/');
 if (
   !normalizedCommand.includes('node scripts/start.mjs') &&
   !normalizedCommand.includes('/node scripts/start.mjs') &&

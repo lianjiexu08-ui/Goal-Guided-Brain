@@ -522,7 +522,12 @@ function seedConfirmedTeams() {
           name: input.name,
           goal: input.goal,
           purpose: input.goal,
-          collaboration: { enabled: true, allowedTeamIds: [], autoHandoff: true, sharedBoard: true },
+          collaboration: {
+            enabled: true,
+            allowedTeamIds: [],
+            autoHandoff: true,
+            sharedBoard: true,
+          },
           workspace: process.cwd(),
           pmRoleId: 'project_manager',
           memberRoleIds: ['project_manager'],

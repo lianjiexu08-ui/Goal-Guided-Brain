@@ -92,76 +92,172 @@ test('cron preserves local wall time across timezones and DST changes', () => {
 test('schedule previews validate both modes and intervals retain elapsed time through DST', () => {
   const current = new Date('2026-03-08T06:30:00Z');
   assert.deepEqual(
-    scheduleNextTimes({ cron: '0 9 * * *', timezone: 'Asia/Shanghai' }, current, 2),
+    scheduleNextTimes(
+      { cron: '0 9 * * *', timezone: 'Asia/Shanghai' },
+      current,
+      2,
+    ),
     nextTimes('0 9 * * *', 'Asia/Shanghai', current, 2),
   );
   assert.deepEqual(
-    scheduleNextTimes({ mode: 'interval', timezone: 'America/New_York' }, current, 3),
-    ['2026-03-08T07:30:00.000Z', '2026-03-08T08:30:00.000Z', '2026-03-08T09:30:00.000Z'],
+    scheduleNextTimes(
+      { mode: 'interval', timezone: 'America/New_York' },
+      current,
+      3,
+    ),
+    [
+      '2026-03-08T07:30:00.000Z',
+      '2026-03-08T08:30:00.000Z',
+      '2026-03-08T09:30:00.000Z',
+    ],
   );
-  assert.equal(scheduleNextTimes({ mode: 'interval', intervalSeconds: 60 }, current, 1)[0], '2026-03-08T06:31:00.000Z');
-  assert.equal(scheduleNextTimes({ mode: 'interval', intervalSeconds: 31536000 }, current, 1)[0], '2027-03-08T06:30:00.000Z');
+  assert.equal(
+    scheduleNextTimes({ mode: 'interval', intervalSeconds: 60 }, current, 1)[0],
+    '2026-03-08T06:31:00.000Z',
+  );
+  assert.equal(
+    scheduleNextTimes(
+      { mode: 'interval', intervalSeconds: 31536000 },
+      current,
+      1,
+    )[0],
+    '2027-03-08T06:30:00.000Z',
+  );
   assert.deepEqual(
-    scheduleNextTimes({ mode: 'interval', intervalSeconds: 60, nextRunAt: '2026-03-08T06:29:00Z' }, new Date('2026-03-08T06:30:15Z'), 2),
+    scheduleNextTimes(
+      {
+        mode: 'interval',
+        intervalSeconds: 60,
+        nextRunAt: '2026-03-08T06:29:00Z',
+      },
+      new Date('2026-03-08T06:30:15Z'),
+      2,
+    ),
     ['2026-03-08T06:31:00.000Z', '2026-03-08T06:32:00.000Z'],
   );
   for (const seconds of [0, 59, 60.5, 31536001, Infinity, 'invalid'])
-    assert.throws(() => scheduleNextTimes({ mode: 'interval', intervalSeconds: seconds }, current), /执行间隔/);
-  assert.throws(() => scheduleNextTimes({ mode: 'unsupported' }, current), /定时模式/);
-  assert.throws(() => scheduleNextTimes({ mode: 'interval', timezone: 'Invalid/Zone' }, current));
-  assert.throws(() => scheduleNextTimes({ mode: 'interval', nextRunAt: 'invalid' }, current), /下次执行时间/);
+    assert.throws(
+      () =>
+        scheduleNextTimes(
+          { mode: 'interval', intervalSeconds: seconds },
+          current,
+        ),
+      /执行间隔/,
+    );
+  assert.throws(
+    () => scheduleNextTimes({ mode: 'unsupported' }, current),
+    /定时模式/,
+  );
+  assert.throws(() =>
+    scheduleNextTimes({ mode: 'interval', timezone: 'Invalid/Zone' }, current),
+  );
+  assert.throws(
+    () =>
+      scheduleNextTimes({ mode: 'interval', nextRunAt: 'invalid' }, current),
+    /下次执行时间/,
+  );
   assert.throws(() => scheduleNextTimes({}, 'invalid'), /当前时间/);
-  for (const count of [0, 101, 1.5]) assert.throws(() => scheduleNextTimes({}, current, count), /预览数量/);
+  for (const count of [0, 101, 1.5])
+    assert.throws(() => scheduleNextTimes({}, current, count), /预览数量/);
 });
 
 test('schedule edits preserve interval cadence and retain legacy cron records', () => {
   const f = fixture();
   try {
-    const interval = f.service.saveSchedule({ name: 'Hourly', role: 'planner', prompt: 'Inspect', mode: 'interval' });
+    const interval = f.service.saveSchedule({
+      name: 'Hourly',
+      role: 'planner',
+      prompt: 'Inspect',
+      mode: 'interval',
+    });
     assert.equal(interval.intervalSeconds, 3600);
     assert.equal(interval.nextRunAt, '2026-09-10T01:00:00.000Z');
     f.advance(15000);
     const renamed = f.service.saveSchedule({ name: 'Renamed' }, interval.id);
     assert.equal(renamed.nextRunAt, interval.nextRunAt);
-    const changed = f.service.saveSchedule({ intervalSeconds: 60 }, interval.id);
+    const changed = f.service.saveSchedule(
+      { intervalSeconds: 60 },
+      interval.id,
+    );
     assert.equal(changed.nextRunAt, '2026-09-10T00:01:15.000Z');
-    const cron = f.service.saveSchedule({ mode: 'cron', cron: '0 9 * * *' }, interval.id);
+    const cron = f.service.saveSchedule(
+      { mode: 'cron', cron: '0 9 * * *' },
+      interval.id,
+    );
     assert.equal(cron.nextRunAt, '2026-09-10T01:00:00.000Z');
     const legacy = { ...cron };
     delete legacy.mode;
     delete legacy.intervalSeconds;
     f.records.save('schedules', legacy, legacy.id);
-    assert.equal(f.service.saveSchedule({ enabled: true }, legacy.id).nextRunAt, cron.nextRunAt);
-    assert.throws(() => f.service.saveSchedule({ mode: 'interval', intervalSeconds: 59 }, interval.id), /执行间隔/);
+    assert.equal(
+      f.service.saveSchedule({ enabled: true }, legacy.id).nextRunAt,
+      cron.nextRunAt,
+    );
+    assert.throws(
+      () =>
+        f.service.saveSchedule(
+          { mode: 'interval', intervalSeconds: 59 },
+          interval.id,
+        ),
+      /执行间隔/,
+    );
     assert.equal(f.records.get('schedules', interval.id).mode, 'cron');
-  } finally { f.close(); }
+  } finally {
+    f.close();
+  }
 });
 
 test('interval misfires catch up at most once with stable slots, deduplication, and overlap protection', async () => {
   for (const misfire of ['skip', 'once']) {
     const f = fixture();
     try {
-      const schedule = f.service.saveSchedule({ name: misfire, role: 'planner', prompt: 'Inspect', mode: 'interval', intervalSeconds: 60, enabled: true, misfire });
+      const schedule = f.service.saveSchedule({
+        name: misfire,
+        role: 'planner',
+        prompt: 'Inspect',
+        mode: 'interval',
+        intervalSeconds: 60,
+        enabled: true,
+        misfire,
+      });
       f.advance(615000);
       await f.service.tick();
       const first = f.records.list('schedule-runs')[0];
       assert.equal(first.scheduledAt, '2026-09-10T00:01:00.000Z');
       assert.equal(first.status, misfire === 'once' ? 'queued' : 'skipped');
-      assert.equal(f.records.get('schedules', schedule.id).nextRunAt, '2026-09-10T00:11:00.000Z');
-      assert.equal(f.service.trigger(schedule, schedule.nextRunAt).id, first.id);
+      assert.equal(
+        f.records.get('schedules', schedule.id).nextRunAt,
+        '2026-09-10T00:11:00.000Z',
+      );
+      assert.equal(
+        f.service.trigger(schedule, schedule.nextRunAt).id,
+        first.id,
+      );
       await f.service.tick();
       assert.equal(f.records.list('schedule-runs').length, 1);
       f.setTime('2026-09-10T00:11:00Z');
       await f.service.tick();
-      const second = f.records.list('schedule-runs').find(run => run.scheduledAt === '2026-09-10T00:11:00.000Z');
+      const second = f.records
+        .list('schedule-runs')
+        .find((run) => run.scheduledAt === '2026-09-10T00:11:00.000Z');
       assert.equal(second.status, misfire === 'once' ? 'skipped' : 'queued');
       assert.equal(f.records.list('fixture-tasks').length, 1);
-      for (const task of f.records.list('fixture-tasks')) f.records.save('fixture-tasks', { ...task, status: 'completed' }, task.id);
+      for (const task of f.records.list('fixture-tasks'))
+        f.records.save(
+          'fixture-tasks',
+          { ...task, status: 'completed' },
+          task.id,
+        );
       f.setTime('2026-09-10T00:12:00Z');
       await f.service.tick();
       assert.equal(f.records.list('fixture-tasks').length, 2);
-      assert.equal(f.records.get('schedules', schedule.id).nextRunAt, '2026-09-10T00:13:00.000Z');
-    } finally { f.close(); }
+      assert.equal(
+        f.records.get('schedules', schedule.id).nextRunAt,
+        '2026-09-10T00:13:00.000Z',
+      );
+    } finally {
+      f.close();
+    }
   }
 });
 
@@ -218,21 +314,40 @@ test('schedule triggers are idempotent and workflow steps retain batch dependenc
 test('schedule overlap and completion follow replacement attempts and unknown executions', async () => {
   const f = fixture();
   try {
-    const rule = f.service.saveSchedule({ name: 'Retry-aware schedule', role: 'planner', prompt: 'Inspect', cron: '* * * * *', enabled: true });
+    const rule = f.service.saveSchedule({
+      name: 'Retry-aware schedule',
+      role: 'planner',
+      prompt: 'Inspect',
+      cron: '* * * * *',
+      enabled: true,
+    });
     const run = f.service.trigger(rule, rule.nextRunAt);
     const original = f.store.task(run.taskIds[0]);
-    f.records.save('fixture-tasks', { ...original, status: 'failed' }, original.id);
-    const replacement = f.records.save('fixture-tasks', { role: 'planner', status: 'state_unknown' });
+    f.records.save(
+      'fixture-tasks',
+      { ...original, status: 'failed' },
+      original.id,
+    );
+    const replacement = f.records.save('fixture-tasks', {
+      role: 'planner',
+      status: 'state_unknown',
+    });
     const job = f.records.save('jobs', { taskId: replacement.id });
     f.records.save('task-meta', { jobId: job.id }, original.id);
     assert.equal(f.service.trigger(rule, 'next-slot').status, 'skipped');
     await f.service.tick();
     assert.equal(f.records.get('schedule-runs', run.id).status, 'queued');
-    f.records.save('fixture-tasks', { ...replacement, status: 'completed' }, replacement.id);
+    f.records.save(
+      'fixture-tasks',
+      { ...replacement, status: 'completed' },
+      replacement.id,
+    );
     await f.service.tick();
     assert.equal(f.records.get('schedule-runs', run.id).status, 'completed');
     assert.equal(f.service.trigger(rule, 'after-completion').status, 'queued');
-  } finally { f.close(); }
+  } finally {
+    f.close();
+  }
 });
 
 test('misfires skip or catch up once and failed workflow creation rolls back', async () => {
@@ -299,9 +414,17 @@ test('schedule failures use the shared attention callback with a stable id', asy
   };
   try {
     const workflow = f.records.save('workflows', {
-      steps: [{ role: 'planner', prompt: 'Plan' }, { role: 'missing-role', prompt: 'Fail' }],
+      steps: [
+        { role: 'planner', prompt: 'Plan' },
+        { role: 'missing-role', prompt: 'Fail' },
+      ],
     });
-    const schedule = f.service.saveSchedule({ name: 'Invalid workflow', workflowId: workflow.id, enabled: true, cron: '* * * * *' });
+    const schedule = f.service.saveSchedule({
+      name: 'Invalid workflow',
+      workflowId: workflow.id,
+      enabled: true,
+      cron: '* * * * *',
+    });
     f.advance(60000);
     await f.service.tick();
     assert.equal(events.length, 1);

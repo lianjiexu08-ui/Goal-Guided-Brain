@@ -3,7 +3,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
 
-const dataDir = process.env.GGB_E2E_DATA_DIR || path.join(os.tmpdir(), 'ggb-browser-e2e-fixture');
+const dataDir =
+  process.env.GGB_E2E_DATA_DIR ||
+  path.join(os.tmpdir(), 'ggb-browser-e2e-fixture');
 fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
 // The web server and the test worker both need to know where the isolated
 // fixture lives. The global teardown removes it after the run.

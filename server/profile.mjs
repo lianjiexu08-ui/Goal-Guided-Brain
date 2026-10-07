@@ -28,7 +28,10 @@ function list(value, key, maxItems, maxItemLength) {
   if (
     !Array.isArray(value) ||
     value.length > maxItems ||
-    value.some((item) => typeof item !== 'string' || item.length > maxItemLength || !item.trim())
+    value.some(
+      (item) =>
+        typeof item !== 'string' || item.length > maxItemLength || !item.trim(),
+    )
   )
     throw new Error(`个人偏好的 ${key} 列表无效。`);
   return [...new Set(value.map((item) => item.trim()))];
@@ -79,8 +82,12 @@ export function profileContext(profile) {
     value.preferredRole ? `偏好助手：${value.preferredRole}` : '',
     value.preferredProvider ? `偏好模型提供方：${value.preferredProvider}` : '',
     value.preferredModel ? `偏好模型：${value.preferredModel}` : '',
-    value.habits.length ? `工作习惯：\n${value.habits.map((item) => `- ${item}`).join('\n')}` : '',
-    value.rules.length ? `长期规则：\n${value.rules.map((item) => `- ${item}`).join('\n')}` : '',
+    value.habits.length
+      ? `工作习惯：\n${value.habits.map((item) => `- ${item}`).join('\n')}`
+      : '',
+    value.rules.length
+      ? `长期规则：\n${value.rules.map((item) => `- ${item}`).join('\n')}`
+      : '',
     value.instructions ? `补充偏好：\n${value.instructions}` : '',
   ].filter(Boolean);
   return lines.join('\n');

@@ -35,7 +35,7 @@ They are not sign-off for the separate real deployment gates below.
 - [x] Existing regression suite plus new deterministic integration tests: 254/254, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
-- [x] Cross-platform CI matrix runs lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
+- [x] Cross-platform CI matrix is configured to run formatting, file-size checks, lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
 - [x] Combined parent/frontend/backend/reviewer scenario using real orchestration MCP,
       a local external MCP, pinned Skill, isolated Git worktrees, peer messages,
       checkpoints, pause/change-provider/resume, automatic summary and a tested integration.
@@ -46,6 +46,33 @@ They are not sign-off for the separate real deployment gates below.
 - [ ] Real cloud continues scheduled work while the owner's computer is offline.
 
 ## Local Release Record
+
+Repository formatting gate completed on 2026-10-08: cleared the 50-file tracked
+formatting backlog. The CLI now separates provider configuration, session
+persistence and diagnostics. Capability bundle parsing is separate from the
+installation/connection service, with the existing public inspectBundle export
+preserved. Control/MCP/worker, team isolation and HTTP integration tests are split
+by responsibility and share their original setup helpers.
+
+The five extracted files retain all 125 original declarations and test bodies,
+checked against their formatted pre-extraction TypeScript AST. The remaining 45
+files match formatter output from HEAD byte-for-byte. No model defaults, API
+contracts, assertions or source-size exclusions changed. The CLI entry is 918
+lines and the capability service is 834; all 308 scanned source files are below
+1000 lines. CI now checks whole-repository formatting across its existing
+Ubuntu/macOS/Windows and Node.js 22/24 matrix. Playwright reports are ignored as
+generated output. This is local configuration, not evidence of a remote CI run.
+
+Whole-repository formatting, Lint, typecheck and production build passed.
+Backend/CLI regression passed 254/254 without skips. Desktop/mobile browser
+regression passed 244/244 in 11.1 minutes with no retries or skipped cases.
+Verification logs, browser artifacts and AST comparison results are retained
+under `/tmp/ggb-format-evidence/` locally. After verifying no active tasks/jobs,
+the production build was refreshed and the local service restarted. UI, API
+health, proxied state, both collaborator endpoints and CLI doctor passed. The
+original 11 task IDs, 10 job IDs and two unconfirmed spaces remained unchanged;
+there are still no confirmed production teams. No paid model calls, remote push
+or deployment occurred.
 
 Collaboration draft continuity on 2026-10-07: handoff targets, requirements,
 acceptance criteria and follow-up references now persist by source team; closure

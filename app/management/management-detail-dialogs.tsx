@@ -611,7 +611,10 @@ export function ManagementDetailDialogs({
                     <section aria-label="事项处理记录">
                       <h3>处理结果</h3>
                       <p
-                        style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+                        style={{
+                          whiteSpace: 'pre-wrap',
+                          overflowWrap: 'anywhere',
+                        }}
                       >
                         {txt(detail.item, 'resolution')}
                       </p>

@@ -458,7 +458,11 @@ export function Management({
       {view === 'attention' && data && (
         <RiskInbox
           refreshKey={JSON.stringify(
-            data.attention.map((item) => [item.id, item.status, item.updatedAt]),
+            data.attention.map((item) => [
+              item.id,
+              item.status,
+              item.updatedAt,
+            ]),
           )}
           teams={(data.spaces || [])
             .filter(

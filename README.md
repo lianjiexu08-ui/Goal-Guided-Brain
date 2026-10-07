@@ -266,6 +266,8 @@ backups/               SQLite 一致性备份及凭据副本
 ## 开发和发布验证
 
 ```bash
+npm run quality:lines
+npm run format -- --check
 npm run lint
 npm run typecheck
 npm test

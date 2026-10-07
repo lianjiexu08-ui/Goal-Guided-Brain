@@ -68,13 +68,19 @@ test('failed task retry creates a linked isolated attempt and keeps the old resu
     assert.notEqual(retried.body.id, original.id);
     assert.equal(retried.body.sourceTaskId, original.id);
     assert.equal(app.store.task(original.id).result, originalResult);
-    assert.equal(app.store.task(original.id).error, 'provider temporarily unavailable');
+    assert.equal(
+      app.store.task(original.id).error,
+      'provider temporarily unavailable',
+    );
     const retryMeta = app.store.records.get('task-meta', retried.body.id);
     assert.deepEqual(retryMeta.providerIds, ['provider-after-failure']);
     assert.equal(retryMeta.workspaceMode, 'isolated');
     assert.match(retryMeta.contextExtra, /provider temporarily unavailable/);
     assert.match(retryMeta.contextExtra, new RegExp(original.id));
-    assert.equal(app.store.records.get('jobs', retryMeta.jobId).taskId, retried.body.id);
+    assert.equal(
+      app.store.records.get('jobs', retryMeta.jobId).taskId,
+      retried.body.id,
+    );
     await waitFor(() => runs.length === 2, '恢复执行实例未启动。');
   } finally {
     await app.close();

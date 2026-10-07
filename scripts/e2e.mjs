@@ -47,5 +47,5 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 }
 child.on('exit', (code, signal) => {
   cleanup();
-  process.exit(signal ? 1 : code ?? 1);
+  process.exit(signal ? 1 : (code ?? 1));
 });
