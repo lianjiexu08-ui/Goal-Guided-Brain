@@ -8,6 +8,8 @@ import { useTeamTimeline } from './use-team-timeline';
 
 type TeamMessage = {
   id: string;
+  messageId?: string;
+  followupMessageId?: string | null;
   kind: string;
   relatedMessageId?: string | null;
   fromTeamId?: string | null;
@@ -41,6 +43,8 @@ type TeamSpace = {
 };
 
 const statusLabels: Record<string, string> = {
+  sent: '已送达',
+  answered: '已回传',
   queued: '排队中',
   running: '进行中',
   completed: '已完成',
@@ -96,15 +100,22 @@ export function TeamCollaborationConsole({
 }) {
   const [collaborators, setCollaborators] = useState<TeamCollaborator[]>([]);
   const draftStore = useCollaborationDraft(team.id);
-  const { targetTeamId, content, acceptance, clientMessageId } =
+  const { targetTeamId, content, acceptance, clientMessageId, followup } =
     draftStore.draft;
+  const composer = useRef<HTMLFormElement>(null);
+  const [replacement, setReplacement] = useState<TeamMessage | null>(null);
   const inFlight = useRef(false);
   const [loadError, setLoadError] = useState('');
   const loadRequest = useRef<{
     sequence: number;
     controller: AbortController | null;
   }>({ sequence: 0, controller: null });
-  const fingerprint = JSON.stringify([targetTeamId, content, acceptance]);
+  const fingerprint = JSON.stringify([
+    targetTeamId,
+    content,
+    acceptance,
+    followup,
+  ]);
   const [reviewed, setReviewed] = useState('');
   const reviewing = reviewed === fingerprint;
   const setReviewing = (value: boolean) =>
@@ -183,8 +194,36 @@ export function TeamCollaborationConsole({
       status: item.status || 'sent',
       createdAt: item.at,
     }))
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .slice(0, 8);
+    .sort(
+      (a, b) =>
+        b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id),
+    );
+
+  function continueCollaboration(message: TeamMessage, replace = false) {
+    if (!draftStore.ready || clientMessageId || submitting) return;
+    if (!replace && (content.trim() || acceptance.trim() || followup)) {
+      setReplacement(message);
+      return;
+    }
+    const outgoing = message.fromTeamId === team.id;
+    const messageId = outgoing ? message.messageId : message.relatedMessageId;
+    const targetId = outgoing ? message.toTeamId : message.fromTeamId;
+    if (!messageId || !targetId) return;
+    draftStore.update({
+      targetTeamId: targetId,
+      content: '',
+      acceptance: '',
+      followup: { messageId, title: message.content.slice(0, 160) },
+    });
+    setReplacement(null);
+    setReviewing(false);
+    setError('');
+    setLastCreated(null);
+    composer.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    composer.current
+      ?.querySelector<HTMLTextAreaElement>('textarea')
+      ?.focus({ preventScroll: true });
+  }
 
   const statusLabel = (message: TeamMessage, task?: Task) => {
     if (task) {
@@ -237,6 +276,7 @@ export function TeamCollaborationConsole({
             ? { acceptance: pending.acceptance.trim() }
             : {}),
           clientMessageId: pending.clientMessageId,
+          followupMessageId: pending.followup?.messageId,
         },
         controller.signal,
       );
@@ -301,6 +341,7 @@ export function TeamCollaborationConsole({
         </div>
       ) : (
         <form
+          ref={composer}
           className="team-collaboration-form"
           onSubmit={submitCollaboration}
         >
@@ -318,6 +359,7 @@ export function TeamCollaborationConsole({
                 loading ||
                 submitting ||
                 Boolean(clientMessageId) ||
+                Boolean(followup) ||
                 collaborators.length === 0
               }
             >
@@ -355,6 +397,29 @@ export function TeamCollaborationConsole({
                 · 目标团队使用自己的模型、能力和执行目录
               </small>
             </div>
+          )}
+          {followup && (
+            <section
+              className="team-collaboration-followup"
+              aria-label="引用的原协作"
+            >
+              <strong>继续原协作</strong>
+              <p>{followup.title}</p>
+              <small>
+                发送时自动引用原请求和回传结果。请在下方说明本次追问或新的交付要求；目标团队会创建独立后续任务。
+              </small>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={submitting || Boolean(clientMessageId)}
+                onClick={() => {
+                  draftStore.update({ followup: undefined });
+                  setReviewing(false);
+                }}
+              >
+                取消引用，改为新协作
+              </button>
+            </section>
           )}
           <label className="team-collaboration-content">
             <span>协作目标</span>
@@ -403,6 +468,12 @@ export function TeamCollaborationConsole({
                 </span>
               </div>
               <dl>
+                {followup && (
+                  <>
+                    <dt>关联协作</dt>
+                    <dd>{followup.title}（自动附上原请求及回传）</dd>
+                  </>
+                )}
                 <dt>协作目标</dt>
                 <dd>{content.trim()}</dd>
                 <dt>验收标准</dt>
@@ -504,6 +575,30 @@ export function TeamCollaborationConsole({
         </output>
       )}
       <div className="team-collaboration-history">
+        {replacement && (
+          <section
+            className="team-collaboration-followup"
+            aria-label="保留或替换协作草稿"
+          >
+            <strong>已有尚未发送的协作草稿</strong>
+            <p>继续这条协作会替换当前目标、内容和验收标准。</p>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => setReplacement(null)}
+            >
+              保留当前草稿
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={submitting || Boolean(clientMessageId)}
+              onClick={() => continueCollaboration(replacement, true)}
+            >
+              替换草稿并继续
+            </button>
+          </section>
+        )}
         <div className="team-collaboration-history-head">
           <strong>最近协作</strong>
           {messages.length > 0 && <span>{messages.length} 条记录</span>}
@@ -554,15 +649,25 @@ export function TeamCollaborationConsole({
                       {outgoing ? `发给 ${relatedName}` : `来自 ${relatedName}`}
                     </strong>
                     <small>
-                      {message.kind === 'reply' ? '目标团队回传' : '协作请求'} ·{' '}
-                      {formatTime(message.createdAt)}
+                      {message.kind === 'reply'
+                        ? '目标团队回传'
+                        : message.followupMessageId
+                          ? '后续协作请求'
+                          : '协作请求'}{' '}
+                      · {formatTime(message.createdAt)}
                     </small>
                   </div>
                   <em className={message.status === 'blocked' ? 'blocked' : ''}>
                     {statusLabel(message, relatedTask)}
                   </em>
                 </div>
-                <p>{message.content}</p>
+                <details className="team-collaboration-detail">
+                  <summary>
+                    <span>{message.content.split('\n')[0]}</span>
+                    <b>查看完整内容</b>
+                  </summary>
+                  <div>{message.content}</div>
+                </details>
                 <div className="team-collaboration-item-actions">
                   {relatedTeamId && (
                     <button
@@ -580,6 +685,31 @@ export function TeamCollaborationConsole({
                       查看任务
                     </button>
                   )}
+                  {confirmed &&
+                    enabled &&
+                    relatedTask &&
+                    [
+                      'completed',
+                      'failed',
+                      'cancelled',
+                      'interrupted',
+                    ].includes(relatedTask.status) &&
+                    ((outgoing && message.kind === 'handoff') ||
+                      (!outgoing &&
+                        message.kind === 'reply' &&
+                        message.relatedMessageId)) && (
+                      <button
+                        type="button"
+                        disabled={
+                          !draftStore.ready ||
+                          submitting ||
+                          Boolean(clientMessageId)
+                        }
+                        onClick={() => continueCollaboration(message)}
+                      >
+                        继续协作
+                      </button>
+                    )}
                 </div>
               </article>
             );
@@ -590,6 +720,16 @@ export function TeamCollaborationConsole({
             发起一次协作后，这里会显示目标团队、任务状态和回传结果。
           </div>
         ) : null}
+        {history.page?.hasMore && (
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={history.loading || history.moreFailed}
+            onClick={history.loadMore}
+          >
+            {history.loading ? '正在读取…' : '加载更早协作'}
+          </button>
+        )}
       </div>
     </section>
   );

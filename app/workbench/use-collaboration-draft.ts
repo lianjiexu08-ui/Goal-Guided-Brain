@@ -7,6 +7,7 @@ export type CollaborationDraft = {
   content: string;
   acceptance: string;
   clientMessageId?: string;
+  followup?: { messageId: string; title: string };
 };
 const empty = (): CollaborationDraft => ({
   targetTeamId: '',
@@ -27,7 +28,11 @@ function read(key: string): CollaborationDraft {
     value.content.length > 32000 ||
     value.acceptance.length > 20000 ||
     (value.clientMessageId !== undefined &&
-      typeof value.clientMessageId !== 'string')
+      typeof value.clientMessageId !== 'string') ||
+    (value.followup !== undefined &&
+      (!value.followup ||
+        typeof value.followup.messageId !== 'string' ||
+        typeof value.followup.title !== 'string'))
   )
     throw new Error('Invalid collaboration draft');
   return value;

@@ -58,6 +58,7 @@ export function buildTeamTimeline(
       fromTeamId: message.fromTeamId || null,
       toTeamId: message.toTeamId || null,
       relatedMessageId: message.relatedMessageId || null,
+      followupMessageId: message.followupMessageId || null,
       kind: message.kind,
       taskId: message.taskId || null,
       content: message.content,

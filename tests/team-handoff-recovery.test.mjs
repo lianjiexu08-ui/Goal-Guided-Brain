@@ -154,3 +154,96 @@ test('legacy task metadata repairs a missing message link without creating a sec
     first.body.taskId,
   );
 });
+
+test('follow-up carries the original request and returned result in a new session, persists its link and retries once', async (t) => {
+  const { app, source, target, payload, send } = await fixture(t);
+  const first = await send();
+  const task = app.store.updateTask(first.body.taskId, {
+    status: 'completed',
+    result: '必须补充数据库迁移回滚步骤。',
+  });
+  const meta = app.store.records.get('task-meta', task.id);
+  const job = app.store.records.get('jobs', meta.jobId);
+  app.store.records.save('jobs', { ...job, status: 'completed' }, job.id);
+  app.platform.control.publishHandoffResult(
+    task,
+    meta,
+    'completed',
+    task.result,
+  );
+  const followup = {
+    ...payload,
+    content: '请补齐数据库迁移回滚步骤。',
+    clientMessageId: 'follow-up',
+    followupMessageId: first.body.sourceMessageId,
+  };
+  const next = await send(followup);
+  assert.equal(next.status, 201);
+  assert.equal(next.body.followupMessageId, first.body.sourceMessageId);
+  const created = app.store.task(next.body.taskId);
+  assert.notEqual(created.sessionId, task.sessionId);
+  assert.match(created.prompt, /检查发布与回滚/);
+  assert.match(created.prompt, /必须补充数据库迁移回滚步骤/);
+  assert.match(created.prompt, /请补齐数据库迁移回滚步骤/);
+  assert.equal((await send(followup)).body.taskId, created.id);
+  for (const id of [next.body.id, next.body.sourceMessageId])
+    assert.equal(
+      app.store.records.get('space-messages', id).followupMessageId,
+      first.body.sourceMessageId,
+    );
+  for (const team of [source, target])
+    assert.ok(
+      app.store
+        .teamTimeline(team.id)
+        .some((item) => item.followupMessageId === first.body.sourceMessageId),
+    );
+  const changedIdentity = await send({
+    ...followup,
+    followupMessageId: undefined,
+  });
+  assert.equal(changedIdentity.status, 409);
+});
+
+test('follow-up rejects foreign records, changed target and unsettled tasks without persisting work', async (t) => {
+  const { app, source, target, payload, send } = await fixture(t);
+  const first = await send();
+  const before = app.store.tasks().length;
+  const body = {
+    ...payload,
+    clientMessageId: 'invalid-follow-up',
+    followupMessageId: first.body.sourceMessageId,
+  };
+  for (const status of ['running', 'queued', 'state_unknown']) {
+    app.store.updateTask(first.body.taskId, { status });
+    const result = await send(body);
+    assert.equal(result.status, 409);
+    assert.match(result.body.error, /仍在执行或状态未确认/);
+  }
+  app.store.updateTask(first.body.taskId, { status: 'completed' });
+  for (const id of [first.body.id, 'missing-record'])
+    assert.equal((await send({ ...body, followupMessageId: id })).status, 409);
+  const third = app.store.saveTeamSpace({
+    ...target,
+    id: undefined,
+    chatId: undefined,
+    name: 'Other target',
+  });
+  assert.equal((await send({ ...body, targetTeamId: third.id })).status, 409);
+  const trace = app.store.records.get(
+    'space-messages',
+    first.body.sourceMessageId,
+  );
+  app.store.records.save(
+    'space-messages',
+    { ...trace, spaceId: third.id },
+    trace.id,
+  );
+  assert.equal((await send(body)).status, 409);
+  assert.equal(app.store.tasks().length, before);
+  assert.equal(
+    app.store
+      .teamMessages(source.id)
+      .some((message) => message.clientMessageId === body.clientMessageId),
+    false,
+  );
+});

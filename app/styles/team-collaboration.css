@@ -512,3 +512,81 @@
   font-size: 12px;
   line-height: 1.6;
 }
+
+.team-collaboration-followup {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #cbded5;
+  border-radius: 12px;
+  background: #f3f9f6;
+  color: #385c51;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.team-collaboration-followup p {
+  margin: 6px 0;
+  white-space: pre-wrap;
+}
+.team-collaboration-followup small {
+  display: block;
+  margin-bottom: 8px;
+  color: #5f776e;
+}
+.team-collaboration-followup button {
+  min-height: 44px;
+  margin: 4px 8px 0 0;
+  white-space: normal;
+}
+.team-collaboration-detail {
+  margin: 8px 0 0 35px;
+  color: #49655e;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.team-collaboration-detail summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 44px;
+  cursor: pointer;
+}
+.team-collaboration-detail summary span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.team-collaboration-detail summary b {
+  flex-shrink: 0;
+  color: #356c59;
+  font-size: 11px;
+  font-weight: 500;
+}
+.team-collaboration-detail[open] summary {
+  border-bottom: 1px solid #dce8e1;
+}
+.team-collaboration-detail > div {
+  padding: 12px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.team-collaboration-item-actions {
+  flex-wrap: wrap;
+}
+.team-collaboration-item-actions button,
+.team-collaboration-history > button {
+  min-height: 44px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.team-collaboration-item-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.team-collaboration-detail summary:focus-visible {
+  outline: 2px solid #548b73;
+  outline-offset: 3px;
+  border-radius: 4px;
+}

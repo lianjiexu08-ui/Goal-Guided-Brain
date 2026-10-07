@@ -1,4 +1,5 @@
 import { commitTeamHandoff } from '../team-handoff-store.mjs';
+import { handoffContext } from '../team-handoff-context.mjs';
 import { fail, findTeam, required, teamMeta, terminal } from './primitives.mjs';
 
 export function delegateToTeam(control, body, principal) {
@@ -27,11 +28,18 @@ export function delegateToTeam(control, body, principal) {
   const content = `${prompt}${acceptance ? `\n\n验收标准：\n${acceptance}` : ''}`;
   if (content.length > 32000)
     throw fail('协作目标和验收标准合计不能超过 32000 个字符。');
+  const followup = handoffContext(
+    control.store,
+    source,
+    target,
+    body.followupMessageId,
+  );
   const result = commitTeamHandoff({
     store: control.store,
     source,
     target,
     content,
+    followupMessageId: followup?.messageId || null,
     clientMessageId: `mcp:${sourceTask.id}:${key}`,
     legacyMessageId: `handoff:${source.id}:${target.id}:${key}`,
     createTask: (message) => {
@@ -48,7 +56,7 @@ export function delegateToTeam(control, body, principal) {
       // inject unrelated requests into an active target manager's session.
       return control.createTask({
         role: target.pmRoleId,
-        prompt: `团队「${source.name}」请求本团队协作。请先阅读协作消息，判断目标与验收标准，必要时向来源团队说明阻塞；目标明确后由本团队项目经理负责拆解、执行和汇总。\n\n${content}`,
+        prompt: `团队「${source.name}」请求本团队协作。请先阅读协作消息，判断目标与验收标准，必要时向来源团队说明阻塞；目标明确后由本团队项目经理负责拆解、执行和汇总。\n\n${content}${followup?.prompt || ''}`,
         workspace: target.workspace,
         teamId: target.id,
         spaceId: target.id,

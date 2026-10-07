@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { commitTeamHandoff } from './team-handoff-store.mjs';
+import { handoffContext } from './team-handoff-context.mjs';
 
 export function createTeamHandoff({ store, space, body, newTask, required }) {
   if (space.status !== 'active') throw new Error('团队空间当前不可发起协作。');
@@ -48,16 +49,18 @@ export function createTeamHandoff({ store, space, body, newTask, required }) {
     '消息 ID',
     200,
   );
+  const followup = handoffContext(store, space, target, body.followupMessageId);
   const result = commitTeamHandoff({
     store,
     source: space,
     target,
     clientMessageId,
     content,
+    followupMessageId: followup?.messageId || null,
     createTask: (message) =>
       newTask({
         role: target.pmRoleId,
-        prompt: `团队「${space.name}」向本团队发起协作请求。请阅读请求并自主判断是否接受、拆解和安排执行。\n\n协作目标：\n${content}`,
+        prompt: `团队「${space.name}」向本团队发起协作请求。请阅读请求并自主判断是否接受、拆解和安排执行。\n\n协作目标：\n${content}${followup?.prompt || ''}`,
         workspace: target.workspace,
         teamId: target.id,
         spaceId: target.id,

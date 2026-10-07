@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 227/227, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 230/230, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Cross-platform CI matrix runs lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
@@ -46,6 +46,44 @@ They are not sign-off for the separate real deployment gates below.
 - [ ] Real cloud continues scheduled work while the owner's computer is offline.
 
 ## Local Release Record
+
+Linked collaboration follow-up on 2026-10-07: the collaboration history now
+expands complete messages and loads earlier records beyond the initial eight.
+For settled original tasks, the source team can prepare a follow-up from either
+its handoff or the returned reply. Existing drafts require an explicit keep or
+replace choice; the linked target remains fixed until the reference is removed.
+References survive reload alongside the draft and appear in the send preview.
+Pending sends retain the existing immutable request/recovery behavior.
+
+Both owner HTTP and authenticated MCP accept `followupMessageId`, identifying
+the source-side original handoff. The server checks team ownership, the paired
+message, task metadata and settled status, then loads historical content itself.
+Running/queued/unknown tasks and foreign or mismatched references are rejected.
+New work gets its own task/session and a persisted link in both team traces;
+retries return the existing task. This does not approve the original delivery.
+Source-team acceptance, collaboration closure and cross-device form sync remain
+outstanding.
+
+Backend regression passed 230/230; three added HTTP/MCP tests cover contextual
+follow-up, stable replay, linkage, session isolation and invalid references.
+The focused desktop/mobile suite passed 10/10 with real HTTP persistence on an
+isolated offline node. It verifies full reading, earlier history, 44px actions,
+no horizontal overflow, draft replacement choices, refresh recovery and the
+actual saved task prompt/link. Desktop and mobile screenshots were inspected.
+The first browser attempt exposed a fixture missing the required team goal;
+the fixture was corrected without relaxing assertions. Session evidence lives
+in `/tmp/ggb-followup-evidence`.
+The full browser suite subsequently passed 222/222 in 8.8m. Lint, typecheck,
+all 276 hand-written source-file line limits and formatting for all 19 changed
+files passed. Formatting the touched MCP interface reduced the remaining
+repository formatting backlog from 55 to 54 files; the full format gate is
+still not clean.
+Production build passed. The local service restarted after confirming zero
+active tasks/jobs. UI, API health, proxied state and both existing spaces'
+collaborator endpoints returned 200; 11 tasks and 10 jobs remain. Neither
+existing space is confirmed, so the live check did not send follow-up work;
+real persistence was verified only in isolated fixtures. No remote push or
+deployment was performed.
 
 Shared HTTP/MCP team handoff persistence on 2026-10-07: both adapters now
 use one atomic commit/recovery module. MCP message identities include the source
@@ -435,8 +473,8 @@ format checks for changed code, file-size checks and production build passed.
 The subsequent full 126-run browser regression includes this mobile refinement,
 the ordinary attention-resolution workflow and cross-team overview recovery.
 
-Latest full local regression on 2026-10-07: `npm test` 227/227 and Playwright
-desktop/mobile baseline 218/218 passed on macOS. `npm run lint`,
+Latest full local regression on 2026-10-07: `npm test` 230/230 and Playwright
+desktop/mobile baseline 222/222 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines`, `npm run build` and
 `git diff --check` also passed. The model metrics regression includes task-type
 runtime comparisons, alias filtering, delayed response isolation, retry and
@@ -463,8 +501,8 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 227 passing tests. The latest
-full Playwright baseline passed 218 desktop/mobile runs covering team
+The current deterministic suite contains 230 passing tests. The latest
+full Playwright baseline passed 222 desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
 binary drag-and-drop attachments, conversation scroll recovery, evidence quality summaries, Team Charter confirmation and high-risk

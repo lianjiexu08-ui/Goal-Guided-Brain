@@ -285,3 +285,43 @@ test('MCP delegation retains whitelist, auto-handoff, recruitment, team pause an
   );
   assert.deepEqual(snapshot(), before);
 });
+
+test('authenticated MCP follow-up reads original team context and preserves idempotent task isolation', async (t) => {
+  const { store, caller } = await fixture(t);
+  const origin = await caller();
+  const first = await origin.invoke();
+  const task = store.updateTask(first.taskId, {
+    status: 'completed',
+    result: 'Returned migration findings',
+  });
+  const job = store.records.get('jobs', first.jobId);
+  store.records.save('jobs', { ...job, status: 'completed' }, job.id);
+  const request = {
+    idempotencyKey: 'followup',
+    prompt: 'Address those findings',
+    followupMessageId: first.sourceMessageId,
+  };
+  const next = await origin.invoke(request);
+  assert.equal(next.duplicate, false);
+  assert.match(
+    store.task(next.taskId).prompt,
+    /Return a verifiable implementation/,
+  );
+  assert.match(store.task(next.taskId).prompt, /Returned migration findings/);
+  assert.notEqual(store.task(next.taskId).sessionId, task.sessionId);
+  assert.equal(
+    store.records.get('space-messages', next.messageId).followupMessageId,
+    first.sourceMessageId,
+  );
+  assert.equal((await origin.invoke(request)).taskId, next.taskId);
+  assert.match(
+    (
+      await origin.invoke({
+        ...request,
+        idempotencyKey: 'invalid',
+        followupMessageId: first.messageId,
+      })
+    ).error,
+    /不属于/,
+  );
+});

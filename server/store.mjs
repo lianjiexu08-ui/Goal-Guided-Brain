@@ -776,6 +776,7 @@ export class Store {
         fromTeamId: input.fromTeamId || null,
         toTeamId: input.toTeamId || spaceId,
         relatedMessageId: input.relatedMessageId || null,
+        followupMessageId: input.followupMessageId || null,
         taskId: input.taskId || null,
         attachmentIds: Array.isArray(input.attachmentIds)
           ? [

@@ -55,12 +55,14 @@ function persistHandoff({
   content,
   createTask,
   legacyMessageId,
+  followupMessageId = null,
 }) {
   const matches = (message) =>
     message?.kind === 'handoff' &&
     message.clientMessageId === clientMessageId &&
     message.fromTeamId === source.id &&
     message.toTeamId === target.id &&
+    (message.followupMessageId || null) === followupMessageId &&
     message.spaceId === target.id;
   let messageId = `handoff:${source.id}:${target.id}:${clientMessageId}`;
   let previous = store.records.get('space-messages', messageId);
@@ -109,6 +111,7 @@ function persistHandoff({
         toTeamId: target.id,
         content,
         status: 'sent',
+        followupMessageId,
       },
       messageId,
     );

@@ -103,6 +103,7 @@ export type TeamMessage = {
   fromTeamId?: string | null;
   toTeamId?: string | null;
   relatedMessageId?: string | null;
+  followupMessageId?: string | null;
   taskId?: string | null;
   content: string;
   status: string;
@@ -134,6 +135,7 @@ export type TeamTimelineItem = {
   toTeamId?: string | null;
   relatedMessageId?: string | null;
   kind?: string;
+  followupMessageId?: string | null;
   taskId?: string | null;
   content?: string;
   status?: string | null;
