@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+import { delegateToTeam } from './control/team-delegation.mjs';
 import { hashToken } from './auth.mjs';
 import { SKILLS } from './roles.mjs';
 import { assessCapabilityRisk, capabilityFingerprint } from './capabilities.mjs';
@@ -752,98 +753,7 @@ export class ControlPlane {
     };
   }
   delegateToTeam(body, principal) {
-    const { task: sourceTask, meta: sourceMeta, team: source } = this.currentTeam(principal);
-    if (source.recruitment.phase !== 'confirmed') throw fail('团队招募方案尚未确认，不能发起跨团队任务。', 409);
-    const target = findTeam(this.store, body.targetTeamId || body.teamId);
-    if (!target || target.status !== 'active') throw fail('目标团队不存在或未启用。', 404);
-    if (target.recruitment.phase !== 'confirmed') throw fail('目标团队尚未完成招募。', 409);
-    if (target.id === source.id) throw fail('目标团队不能是当前团队。');
-    if (!this.collaborationAllowed(source, target)) throw fail('当前团队未允许与目标团队协作。', 403);
-    const prompt = required(body.prompt || body.goal, '协作目标');
-    const idempotencyKey = required(body.idempotencyKey, '协作幂等键', 200);
-    const clientMessageId = `mcp:${sourceTask.id}:${idempotencyKey}`;
-    const existing = this.store.teamMessages(target.id)
-      .find(message => message.kind === 'handoff' && message.clientMessageId === clientMessageId);
-    if (existing?.taskId) {
-      const existingTask = this.store.task(existing.taskId);
-      const existingMeta = existingTask && teamMeta(this.store, existingTask.id);
-      const sourceMessageId = `handoff:${source.id}:${target.id}:${idempotencyKey}:source`;
-      if (!this.records.get('space-messages', sourceMessageId)) {
-        this.store.saveTeamMessage({
-          ...existing,
-          spaceId: source.id,
-          teamId: source.id,
-          relatedMessageId: existing.id,
-          taskId: existing.taskId,
-        }, sourceMessageId);
-      }
-      return {
-        duplicate: true,
-        messageId: existing.id,
-        sourceMessageId,
-        taskId: existing.taskId,
-        jobId: existingMeta?.jobId || null,
-        sourceTeamId: source.id,
-        targetTeamId: target.id,
-        status: existingTask?.status || 'unknown',
-      };
-    }
-    const targetJobs = this.records.list('jobs').filter(job => (job.teamId || job.spaceId) === target.id);
-    const maxJobs = target.autonomy?.maxJobs || 32;
-    if (targetJobs.length >= maxJobs) throw fail('目标团队已达到任务上限。', 409);
-    const acceptance = body.acceptance ? required(body.acceptance, '验收标准', 20000) : '';
-    const content = `${prompt}${acceptance ? `\n\n验收标准：\n${acceptance}` : ''}`;
-    const message = this.store.saveTeamMessage({
-      spaceId: target.id,
-      teamId: target.id,
-      clientMessageId,
-      kind: 'handoff',
-      senderType: 'team',
-      senderId: source.id,
-      fromTeamId: source.id,
-      toTeamId: target.id,
-      content,
-      status: 'sent',
-    }, `handoff:${source.id}:${target.id}:${idempotencyKey}`);
-    const activeTargetTask = this.store.tasks().find(candidate => {
-      const candidateMeta = teamMeta(this.store, candidate.id);
-      return candidateMeta.teamId === target.id && candidate.role === target.pmRoleId && ['queued', 'running'].includes(candidate.status);
-    });
-    try {
-      const child = this.createTask({
-        role: target.pmRoleId,
-        prompt: `团队「${source.name}」请求本团队协作。请先阅读协作消息，判断目标与验收标准，必要时向来源团队说明阻塞；目标明确后由本团队项目经理负责拆解、执行和汇总。\n\n${content}`,
-        sessionId: activeTargetTask?.sessionId,
-        workspace: target.workspace,
-        teamId: target.id,
-        spaceId: target.id,
-        sourceMessageId: message.id,
-        contextExtra: JSON.stringify({ sourceTeamId: source.id, sourceTaskId: sourceTask.id, sourceJobId: sourceMeta.jobId || null }),
-        acceptance,
-      });
-      const linked = this.store.saveTeamMessage({ ...message, taskId: child.id }, message.id);
-      const sourceLinked = this.store.saveTeamMessage({
-        ...message,
-        spaceId: source.id,
-        teamId: source.id,
-        relatedMessageId: message.id,
-        taskId: child.id,
-      }, `handoff:${source.id}:${target.id}:${idempotencyKey}:source`);
-      const childMeta = teamMeta(this.store, child.id);
-      return {
-        duplicate: false,
-        messageId: linked.id,
-        sourceMessageId: sourceLinked.id,
-        taskId: child.id,
-        jobId: childMeta.jobId || null,
-        sourceTeamId: source.id,
-        targetTeamId: target.id,
-        status: child.status,
-      };
-    } catch (error) {
-      this.records.save('space-messages', { ...message, status: 'blocked', error: error.message }, message.id);
-      throw error;
-    }
+    return delegateToTeam(this, body, principal);
   }
   readTeamTask(body, principal) {
     const { team: source } = this.currentTeam(principal);

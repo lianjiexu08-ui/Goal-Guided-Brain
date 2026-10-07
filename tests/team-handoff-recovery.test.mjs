@@ -121,6 +121,7 @@ test('legacy handoff without a linked task is repaired, completed jobs do not co
     {
       spaceId: target.id,
       kind: 'handoff',
+      clientMessageId: payload.clientMessageId,
       fromTeamId: source.id,
       content: payload.content,
     },

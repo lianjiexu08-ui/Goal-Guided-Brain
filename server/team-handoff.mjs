@@ -1,47 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { commitTeamHandoff } from './team-handoff-store.mjs';
 
-// The handoff, task, job and both teams' traces must commit together. Buffer
-// live notifications until commit so a failed write never publishes success.
-export function createTeamHandoff(deps) {
-  const { store } = deps;
-  const onRecord = store.records.onSave;
-  const onTask = store.onTaskUpdate;
-  const changes = new Map();
-  store.db.exec('SAVEPOINT team_handoff');
-  const defer = (key, callback) => {
-    changes.delete(key);
-    changes.set(key, callback);
-  };
-  store.records.onSave = (change) =>
-    defer(`record:${change.collection}:${change.record.id}`, () =>
-      onRecord?.(change),
-    );
-  store.onTaskUpdate = (change) =>
-    defer(`task:${change.task?.id || change.id}`, () => onTask?.(change));
-  let result;
-  try {
-    result = createHandoff(deps);
-    store.db.exec('RELEASE SAVEPOINT team_handoff');
-  } catch (error) {
-    store.db.exec(
-      'ROLLBACK TO SAVEPOINT team_handoff; RELEASE SAVEPOINT team_handoff',
-    );
-    throw error;
-  } finally {
-    store.records.onSave = onRecord;
-    store.onTaskUpdate = onTask;
-  }
-  for (const publish of changes.values()) {
-    try {
-      publish();
-    } catch {
-      /* Notification failures cannot undo a committed handoff. */
-    }
-  }
-  return result;
-}
-
-function createHandoff({ store, space, body, newTask, required }) {
+export function createTeamHandoff({ store, space, body, newTask, required }) {
   if (space.status !== 'active') throw new Error('团队空间当前不可发起协作。');
   if (space.recruitment?.phase !== 'confirmed')
     throw Object.assign(new Error('当前团队尚未完成招募。'), {
@@ -88,93 +48,32 @@ function createHandoff({ store, space, body, newTask, required }) {
     '消息 ID',
     200,
   );
-  const handoffId = `handoff:${space.id}:${target.id}:${clientMessageId}`;
-  let previous = store.records.get('space-messages', handoffId);
-  if (previous && !previous.taskId) {
-    const meta = store.records
-      .list('task-meta')
-      .find((item) => item.sourceMessageId === handoffId);
-    if (meta && store.task(meta.id))
-      previous = store.saveTeamMessage(
-        { ...previous, taskId: meta.id },
-        handoffId,
-      );
-  }
-  if (
-    previous &&
-    previous.status !== 'blocked' &&
-    store.task(previous.taskId)
-  ) {
-    const sourceMessageId = `${handoffId}:source`;
-    if (!store.records.get('space-messages', sourceMessageId)) {
-      store.saveTeamMessage(
-        {
-          ...previous,
-          spaceId: space.id,
-          teamId: space.id,
-          relatedMessageId: previous.id,
-          taskId: previous.taskId,
-        },
-        sourceMessageId,
-      );
-    }
-    return {
-      status: 200,
-      body: {
-        ...previous,
-        sourceTeamId: space.id,
-        targetTeamId: target.id,
-        sourceMessageId,
-      },
-    };
-  }
-  const message = store.saveTeamMessage(
-    {
-      spaceId: target.id,
-      teamId: target.id,
-      clientMessageId,
-      kind: 'handoff',
-      senderType: 'team',
-      senderId: space.id,
-      fromTeamId: space.id,
-      toTeamId: target.id,
-      content,
-      status: 'sent',
-    },
-    handoffId,
-  );
-  const task = newTask({
-    role: target.pmRoleId,
-    prompt: `团队「${space.name}」向本团队发起协作请求。请阅读请求并自主判断是否接受、拆解和安排执行。\n\n协作目标：\n${content}`,
-    workspace: target.workspace,
-    teamId: target.id,
-    spaceId: target.id,
-    sourceMessageId: message.id,
-    acceptance,
+  const result = commitTeamHandoff({
+    store,
+    source: space,
+    target,
+    clientMessageId,
+    content,
+    createTask: (message) =>
+      newTask({
+        role: target.pmRoleId,
+        prompt: `团队「${space.name}」向本团队发起协作请求。请阅读请求并自主判断是否接受、拆解和安排执行。\n\n协作目标：\n${content}`,
+        workspace: target.workspace,
+        teamId: target.id,
+        spaceId: target.id,
+        sourceMessageId: message.id,
+        acceptance,
+      }),
   });
-  const linked = store.saveTeamMessage(
-    { ...message, taskId: task.id },
-    message.id,
-  );
-  const sourceLinked = store.saveTeamMessage(
-    {
-      ...message,
-      spaceId: space.id,
-      teamId: space.id,
-      relatedMessageId: message.id,
-      taskId: task.id,
-    },
-    `${handoffId}:source`,
-  );
   return {
-    status: 201,
+    status: result.duplicate ? 200 : 201,
     body: {
-      ...linked,
-      taskId: task.id,
-      sessionId: task.sessionId,
+      ...result.message,
+      taskId: result.task.id,
+      sessionId: result.task.sessionId,
       sourceTeamId: space.id,
       targetTeamId: target.id,
-      sourceMessageId: sourceLinked.id,
+      sourceMessageId: result.sourceMessageId,
     },
   };
 }

@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 222/222, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 227/227, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Cross-platform CI matrix runs lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
@@ -46,6 +46,35 @@ They are not sign-off for the separate real deployment gates below.
 - [ ] Real cloud continues scheduled work while the owner's computer is offline.
 
 ## Local Release Record
+
+Shared HTTP/MCP team handoff persistence on 2026-10-07: both adapters now
+use one atomic commit/recovery module. MCP message identities include the source
+task, so identical keys from different callers no longer overwrite each other.
+Each new delegation creates an independent target conversation and task group,
+using the target team's model and workspace. An identical retry returns the
+existing task. Legacy rows are reused only when request and team identities
+match; existing task metadata repairs a missing link. Conflicting associations
+are rejected. Completed jobs no longer exhaust the MCP active-job limit.
+Live lease, confirmed/active-team, whitelist and auto-handoff checks remain.
+
+Five new tests use an authenticated loopback MCP client with actual instance
+leases and isolated offline target nodes. They cover same-key source isolation,
+independent sessions/groups, late-write rollback with no success events, stable
+replay, legacy recovery, active capacity and revoked/disabled access. No paid
+models or production data are used. Backend regression passed 227/227 with no
+skips; the focused desktop/mobile collaboration/timeline suite passed 28/28.
+The subsequent full browser regression passed 218/218 in 8.6m. Lint,
+typecheck and the 274-file source-size gate passed. Ten new/updated files pass
+targeted formatting; the existing 55-file formatting backlog includes
+`server/control.mjs`, whose delegation extraction reduced it to 910 lines.
+Production build passed. After checking zero active tasks/jobs, the local
+service restarted; UI, API health, proxied `/api/state` and both existing spaces'
+collaborator lists returned 200. Existing data remains 11 tasks and 10 jobs.
+Neither existing space is a confirmed team, so live checks were read-only;
+delegation was tested using isolated fixtures. No remote push or deployment.
+Evidence is retained in `/tmp/ggb-mcp-handoff-evidence` for this session.
+Cross-device collaboration-form synchronization and source-team follow-up after
+results return remain future work.
 
 Recoverable cross-team handoff on 2026-10-07: collaboration forms persist the
 selected target, goal, criteria and pending request ID per source team in the
@@ -406,7 +435,7 @@ format checks for changed code, file-size checks and production build passed.
 The subsequent full 126-run browser regression includes this mobile refinement,
 the ordinary attention-resolution workflow and cross-team overview recovery.
 
-Latest full local regression on 2026-10-07: `npm test` 222/222 and Playwright
+Latest full local regression on 2026-10-07: `npm test` 227/227 and Playwright
 desktop/mobile baseline 218/218 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines`, `npm run build` and
 `git diff --check` also passed. The model metrics regression includes task-type
@@ -434,7 +463,7 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 222 passing tests. The latest
+The current deterministic suite contains 227 passing tests. The latest
 full Playwright baseline passed 218 desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
