@@ -286,51 +286,12 @@
     padding: 16px;
     font-size: 16px;
   }
-  .composer-bottom {
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding: 0 12px 12px;
-  }
   .mobile-attachment-button {
     display: inline-flex;
     min-height: 44px;
     padding: 8px 11px;
     border-radius: 10px;
     font-size: 12px;
-  }
-  .workspace-path {
-    min-width: 0;
-    flex: 1 1 120px;
-    max-width: none;
-    min-height: 44px;
-  }
-  .composer-bottom > div {
-    min-width: 0;
-    margin-left: auto;
-    gap: 8px;
-  }
-  .model-switcher {
-    min-width: 0;
-    max-width: 145px;
-  }
-  .model-switcher select {
-    display: block;
-    min-width: 0;
-    max-width: 125px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .model-switcher .model-id,
-  .model-switcher .model-health-warning,
-  .model-switcher .model-health-ok,
-  .model-switcher > small:not(.sr-only) {
-    display: none;
-  }
-  .send-button {
-    width: 44px;
-    height: 44px;
-    border-radius: 12px;
   }
   .topbar .icon-button {
     width: 44px;
@@ -355,12 +316,6 @@
   .suggestions button {
     font-size: 13px;
     padding: 13px;
-  }
-  .model-label {
-    display: none;
-  }
-  .model-switcher select {
-    max-width: 120px;
   }
   .composer-hint {
     font-size: 10px;
@@ -590,33 +545,6 @@
   .recruitment-proposal-actions .primary-button {
     width: 100%;
     min-height: 44px;
-  }
-  .model-switcher .model-health-warning,
-  .model-switcher .model-health-ok {
-    display: block !important;
-    max-width: 170px;
-    overflow: hidden;
-    white-space: normal;
-    line-height: 1.35;
-    max-height: 2.7em;
-  }
-  .model-switcher {
-    position: relative;
-  }
-  .model-switcher .model-health-warning {
-    position: absolute;
-    right: 0;
-    bottom: calc(100% + 6px);
-    width: min(260px, calc(100vw - 32px));
-    max-width: none;
-    max-height: none;
-    padding: 6px 8px;
-    border: 1px solid #efd9a7;
-    border-radius: 8px;
-    color: #8b6426;
-    background: #fffaf0;
-    box-shadow: 0 5px 14px #5f4a1a18;
-    z-index: 4;
   }
 }
 .field-label {

@@ -657,6 +657,9 @@ test.describe('团队运营与协作回归', () => {
     await expect(
       selector.locator(`option[value="e2e-provider-beta::e2e-beta-model"]`),
     ).toContainText('最近检查失败');
+    await page
+      .getByText('最近一次连通性检查失败 · 查看详情', { exact: true })
+      .click();
     await expect(
       page.getByText(/最近一次连通性检查失败：接口返回 HTTP 503/),
     ).toBeVisible();

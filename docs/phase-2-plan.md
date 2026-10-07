@@ -47,6 +47,23 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Local Release Record
 
+Composer usability on 2026-10-07: model selection and the send action now occupy
+separate grid columns with a fixed 44px send target. Probe status sits below the
+controls; failed probes expose details on demand without an overlay. Obsolete
+competing desktop/mobile rules were consolidated in one stylesheet. Ten focused
+browser runs passed across 320/390/1024/1280/1440px, checking containment, pointer
+hit targets, model persistence and outgoing model parameters after switching.
+The submission check intercepts the request and verifies draft retention after a
+503 without invoking a paid provider. Changed source formatting, typecheck, Lint
+and the 1000-line gate pass. The tracked-file formatting audit still reports 64
+files requiring cleanup; the global formatting gate is not yet satisfied.
+The full browser regression passed 170/170, alongside the 204/204 backend
+baseline established by the recruitment identity change.
+A subsequent 10/10 scoped run explicitly supplied a long visible directory in
+the state snapshot. Production build and local API/UI health checks passed;
+the actual 3088 page shows recruitment identity, readable draft names and the
+unclipped model/send controls. No remote push or deployment was performed.
+
 Recruitment identity on 2026-10-07: new data directories seed a single discovery
 draft with only the project manager, rather than a pre-confirmed default team.
 Existing confirmed teams retain their identity and members. Startup and cached
@@ -121,7 +138,7 @@ The subsequent full 126-run browser regression includes this mobile refinement,
 the ordinary attention-resolution workflow and cross-team overview recovery.
 
 Latest full local regression on 2026-10-07: `npm test` 204/204 and Playwright
-desktop/mobile baseline 160/160 passed on macOS. `npm run lint`,
+desktop/mobile baseline 170/170 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines`, `npm run build` and
 `git diff --check` also passed. The model metrics regression includes task-type
 runtime comparisons, alias filtering, delayed response isolation, retry and
@@ -149,7 +166,7 @@ and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
 The current deterministic suite contains 204 passing tests. The latest
-full Playwright baseline passed 160 desktop/mobile runs covering team
+full Playwright baseline passed 170 desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
 binary drag-and-drop attachments, conversation scroll recovery, evidence quality summaries, Team Charter confirmation and high-risk

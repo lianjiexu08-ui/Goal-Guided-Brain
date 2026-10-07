@@ -181,7 +181,7 @@ export function ConversationComposer({
                 '选择工作目录'}
             </span>
           </button>
-          <div>
+          <div className="composer-controls">
             {selectedModelOption ? (
               <label
                 className="model-switcher"
@@ -194,6 +194,7 @@ export function ConversationComposer({
                 <span className="sr-only">选择模型</span>
                 <select
                   aria-label="选择模型"
+                  title={`${selectedModelOption.providerName} · ${modelDisplayName(selectedModelOption.model)}`}
                   value={selectedModelOption.key}
                   disabled={busy}
                   onChange={(event) => void changeTeamModel(event.target.value)}
@@ -217,21 +218,6 @@ export function ConversationComposer({
                 >
                   ID: {selectedModelOption.model.id}
                 </small>
-                {selectedModelOption.providerHealth?.ok === false && (
-                  <small className="model-health-warning">
-                    最近一次连通性检查失败
-                    {selectedModelOption.providerHealth.error
-                      ? `：${selectedModelOption.providerHealth.error}`
-                      : ''}
-                    ，发送时仍会按当前选择尝试并在可恢复错误时自动切换。
-                  </small>
-                )}
-                {selectedModelOption.providerHealth?.ok === true && (
-                  <small className="model-health-ok">
-                    最近一次连通性检查通过 ·{' '}
-                    {selectedModelOption.providerHealth.latencyMs || 0} ms
-                  </small>
-                )}
                 {!selectedModelOption.model.tools && <small>纯文本模式</small>}
               </label>
             ) : (
@@ -258,6 +244,24 @@ export function ConversationComposer({
             </button>
           </div>
         </div>
+        {selectedModelOption?.providerHealth?.ok === false && (
+          <details className="composer-model-status model-health-warning">
+            <summary>最近一次连通性检查失败 · 查看详情</summary>
+            <p>
+              最近一次连通性检查失败
+              {selectedModelOption.providerHealth.error
+                ? `：${selectedModelOption.providerHealth.error}`
+                : ''}
+              ，发送时仍会按当前选择尝试并在可恢复错误时自动切换。
+            </p>
+          </details>
+        )}
+        {selectedModelOption?.providerHealth?.ok === true && (
+          <p className="composer-model-status model-health-ok">
+            最近一次连通性检查通过 ·{' '}
+            {selectedModelOption.providerHealth.latencyMs || 0} ms
+          </p>
+        )}
       </div>
       {draftConflict?.key === draftKey && (
         <div className="draft-conflict-panel" role="alert">

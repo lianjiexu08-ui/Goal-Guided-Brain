@@ -1,0 +1,159 @@
+/* Keep model metadata outside the primary controls so it cannot displace send. */
+.composer-bottom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 0 13px 12px 18px;
+}
+
+.workspace-path {
+  display: flex;
+  align-items: center;
+  flex: 1 1 120px;
+  min-width: 0;
+  max-width: 180px;
+  min-height: 44px;
+  gap: 6px;
+  color: #7c8c94;
+  font-size: 11px;
+}
+
+.workspace-path svg {
+  flex: none;
+}
+
+.workspace-path span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: center;
+  flex: 1 1 280px;
+  min-width: 0;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.model-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
+  gap: 3px 10px;
+  color: #6d7e84;
+}
+
+.model-switcher select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 8px;
+  border: 1px solid #e1ebe7;
+  border-radius: 8px;
+  background: #f7faf9;
+  color: #49665f;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.model-switcher select:focus-visible,
+.composer-model-status summary:focus-visible,
+.send-button:focus-visible,
+.workspace-path:focus-visible {
+  outline: 2px solid #267c69;
+  outline-offset: 3px;
+}
+
+.model-switcher select:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.model-switcher small {
+  min-width: 0;
+  color: #82939a;
+  font-size: 10px;
+}
+
+.model-switcher .model-id {
+  flex: 1 1 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-label {
+  color: #82939a;
+  font-size: 12px;
+}
+
+.send-button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #2f9a80, #19735f);
+  box-shadow: 0 5px 12px #19735f2b;
+  color: white;
+}
+
+.composer-model-status {
+  margin: 0;
+  padding: 0 18px 12px;
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.model-health-ok {
+  color: #287964;
+}
+
+.model-health-warning {
+  color: #976626;
+}
+
+.composer-model-status summary {
+  cursor: pointer;
+  min-height: 44px;
+  align-content: center;
+}
+
+.composer-model-status p {
+  margin: 4px 0 0;
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+@media (max-width: 767px) {
+  .composer-bottom {
+    padding: 0 12px 12px;
+    gap: 8px;
+  }
+
+  .workspace-path {
+    max-width: none;
+  }
+
+  .composer-controls {
+    flex-basis: 100%;
+    gap: 8px;
+  }
+
+  .model-switcher .model-id,
+  .model-switcher > small {
+    display: none;
+  }
+
+  .composer-model-status {
+    padding: 0 12px 10px;
+  }
+}
