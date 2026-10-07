@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowRight, Check, Users, Workflow } from 'lucide-react';
 import { api } from '../workbench-api';
 import { useCollaborationDraft } from './use-collaboration-draft';
+import { StructuredDraftStatus } from '../drafts/structured-draft-status';
+import type { CollaborationDraft } from './use-collaboration-draft';
 import { useTeamTimeline } from './use-team-timeline';
 import { CollaborationChain } from './collaboration-chain';
 import { CollaborationReviewControl } from './collaboration-review';
@@ -242,7 +244,7 @@ export function TeamCollaborationConsole({
 
   async function submitCollaboration(event: { preventDefault: () => void }) {
     event.preventDefault();
-    if (inFlight.current || !draftStore.ready) return;
+    if (inFlight.current || !draftStore.ready || draftStore.conflict) return;
     const trimmed = content.trim();
     if (!targetTeamId) {
       setError('请先选择目标团队。');
@@ -264,7 +266,7 @@ export function TeamCollaborationConsole({
     const timeout = window.setTimeout(() => controller.abort(), 15_000);
     let pendingId: string | undefined;
     try {
-      const pending = draftStore.confirm();
+      const pending = await draftStore.confirm();
       pendingId = pending.clientMessageId;
       const created = await api<
         TeamMessage & {
@@ -282,13 +284,14 @@ export function TeamCollaborationConsole({
             ? { acceptance: pending.acceptance.trim() }
             : {}),
           clientMessageId: pending.clientMessageId,
+          draftRevision: pending.draftRevision,
           followupMessageId: pending.followup?.messageId,
         },
         controller.signal,
       );
       if (!created?.taskId)
         throw new Error('未收到完整的任务回执，请重试确认送达。');
-      draftStore.complete(pending.clientMessageId!);
+      await draftStore.complete(pending.clientMessageId!);
       setReviewing(false);
       setLastCreated(created);
       history.refresh();
@@ -514,6 +517,7 @@ export function TeamCollaborationConsole({
                 type="submit"
                 disabled={
                   !draftStore.ready ||
+                  Boolean(draftStore.conflict) ||
                   submitting ||
                   (!clientMessageId && (loading || !target))
                 }
@@ -554,12 +558,13 @@ export function TeamCollaborationConsole({
           尚未确认请求是否送达。请重试确认，原目标和内容已锁定，使用同一请求不会重复派发。
         </output>
       )}
-      <output className="team-collaboration-draft-status">
-        {draftStore.storageError ||
-          (!draftStore.ready
-            ? '正在恢复协作草稿…'
-            : '协作草稿保存在当前浏览器，按来源团队分别恢复。')}
-      </output>
+      <StructuredDraftStatus
+        store={draftStore}
+        describe={(raw) => {
+          const value = raw as CollaborationDraft;
+          return `目标团队：${teamById.get(value.targetTeamId)?.name || value.targetTeamId || '未选择'}\n协作目标：${value.content}\n验收标准：${value.acceptance}${value.followup ? `\n原协作：${value.followup.title}` : ''}`;
+        }}
+      />
       {lastCreated && (
         <output className="team-collaboration-success">
           <Check size={15} />

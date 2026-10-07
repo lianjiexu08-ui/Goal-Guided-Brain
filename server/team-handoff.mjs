@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { commitTeamHandoff } from './team-handoff-store.mjs';
 import { handoffContext } from './team-handoff-context.mjs';
+import { consumeCollaborationDraft } from './collaboration-drafts.mjs';
 
 export function createTeamHandoff({ store, space, body, newTask, required }) {
   if (space.status !== 'active') throw new Error('团队空间当前不可发起协作。');
@@ -55,6 +56,8 @@ export function createTeamHandoff({ store, space, body, newTask, required }) {
     target,
     clientMessageId,
     content,
+    afterPersist: (saved) =>
+      consumeCollaborationDraft(store, space.id, null, body, saved.duplicate),
     followupMessageId: body.followupMessageId || null,
     createTask: (message) => {
       const followup = handoffContext(

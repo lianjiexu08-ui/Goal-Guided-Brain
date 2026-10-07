@@ -1,4 +1,8 @@
 import { readCollaborationChain } from './team-collaboration-chain.mjs';
+import {
+  readCollaborationDraft,
+  saveCollaborationDraft,
+} from './collaboration-drafts.mjs';
 import { createTeamHandoff } from './team-handoff.mjs';
 import {
   readCollaborationReview,
@@ -521,6 +525,21 @@ export function createRequestHandler({
               required,
             });
             return send(result.status, result.body);
+          }
+          if (parts[3] === 'collaboration-draft' && !parts[4]) {
+            if (authorization.principal?.type !== 'owner')
+              return send(403, { error: '协作草稿仅供工作台所有者使用。' });
+            const messageId = url.searchParams.get('messageId') || null;
+            if (req.method === 'GET')
+              return send(
+                200,
+                readCollaborationDraft(store, space.id, messageId),
+              );
+            if (req.method === 'PUT')
+              return send(
+                200,
+                saveCollaborationDraft(store, space.id, messageId, body),
+              );
           }
           if (
             req.method === 'GET' &&

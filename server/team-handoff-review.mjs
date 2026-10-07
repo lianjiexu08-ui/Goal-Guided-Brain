@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { StoreReadIndex } from './store/read-index.mjs';
 import { atomicHandoff } from './team-handoff-store.mjs';
+import { consumeCollaborationDraft } from './collaboration-drafts.mjs';
 
 const terminal = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
 const fail = (message, status = 409) =>
@@ -124,6 +125,7 @@ export function saveCollaborationReview(store, teamId, messageId, body) {
     if (previous) {
       if (previous.action !== action || previous.note !== note)
         throw fail('同一处理请求的内容不能修改。');
+      consumeCollaborationDraft(store, teamId, messageId, body, true);
       return current;
     }
     if (store.teamSpace(teamId)?.status !== 'active')
@@ -152,6 +154,7 @@ export function saveCollaborationReview(store, teamId, messageId, body) {
     };
     store.records.save('handoff-reviews', entry, messageId);
     store.records.save('handoff-review-events', entry, eventId);
+    consumeCollaborationDraft(store, teamId, messageId, body);
     return readCollaborationReview(store, teamId, messageId);
   });
 }

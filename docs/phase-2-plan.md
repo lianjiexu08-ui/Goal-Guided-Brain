@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 250/250, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 254/254, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Cross-platform CI matrix runs lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
@@ -46,6 +46,47 @@ They are not sign-off for the separate real deployment gates below.
 - [ ] Real cloud continues scheduled work while the owner's computer is offline.
 
 ## Local Release Record
+
+Collaboration draft continuity on 2026-10-07: handoff targets, requirements,
+acceptance criteria and follow-up references now persist by source team; closure
+notes persist by source request. Owner-only draft endpoints enforce revision CAS
+and source-message scope. Empty records retain their revision. The browser keeps
+an offline fallback plus a per-tab recovery copy, retries on reconnection and
+shows complete local/server versions when both have changed. It does not merge
+unrelated targets and request text. A remote pending request must be confirmed
+before replacing it with a conflicting local version.
+
+Submission first saves the fixed pending ID and then includes its draft revision
+in the business request. Handoff/review writes and matching draft consumption are
+atomic; stale versions or failed cleanup roll back the action. Lost business
+receipts retain the initiating tab's immutable request across reload, even if
+another device has consumed the server draft. Replaying it returns the original
+result and cannot erase a newer draft. Closing a component prevents late draft
+callbacks from overwriting its replacement.
+
+Four new backend tests plus existing handoff/review tests passed 14/14. Full backend
+regression passed 254/254 without skips. The existing desktop/mobile collaboration
+recovery suite passed 14/14 in 32.5s. Four new scenarios across independent browser
+contexts and shared-browser tabs passed 8/8 in 47.4s, including offline reload,
+version choice, cross-device confirmation, review-note synchronization and unique
+business records. Screenshots were inspected at desktop/mobile sizes. Evidence is
+retained under `/tmp/ggb-collab-draft-evidence`. Initial test fixture names exceeded
+the role-name limit and were shortened; development also fixed lost-receipt
+retention, rather than weakening the existing retry assertions. The first full
+browser run passed 243 cases and failed one mobile node-lifecycle lookup: accumulated
+fixtures moved the target off the first 12-row page. The test now uses the existing
+node search before opening each detail, retaining every lifecycle/notification/
+repair assertion. Its desktop/mobile rerun passed 2/2 in 17.8s. Failure traces are
+retained in `first-full`, with the focused rerun in `node-search`. A fresh full
+browser run passed 244/244 in 11.3m with unchanged application code, retained in
+`final-full`. Lint, typecheck and the 297-source file-size gate passed; all changed
+files pass targeted formatting. The tracked format backlog remains 50 files.
+Production build passed. The local service restarted only after verifying zero
+active tasks/jobs; UI, API health, proxied state and collaborator endpoints passed.
+Both original spaces return empty revision-zero drafts without writing records,
+and reject an unmatched review-draft scope with 404. Existing IDs remain unchanged:
+11 tasks, 10 jobs and two unconfirmed spaces. Browser/MCP test data stayed isolated;
+no paid model calls, remote push or deployment occurred.
 
 Verified onward team delegation on 2026-10-07: the owner collaboration view
 now follows authenticated task origins across product, development and operations
@@ -657,8 +698,8 @@ format checks for changed code, file-size checks and production build passed.
 The subsequent full 126-run browser regression includes this mobile refinement,
 the ordinary attention-resolution workflow and cross-team overview recovery.
 
-Latest full local regression on 2026-10-07: `npm test` 250/250 and Playwright
-desktop/mobile baseline 236/236 passed on macOS. `npm run lint`,
+Latest full local regression on 2026-10-07: `npm test` 254/254 and Playwright
+desktop/mobile baseline 244/244 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines`, `npm run build` and
 `git diff --check` also passed. The model metrics regression includes task-type
 runtime comparisons, alias filtering, delayed response isolation, retry and
@@ -685,8 +726,8 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 250 passing tests. The latest
-full Playwright baseline passed 236 desktop/mobile runs covering team
+The current deterministic suite contains 254 passing tests. The latest
+full Playwright baseline passed 244 desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
 binary drag-and-drop attachments, conversation scroll recovery, evidence quality summaries, Team Charter confirmation and high-risk

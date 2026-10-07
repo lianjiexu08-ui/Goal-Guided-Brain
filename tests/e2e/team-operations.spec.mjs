@@ -210,6 +210,10 @@ test.describe('团队运营与协作回归', () => {
     await page.goto('/');
     await clickNavigation(page, '执行节点');
     await expect(page.getByRole('heading', { name: '执行节点' })).toBeVisible();
+    // Other suites also create nodes. Locate fixtures through the actual
+    // search control instead of assuming that they remain on the first page.
+    const search = page.getByRole('textbox', { name: '搜索执行节点' });
+    await search.fill('E2E 离线节点');
 
     const offline = page.getByRole('button', {
       name: 'E2E 离线节点',
@@ -253,6 +257,7 @@ test.describe('团队运营与协作回归', () => {
     ).toMatchObject({ read: true });
     await page.keyboard.press('Escape');
 
+    await search.fill('E2E 已撤销节点');
     const revoked = page.getByRole('button', {
       name: 'E2E 已撤销节点',
       exact: true,

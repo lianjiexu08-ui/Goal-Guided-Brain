@@ -3,7 +3,11 @@ import { captureHandoffOrigin } from './team-handoff-origin.mjs';
 // Persist a handoff identically for the owner HTTP API and the agent MCP API.
 // Authorization and task construction remain the responsibility of each caller.
 export function commitTeamHandoff(options) {
-  return atomicHandoff(options.store, () => persistHandoff(options));
+  return atomicHandoff(options.store, () => {
+    const result = persistHandoff(options);
+    options.afterPersist?.(result);
+    return result;
+  });
 }
 
 export function atomicHandoff(store, operation) {

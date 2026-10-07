@@ -2,10 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../workbench-api';
+import { useStructuredDraft } from '../drafts/use-structured-draft';
+import { StructuredDraftStatus } from '../drafts/structured-draft-status';
 import type { CollaborationReview } from './model';
 
 type Decision = 'complete' | 'end' | 'reopen';
 type Request = {
+  draftRevision?: number;
   action: Decision;
   note: string;
   fingerprint: string;
@@ -13,6 +16,21 @@ type Request = {
   requestId: string;
 };
 type Draft = { action: Decision; note: string; pending?: Request };
+const empty: Draft = { action: 'complete', note: '' };
+function validDraft(raw: unknown) {
+  const value = raw as Draft | null;
+  return (
+    !!value &&
+    ['complete', 'end', 'reopen'].includes(value.action) &&
+    typeof value.note === 'string' &&
+    value.note.length <= 2000 &&
+    (!value.pending ||
+      (typeof value.pending.requestId === 'string' &&
+        typeof value.pending.note === 'string' &&
+        typeof value.pending.fingerprint === 'string' &&
+        Number.isSafeInteger(value.pending.revision)))
+  );
+}
 const labels: Record<string, string> = {
   complete: '确认完成',
   end: '结束跟进',
@@ -30,15 +48,22 @@ export function CollaborationReviewControl({
 }) {
   const [opened, setOpened] = useState(false);
   const [current, setCurrent] = useState<CollaborationReview | null>(null);
-  const [draft, setDraft] = useState<Draft>({ action: 'complete', note: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [storageError, setStorageError] = useState('');
   const active = useRef<{ sequence: number; controller?: AbortController }>({
     sequence: 0,
   });
   const key = `ggb.collaboration-review-draft.v1:${review.messageId}`;
   const endpoint = `teams/${encodeURIComponent(review.sourceTeamId)}/collaboration-review/${encodeURIComponent(review.messageId)}`;
+  const draftStore = useStructuredDraft({
+    endpoint: `teams/${encodeURIComponent(review.sourceTeamId)}/collaboration-draft?messageId=${encodeURIComponent(review.messageId)}`,
+    legacyKey: key,
+    empty,
+    valid: validDraft,
+    enabled: opened,
+  });
+  const { draft } = draftStore;
+  const saveDraft = draftStore.update;
   useEffect(() => {
     const request = active.current;
     return () => {
@@ -46,15 +71,6 @@ export function CollaborationReviewControl({
       request.controller?.abort();
     };
   }, []);
-  function saveDraft(next: Draft) {
-    setDraft(next);
-    try {
-      localStorage.setItem(key, JSON.stringify(next));
-      setStorageError('');
-    } catch {
-      setStorageError('处理草稿未能保存到本机，请保持当前页面。');
-    }
-  }
   async function request(method: string, body?: Request) {
     const sequence = ++active.current.sequence;
     active.current.controller?.abort();
@@ -90,7 +106,8 @@ export function CollaborationReviewControl({
       );
       const status = (reason as Error & { status?: number }).status;
       if (body && status && status >= 400 && status < 500)
-        saveDraft({ action: body.action, note: body.note });
+        if (draftStore.getCurrent().pending?.requestId === body.requestId)
+          saveDraft({ action: body.action, note: body.note });
       return null;
     } finally {
       window.clearTimeout(timeout);
@@ -105,31 +122,10 @@ export function CollaborationReviewControl({
     const value = await request('GET');
     if (!value) return;
     setCurrent(value);
-    try {
-      const saved = JSON.parse(
-        localStorage.getItem(key) || 'null',
-      ) as Draft | null;
-      if (saved && labels[saved.action] && typeof saved.note === 'string')
-        setDraft({
-          ...saved,
-          action:
-            value.status === 'open' &&
-            saved.action === 'reopen' &&
-            !saved.pending
-              ? 'complete'
-              : saved.action,
-        });
-      else
-        setDraft({
-          action: value.status === 'open' ? 'complete' : 'reopen',
-          note: '',
-        });
-    } catch {
-      setStorageError('本机处理草稿无法读取，请保持当前页面。');
-    }
   }
+
   async function submit() {
-    if (active.current.controller || !current) return;
+    if (active.current.controller || !current || draftStore.conflict) return;
     const body = draft.pending || {
       action: current.status === 'open' ? draft.action : 'reopen',
       note: draft.note.trim(),
@@ -137,21 +133,27 @@ export function CollaborationReviewControl({
       revision: current.revision,
       requestId: crypto.randomUUID(),
     };
-    saveDraft({ ...draft, pending: body });
-    const value = await request('POST', body);
+    setBusy(true);
+    setError('');
+    let saved;
+    try {
+      saved = await draftStore.commit({
+        action: body.action,
+        note: draft.note,
+        pending: body,
+      });
+    } catch (reason) {
+      setError((reason as Error).message);
+      setBusy(false);
+      return;
+    }
+    const value = await request('POST', {
+      ...body,
+      draftRevision: saved.revision,
+    });
     if (!value) return;
     setCurrent(value);
-    setDraft({
-      action: value.status === 'open' ? 'complete' : 'reopen',
-      note: '',
-    });
-    try {
-      const saved = JSON.parse(localStorage.getItem(key) || 'null');
-      if (saved?.pending?.requestId === body.requestId)
-        localStorage.removeItem(key);
-    } catch {
-      /* The persisted request can safely be confirmed again. */
-    }
+    await draftStore.completed(body.requestId);
     setOpened(false);
     onChanged();
   }
@@ -165,11 +167,7 @@ export function CollaborationReviewControl({
           (selectedAction === 'reopen' || current.canEnd)));
   return (
     <div className="collaboration-review-control">
-      <button
-        type="button"
-        onClick={() => void load()}
-        disabled={busy || Boolean(draft.pending)}
-      >
+      <button type="button" onClick={() => void load()} disabled={busy}>
         {review.status === 'closed'
           ? '查看收尾记录'
           : review.status === 'stale'
@@ -268,7 +266,12 @@ export function CollaborationReviewControl({
                 <button
                   type="button"
                   className="primary-button"
-                  disabled={busy || !canSubmit}
+                  disabled={
+                    busy ||
+                    !canSubmit ||
+                    Boolean(draftStore.conflict) ||
+                    !draftStore.ready
+                  }
                   onClick={() => void submit()}
                 >
                   {busy
@@ -316,7 +319,14 @@ export function CollaborationReviewControl({
               )}
             </div>
           )}
-          {storageError && <output>{storageError}</output>}
+          <StructuredDraftStatus
+            store={draftStore}
+            label="处理草稿"
+            describe={(raw) => {
+              const value = raw as Draft;
+              return `处理方式：${labels[value.action]}\n处理说明：${value.note}`;
+            }}
+          />
         </section>
       )}
     </div>
