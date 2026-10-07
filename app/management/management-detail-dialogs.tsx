@@ -606,6 +606,18 @@ export function ManagementDetailDialogs({
                     </section>
                   )}
                 {detail.collection === 'attention' &&
+                  ['resolved', 'dismissed'].includes(status(detail.item)) &&
+                  Boolean(detail.item.resolution) && (
+                    <section aria-label="事项处理记录">
+                      <h3>处理结果</h3>
+                      <p
+                        style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+                      >
+                        {txt(detail.item, 'resolution')}
+                      </p>
+                    </section>
+                  )}
+                {detail.collection === 'attention' &&
                   detail.item.kind !== 'tool-approval' &&
                   !['resolved', 'dismissed'].includes(status(detail.item)) && (
                     <form
@@ -622,8 +634,16 @@ export function ManagementDetailDialogs({
                     >
                       <label>
                         处理结果
-                        <textarea name="resolution" rows={3} required />
+                        <textarea
+                          name="resolution"
+                          rows={3}
+                          maxLength={4000}
+                          required
+                        />
                       </label>
+                      <p>
+                        记录处理结果后，关联通知会标为已读。任务重试和交付验收仍需在对应任务中操作。
+                      </p>
                       <button className="primary-button" disabled={busy}>
                         <Check size={15} />
                         提交处理结果

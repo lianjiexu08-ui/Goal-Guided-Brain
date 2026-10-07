@@ -8,6 +8,7 @@ import { command } from '../workspaces.mjs';
 import { backupDatabase } from '../migrations.mjs';
 import { approveToolRequest } from '../capability-gateway.mjs';
 import { modelMetrics } from '../metrics.mjs';
+import { resolveAttention } from './attention-resolution.mjs';
 import { resolveApiKey, redact } from '../runtime.mjs';
 
 const statuses = new Set(['queued', 'running', 'waiting', 'state_unknown']);
@@ -866,6 +867,8 @@ export function createPlatformHandler({
       action === 'resolve'
     ) {
       const item = records.get('attention', id);
+      if (item?.kind !== 'tool-approval')
+        return ok(resolveAttention(store, id, body, principal));
       if (item?.kind === 'tool-approval') {
         if (!body.approved)
           return ok(

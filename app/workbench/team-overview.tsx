@@ -88,11 +88,13 @@ export function RiskInbox({
   onOpenTeam,
   onOpenTask,
   onOpenKnowledge,
+  refreshKey = '',
 }: {
   teams: TeamOption[];
   onOpenTeam: (teamId: string) => void;
   onOpenTask: (taskId: string) => void;
   onOpenKnowledge?: (knowledgeId: string) => void;
+  refreshKey?: string;
 }) {
   const [teamFilter, setTeamFilter] = useState('all');
   const [kindFilter, setKindFilter] = useState('all');
@@ -135,7 +137,7 @@ export function RiskInbox({
   useEffect(() => {
     const timer = window.setTimeout(() => void loadFirstPage(), 0);
     return () => window.clearTimeout(timer);
-  }, [loadFirstPage]);
+  }, [loadFirstPage, refreshKey]);
   const loadMore = async () => {
     if (!nextCursor || loading) return;
     setLoading(true);

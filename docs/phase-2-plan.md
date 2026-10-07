@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 189/189, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 193/193, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Cross-platform CI matrix runs lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
@@ -54,15 +54,19 @@ reset, delayed responses and refresh recovery. Layout checks cover 320px and
 no page overflow. On the local production build at 393px, the combined filter
 and summary content height decreased from 879px to 430px. Typecheck, lint,
 format checks for changed code, file-size checks and production build passed.
-The browser suite now defines 108 runs; the full-suite evidence below belongs
-to the previous revision, not a new full run for this UI-only change.
+The subsequent full 110-run browser regression includes this mobile refinement
+and the ordinary attention-resolution workflow.
 
-Latest full local regression at `6985df2` on 2026-10-07: `npm test` 189/189 and Playwright
-desktop/mobile baseline 104/104 passed on macOS. `npm run lint`,
+Latest full local regression on 2026-10-07: `npm test` 193/193 and Playwright
+desktop/mobile baseline 110/110 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines -- --json`, `npm run build` and
 `git diff --check` also passed. The model metrics regression includes task-type
 runtime comparisons, alias filtering, delayed response isolation, retry and
-background refresh failure recovery. The UI and API smoke endpoints returned
+background refresh failure recovery. Attention-resolution tests cover taskless
+items, linked notification updates, idempotence, validation, transaction rollback
+and separation from task retry and acceptance. Desktop/mobile browser tests
+verify risk-list refresh, notification read state and persisted resolution notes.
+The UI and API smoke endpoints returned
 200 and `{"ok":true}` respectively. This is local evidence only; the real Linux,
 Windows/WSL2, HTTPS and owner-offline gates below remain open.
 
@@ -81,8 +85,8 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 189 passing tests. The repeatable
-Last full Playwright baseline passed 104 desktop/mobile runs covering team
+The current deterministic suite contains 193 passing tests. The latest
+full Playwright baseline passed 110 desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
 binary drag-and-drop attachments, conversation scroll recovery, evidence quality summaries, Team Charter confirmation and high-risk
