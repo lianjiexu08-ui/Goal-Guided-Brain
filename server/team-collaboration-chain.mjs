@@ -1,36 +1,11 @@
 import { createHash } from 'node:crypto';
 import { StoreReadIndex } from './store/read-index.mjs';
 import { collaborationReview } from './team-handoff-review.mjs';
+import { buildHandoffGraph } from './team-handoff-graph.mjs';
 
 const fail = (message, status = 409) =>
   Object.assign(new Error(message), { status });
 const settled = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
-const compare = (a, b) =>
-  a.createdAt < b.createdAt
-    ? -1
-    : a.createdAt > b.createdAt
-      ? 1
-      : a.id < b.id
-        ? -1
-        : a.id > b.id
-          ? 1
-          : 0;
-
-function validSource(read, row) {
-  if (row.kind !== 'handoff' || row.spaceId !== row.fromTeamId) return false;
-  const peer = read.get('space-messages', row.relatedMessageId);
-  const meta = read.get('task-meta', row.taskId);
-  return (
-    peer?.kind === 'handoff' &&
-    peer.spaceId === row.toTeamId &&
-    peer.fromTeamId === row.fromTeamId &&
-    peer.toTeamId === row.toTeamId &&
-    peer.taskId === row.taskId &&
-    meta?.sourceMessageId === peer.id &&
-    (meta.teamId || meta.spaceId) === row.toTeamId &&
-    Boolean(read.task(row.taskId))
-  );
-}
 
 function sharedReply(read, row) {
   const reply = read.get('space-messages', `handoff-reply:${row.taskId}`);
@@ -49,66 +24,25 @@ export function readCollaborationChain(store, teamId, messageId, query = {}) {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50)
     throw fail('链路分页数量需要为 1 至 50。', 400);
   const read = new StoreReadIndex(store);
-  // Only shared, paired requests involving this team can participate in a chain.
-  const candidates = read
-    .list('space-messages')
-    .filter(
-      (row) =>
-        (row.fromTeamId === teamId || row.toTeamId === teamId) &&
-        validSource(read, row),
-    );
-  const requested = read.get('space-messages', messageId);
-  const selected = candidates.find(
-    (row) =>
-      row.id === messageId ||
-      row.relatedMessageId === messageId ||
-      (requested?.kind === 'reply' &&
-        requested.spaceId === row.spaceId &&
-        requested.relatedMessageId === row.id &&
-        requested.taskId === row.taskId &&
-        requested.fromTeamId === row.toTeamId &&
-        requested.toTeamId === row.fromTeamId),
-  );
-  if (!selected) throw fail('当前团队没有这条协作的有效共享记录。', 404);
-  const rows = candidates.filter(
-    (row) =>
-      row.fromTeamId === selected.fromTeamId &&
-      row.toTeamId === selected.toTeamId,
-  );
-  const byId = new Map(rows.map((row) => [row.id, row]));
-  let root = selected;
-  const ancestors = new Set();
-  while (root.followupMessageId && byId.has(root.followupMessageId)) {
-    if (ancestors.has(root.id))
-      throw fail('协作引用存在循环，请核对原始记录。');
-    ancestors.add(root.id);
-    root = byId.get(root.followupMessageId);
-  }
-  const children = new Map();
-  for (const row of rows) {
-    const parent = row.followupMessageId;
-    if (!children.has(parent)) children.set(parent, []);
-    children.get(parent).push(row);
-  }
-  for (const list of children.values()) list.sort(compare);
-  const ordered = [];
-  const stack = [root];
-  const seen = new Set();
-  while (stack.length) {
-    const row = stack.pop();
-    if (seen.has(row.id)) throw fail('协作引用存在循环，请核对原始记录。');
-    seen.add(row.id);
-    ordered.push(row);
-    for (const child of (children.get(row.id) || []).toReversed())
-      stack.push(child);
-  }
+  const {
+    selected,
+    ordered,
+    origins,
+    links,
+    root,
+    roots,
+    incomplete,
+    omittedLinks,
+  } = buildHandoffGraph(read, teamId, messageId);
   const revision = createHash('sha256')
     .update(
       JSON.stringify(
         ordered.map((row) => [
           row.id,
           row.taskId,
-          row.followupMessageId || null,
+          row.fromTeamId,
+          row.toTeamId,
+          links.get(row.id).parents,
           row.createdAt,
         ]),
       ),
@@ -156,6 +90,11 @@ export function readCollaborationChain(store, teamId, messageId, query = {}) {
   const indices = new Map(ordered.map((row, index) => [row.id, index + 1]));
   const next = offset + limit;
   return {
+    visibility: 'owner-workflow',
+    rootCount: roots.length,
+    omittedLinks,
+    teamCount: new Set(ordered.flatMap((row) => [row.fromTeamId, row.toTeamId]))
+      .size,
     rootMessageId: root.id,
     selectedMessageId: selected.id,
     selectedIndex: indices.get(selected.id),
@@ -163,8 +102,8 @@ export function readCollaborationChain(store, teamId, messageId, query = {}) {
     targetTeamId: root.toTeamId,
     sourceTeamName: store.teamSpace(root.fromTeamId)?.name || '历史来源团队',
     targetTeamName: store.teamSpace(root.toTeamId)?.name || '历史目标团队',
-    // A missing/cross-team ancestor is not followed or presented as a complete chain.
-    incomplete: Boolean(root.followupMessageId),
+    // Unverifiable provenance is never reconstructed from free-form context.
+    incomplete,
     revision,
     counts,
     items: ordered.slice(offset, next).map((row) => {
@@ -173,7 +112,17 @@ export function readCollaborationChain(store, teamId, messageId, query = {}) {
       return {
         messageId: row.id,
         index: indices.get(row.id),
-        parentIndex: indices.get(row.followupMessageId) || null,
+        parentIndex: indices.get(links.get(row.id).parents[0]?.id) || null,
+        parentLinks: links.get(row.id).parents.map((parent) => ({
+          index: indices.get(parent.id),
+          kind: parent.kind,
+        })),
+        originStatus: origins.get(row.id).status,
+        initiatorTaskId: origins.get(row.id).initiatorTaskId,
+        sourceTeamId: row.fromTeamId,
+        targetTeamId: row.toTeamId,
+        sourceTeamName: store.teamSpace(row.fromTeamId)?.name || '历史来源团队',
+        targetTeamName: store.teamSpace(row.toTeamId)?.name || '历史目标团队',
         createdAt: row.createdAt,
         content: row.content,
         reply: sharedReply(read, row),

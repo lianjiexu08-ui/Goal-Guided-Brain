@@ -7,6 +7,11 @@ type Item = {
   messageId: string;
   index: number;
   parentIndex: number | null;
+  parentLinks: { index: number; kind: 'followup' | 'delegation' }[];
+  sourceTeamName: string;
+  targetTeamName: string;
+  originStatus: 'root' | 'owner' | 'linked' | 'unresolved' | 'legacy';
+  initiatorTaskId: string | null;
   createdAt: string;
   content: string;
   reply: { content: string; createdAt: string } | null;
@@ -22,6 +27,9 @@ type Chain = {
   sourceTeamName: string;
   targetTeamName: string;
   incomplete: boolean;
+  teamCount: number;
+  rootCount: number;
+  omittedLinks: number;
   revision: string;
   counts: {
     total: number;
@@ -114,7 +122,8 @@ export function CollaborationChain({
               !item?.messageId ||
               !item.task?.id ||
               !item.review ||
-              typeof item.content !== 'string',
+              typeof item.content !== 'string' ||
+              !Array.isArray(item.parentLinks),
           )
         )
           throw new Error('协作链路返回不完整，请重试。');
@@ -221,12 +230,15 @@ export function CollaborationChain({
         </div>
       </header>
       <p>
-        展示同一来源与目标团队的原请求和后续追问，分支标明引用来源。执行、验收和结束跟进分别记录。
+        连接原请求、追问和智能体转派，可查看每次请求的发起任务。执行、验收和结束跟进分别记录。
       </p>
       {chain && (
         <>
           <p>
-            {chain.sourceTeamName} → {chain.targetTeamName}
+            {chain.rootCount > 1
+              ? `关联工作 · ${chain.rootCount} 个起始请求`
+              : `${chain.sourceTeamName} → ${chain.targetTeamName}`}{' '}
+            · 涉及 {chain.teamCount} 个团队
           </p>
           <div className="collaboration-chain-counts" aria-label="整条链路状态">
             <span>
@@ -250,7 +262,9 @@ export function CollaborationChain({
           </div>
           {chain.incomplete && (
             <output>
-              原始引用缺失或不属于此协作范围，以下仅展示可确认的关联记录。
+              部分来源或引用无法确认，以下仅展示已验证的关联记录。
+              {chain.omittedLinks > 0 &&
+                `另有 ${chain.omittedLinks} 条转派关联未能纳入，请核对发起任务。`}
             </output>
           )}
         </>
@@ -286,8 +300,13 @@ export function CollaborationChain({
               <div className="collaboration-chain-item-head">
                 <strong>
                   #{item.index}{' '}
-                  {item.parentIndex
-                    ? `接续 #${item.parentIndex}`
+                  {item.parentLinks.length
+                    ? item.parentLinks
+                        .map(
+                          (link) =>
+                            `${link.kind === 'delegation' ? '转派自' : '接续'} #${link.index}`,
+                        )
+                        .join(' · ')
                     : chain.incomplete
                       ? '最早可确认请求'
                       : '原始请求'}
@@ -297,6 +316,16 @@ export function CollaborationChain({
                 )}
                 <time dateTime={item.createdAt}>{time(item.createdAt)}</time>
               </div>
+              <small>
+                {item.sourceTeamName} → {item.targetTeamName}
+              </small>
+              {['legacy', 'unresolved'].includes(item.originStatus) && (
+                <small>
+                  {item.originStatus === 'legacy'
+                    ? '早期记录未保留发起任务，仅展示已知关联。'
+                    : '上游来源无法核实，未据此关联其他协作。'}
+                </small>
+              )}
               <div className="collaboration-chain-status">
                 <span>
                   执行：{labels[item.task.status] || item.task.status}
@@ -337,13 +366,24 @@ export function CollaborationChain({
                   <div>{item.review.note}</div>
                 </details>
               )}
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => onOpenTask(item.task.id)}
-              >
-                查看第 {item.index} 次任务
-              </button>
+              <div className="collaboration-chain-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => onOpenTask(item.task.id)}
+                >
+                  查看第 {item.index} 次任务
+                </button>
+                {item.initiatorTaskId && (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => onOpenTask(item.initiatorTaskId!)}
+                  >
+                    查看第 {item.index} 次请求的发起任务
+                  </button>
+                )}
+              </div>
             </li>
           ))}
         </ol>

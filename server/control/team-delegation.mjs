@@ -33,6 +33,7 @@ export function delegateToTeam(control, body, principal) {
     source,
     target,
     content,
+    initiatorTaskId: sourceTask.id,
     followupMessageId: body.followupMessageId || null,
     clientMessageId: `mcp:${sourceTask.id}:${key}`,
     legacyMessageId: `handoff:${source.id}:${target.id}:${key}`,

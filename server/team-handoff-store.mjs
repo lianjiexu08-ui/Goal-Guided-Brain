@@ -1,3 +1,5 @@
+import { captureHandoffOrigin } from './team-handoff-origin.mjs';
+
 // Persist a handoff identically for the owner HTTP API and the agent MCP API.
 // Authorization and task construction remain the responsibility of each caller.
 export function commitTeamHandoff(options) {
@@ -56,6 +58,7 @@ function persistHandoff({
   createTask,
   legacyMessageId,
   followupMessageId = null,
+  initiatorTaskId = null,
 }) {
   const matches = (message) =>
     message?.kind === 'handoff' &&
@@ -146,5 +149,27 @@ function persistHandoff({
       },
       sourceMessageId,
     );
+  if (!duplicate) {
+    const origin = initiatorTaskId
+      ? captureHandoffOrigin(store, source.id, initiatorTaskId)
+      : {
+          status: 'owner',
+          initiatorTaskId: null,
+          initiatorJobId: null,
+          parentMessageId: null,
+        };
+    store.records.save(
+      'handoff-origins',
+      {
+        ...origin,
+        version: 1,
+        messageId: sourceMessageId,
+        sourceTeamId: source.id,
+        targetTeamId: target.id,
+        targetTaskId: task.id,
+      },
+      sourceMessageId,
+    );
+  }
   return { duplicate, message, task, sourceMessageId };
 }

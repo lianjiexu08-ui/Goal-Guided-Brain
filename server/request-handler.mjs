@@ -528,6 +528,8 @@ export function createRequestHandler({
             parts[4] &&
             !parts[5]
           ) {
+            if (authorization.principal?.type !== 'owner')
+              return send(403, { error: '完整协作链路仅供工作台所有者查看。' });
             return send(
               200,
               readCollaborationChain(

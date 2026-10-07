@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 244/244, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 250/250, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Cross-platform CI matrix runs lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
@@ -46,6 +46,47 @@ They are not sign-off for the separate real deployment gates below.
 - [ ] Real cloud continues scheduled work while the owner's computer is offline.
 
 ## Local Release Record
+
+Verified onward team delegation on 2026-10-07: the owner collaboration view
+now follows authenticated task origins across product, development and operations
+teams, including a return handoff. Both follow-up references and initiating-task
+relationships are retained. Multiple starting requests are explicitly identified;
+a shared successor is counted once. Each request shows source/target teams and
+links to its initiating task when verified. Agent MCP read permissions remain
+limited to their existing authorized direct collaborations.
+
+New handoffs atomically save versioned origin records with task/job/paired messages.
+MCP origins come from the execution lease; owner submissions are recorded explicitly.
+Member tasks and retry attempts require verified logical-job ancestry. Free-form
+context and client-supplied origin fields cannot create graph edges. Legacy records
+without provenance are marked incomplete rather than reconstructed; duplicate
+submission does not backfill them. Broken origins are excluded with an incomplete
+notice, and graph topology changes invalidate pagination cursors.
+
+Six new real HTTP/MCP tests cover multi-team traversal, descendant/retry origins,
+atomic rollback with no success events, idempotency, multiple roots, missing or
+forged associations and agent permission boundaries. Focused backend regressions
+passed 26/26; the complete backend suite passed 250/250 with no skips.
+
+Visual inspection exposed a mobile overflow outside the chain itself: long team
+names widened the cross-team timeline grid, allowing automatic horizontal scrolling
+to clip the collaboration panel. A long-name regression failed before the CSS fix.
+The grid and flex children now constrain their width; assertions cover the page's
+scroll width, scroll position and chain viewport bounds. The related desktop/mobile
+suite passed 22/22 in 43.0s. Before/after evidence is retained in
+`/tmp/ggb-onward-evidence/layout-red` and `layout-focused`. An earlier full browser
+run was deliberately interrupted before changing the layout, so it is not counted
+as full verification. The final full browser regression passed 236/236 in 10.2m;
+evidence is retained under `/tmp/ggb-onward-evidence/full`. Lint, typecheck,
+the 292-file size gate and all 16 changed files' targeted format checks passed.
+Formatting the team-page CSS and mobile interaction guide reduced the tracked
+formatting backlog from 52 to 50; the repository-wide format gate remains open. Production
+build passed. The local service restarted after confirming no active tasks/jobs;
+UI, API health, proxied state and both collaborator lists returned 200. Both
+existing spaces reject unmatched chain entries with the new route's 404. Original
+IDs remain unchanged: 11 tasks, 10 jobs and two unconfirmed spaces. New multi-team
+flows were tested with isolated fixtures and real local HTTP/MCP services, not
+paid models or production confirmed teams. No remote push or deployment occurred.
 
 Collaboration follow-up chain inspection on 2026-10-07: each valid shared
 request/reply opens a read-only chain for the same source/target pair. The
@@ -616,8 +657,8 @@ format checks for changed code, file-size checks and production build passed.
 The subsequent full 126-run browser regression includes this mobile refinement,
 the ordinary attention-resolution workflow and cross-team overview recovery.
 
-Latest full local regression on 2026-10-07: `npm test` 244/244 and Playwright
-desktop/mobile baseline 232/232 passed on macOS. `npm run lint`,
+Latest full local regression on 2026-10-07: `npm test` 250/250 and Playwright
+desktop/mobile baseline 236/236 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines`, `npm run build` and
 `git diff --check` also passed. The model metrics regression includes task-type
 runtime comparisons, alias filtering, delayed response isolation, retry and
@@ -644,8 +685,8 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 244 passing tests. The latest
-full Playwright baseline passed 232 desktop/mobile runs covering team
+The current deterministic suite contains 250 passing tests. The latest
+full Playwright baseline passed 236 desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
 binary drag-and-drop attachments, conversation scroll recovery, evidence quality summaries, Team Charter confirmation and high-risk
