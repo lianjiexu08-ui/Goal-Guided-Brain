@@ -7,6 +7,7 @@ import { MAX_ATTACHMENTS } from '../drafts/model';
 import { useDraftSync } from '../drafts/use-draft-sync';
 import type { Assistant } from '../assistant-editor';
 import { WorkbenchView } from './workbench-view';
+import { useWorkbenchRefresh } from './use-workbench-refresh';
 import { createWorkbenchRenderers } from './renderers';
 import { createWorkbenchActions } from './actions';
 import { deriveWorkbenchState } from './derived';
@@ -36,7 +37,6 @@ export function Workbench() {
   const [role, setRole] = useState<RoleId>('__router__');
   const [view, setView] = useState('workspace');
   const [data, setData] = useState<State | null>(null);
-  const [connectionError, setConnectionError] = useState('');
   const [selected, setSelected] = useState<Partial<Record<RoleId, string>>>({});
   const [selectedSpaceId, setSelectedSpaceId] = useState('');
   const [modelOverrides, setModelOverrides] = useState<Record<string, string>>(
@@ -429,65 +429,53 @@ export function Workbench() {
     },
     [selectedSpaceId],
   );
-  async function refresh() {
-    try {
-      const next = await api<State>('state');
-      setData(next);
-      const primary =
-        next.spaces?.find(
+  const applySnapshot = useCallback((next: State) => {
+    setData(next);
+    const primary =
+      next.spaces?.find(
+        (space) =>
+          space.status !== 'archived' &&
+          space.recruitment?.phase === 'confirmed',
+      ) ||
+      next.spaces?.find((space) => space.status !== 'archived') ||
+      next.spaces?.[0];
+    const cachedRoute = readRouteCache();
+    const cachedSpace = cachedRoute.spaceId
+      ? next.spaces?.find(
           (space) =>
-            space.status !== 'archived' &&
-            space.recruitment?.phase === 'confirmed',
-        ) ||
-        next.spaces?.find((space) => space.status !== 'archived') ||
-        next.spaces?.[0];
-      const cachedRoute = readRouteCache();
-      const cachedSpace = cachedRoute.spaceId
-        ? next.spaces?.find(
-            (space) =>
-              space.id === cachedRoute.spaceId && space.status !== 'archived',
-          )
-        : null;
-      setSelectedSpaceId((current) =>
-        current &&
-        next.spaces?.some(
-          (space) => space.id === current && space.status !== 'archived',
+            space.id === cachedRoute.spaceId && space.status !== 'archived',
         )
-          ? current
-          : cachedSpace?.id || primary?.id || '',
-      );
-      if (!routeInitialized.current) {
-        const initialSpace = cachedSpace || primary;
-        const cachedRole =
-          cachedRoute.role &&
-          initialSpace?.memberRoleIds.includes(cachedRoute.role) &&
-          next.roles.some(
-            (item) => item.id === cachedRoute.role && !item.archived,
-          )
-            ? cachedRoute.role
-            : null;
-        const preferred =
-          cachedRole ||
-          initialSpace?.pmRoleId ||
-          next.roles.find((item) => !item.archived)?.id;
-        if (preferred) setRole(preferred);
-        if (initialSpace?.id) setSelectedSpaceId(initialSpace.id);
-        if (cachedRoute.view) setView(cachedRoute.view);
-        routeInitialized.current = true;
-      }
-      setConnectionError('');
-    } catch (error) {
-      setConnectionError((error as Error).message);
+      : null;
+    setSelectedSpaceId((current) =>
+      current &&
+      next.spaces?.some(
+        (space) => space.id === current && space.status !== 'archived',
+      )
+        ? current
+        : cachedSpace?.id || primary?.id || '',
+    );
+    if (!routeInitialized.current) {
+      const initialSpace = cachedSpace || primary;
+      const cachedRole =
+        cachedRoute.role &&
+        initialSpace?.memberRoleIds.includes(cachedRoute.role) &&
+        next.roles.some(
+          (item) => item.id === cachedRoute.role && !item.archived,
+        )
+          ? cachedRoute.role
+          : null;
+      const preferred =
+        cachedRole ||
+        initialSpace?.pmRoleId ||
+        next.roles.find((item) => !item.archived)?.id;
+      if (preferred) setRole(preferred);
+      if (initialSpace?.id) setSelectedSpaceId(initialSpace.id);
+      if (cachedRoute.view) setView(cachedRoute.view);
+      routeInitialized.current = true;
     }
-  }
-  useEffect(() => {
-    const initial = setTimeout(() => void refresh(), 0);
-    const timer = setInterval(() => void refresh(), 2000);
-    return () => {
-      clearTimeout(initial);
-      clearInterval(timer);
-    };
   }, []);
+  const { refresh, refreshing, connectionError } =
+    useWorkbenchRefresh(applySnapshot);
   useEffect(() => {
     const timer = window.setTimeout(() => setRecruitmentApprovals({}), 0);
     return () => window.clearTimeout(timer);
@@ -551,7 +539,7 @@ export function Workbench() {
         teamEventRefreshTimerRef.current = null;
       }
     };
-  }, [isConversationView, teamSpace?.id, view]);
+  }, [isConversationView, teamSpace?.id, view, refresh]);
   useEffect(() => {
     if (!selectedSpaceId) return;
     try {
@@ -612,7 +600,7 @@ export function Workbench() {
           return { id: task.id, status: task.status };
         },
       }),
-    [],
+    [refresh],
   );
   useEffect(() => {
     if (notice) {
@@ -881,6 +869,7 @@ export function Workbench() {
     setView,
     data,
     connectionError,
+    refreshing,
     setSelected,
     selectedSpaceId,
     setSelectedSpaceId,

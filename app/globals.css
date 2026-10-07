@@ -12,3 +12,5 @@
 @import './styles/dialogs.css';
 @import './styles/typography-responsive.css';
 @import './styles/visual-refresh.css';
+
+@import './styles/workbench-loading.css';

@@ -33,7 +33,6 @@ export async function openMobileSidebar(page) {
 
 export async function clickNavigation(page, label) {
   await openMobileSidebar(page);
-  await page.waitForTimeout(500);
   const navigation = sidebarLocator(page)
     .locator('button')
     .filter({ hasText: label })
@@ -45,7 +44,6 @@ export async function clickNavigation(page, label) {
 export async function recruitmentPage(page) {
   await page.goto('/');
   await openMobileSidebar(page);
-  await page.waitForTimeout(500);
   const navigation = sidebarLocator(page)
     .locator('button')
     .filter({ hasText: '团队招募' })

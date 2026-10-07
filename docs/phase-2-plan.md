@@ -47,6 +47,18 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Local Release Record
 
+Startup recovery on 2026-10-07: the workbench now waits for the first valid
+snapshot before exposing team and recruitment actions. Connection failures and
+15-second timeouts provide a retry screen; later failures preserve the existing
+workspace and drafts with a freshness notice. Polls share an in-flight read,
+while explicit refreshes supersede older requests. The focused desktop/mobile
+suite passed 32/32, covering slow startup, cached team recovery, timeout/retry,
+offline draft retention and stale success/error responses after a real rename.
+Recruitment helpers no longer rely on fixed startup/navigation delays. Loading
+and retry layouts were visually checked, including a 320px mobile viewport.
+The final full regression passed 202/202 backend tests and 146/146 browser runs;
+typecheck, lint, file-size checks and production build also passed.
+
 Agent plan maintenance on 2026-10-07: confirmed team members can read a live
 plan through MCP; only the active team's project manager can upsert a milestone
 with the latest revision and a reason. Completion requires nonempty task links
@@ -97,7 +109,7 @@ The subsequent full 126-run browser regression includes this mobile refinement,
 the ordinary attention-resolution workflow and cross-team overview recovery.
 
 Latest full local regression on 2026-10-07: `npm test` 202/202 and Playwright
-desktop/mobile baseline 134/134 passed on macOS. `npm run lint`,
+desktop/mobile baseline 146/146 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines`, `npm run build` and
 `git diff --check` also passed. The model metrics regression includes task-type
 runtime comparisons, alias filtering, delayed response isolation, retry and
@@ -125,7 +137,7 @@ and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
 The current deterministic suite contains 202 passing tests. The latest
-full Playwright baseline passed 134 desktop/mobile runs covering team
+full Playwright baseline passed 146 desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
 binary drag-and-drop attachments, conversation scroll recovery, evidence quality summaries, Team Charter confirmation and high-risk

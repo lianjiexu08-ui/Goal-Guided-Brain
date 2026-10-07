@@ -4,6 +4,7 @@
 // Focused presentation modules receive a controller context assembled by Workbench.
 /* oxlint-disable no-explicit-any, no-unused-vars */
 import Markdown from 'react-markdown';
+import { WorkbenchLoading } from './workbench-loading';
 import { api, entityList, entityText } from '../workbench-api';
 import {
   AssistantEditor,
@@ -184,6 +185,7 @@ export function WorkbenchView({ context }: { context: WorkbenchContext }) {
     setView,
     data,
     connectionError,
+    refreshing,
     setSelected,
     selectedSpaceId,
     setSelectedSpaceId,
@@ -249,6 +251,15 @@ export function WorkbenchView({ context }: { context: WorkbenchContext }) {
     setRecruitmentApprovals,
     recruitmentSyncState,
   } = context;
+  if (!data) {
+    return (
+      <WorkbenchLoading
+        error={connectionError}
+        refreshing={refreshing}
+        onRetry={refresh}
+      />
+    );
+  }
   return (
     <>
       <WorkbenchSidebar context={context} />
@@ -307,9 +318,11 @@ export function WorkbenchView({ context }: { context: WorkbenchContext }) {
           </div>
         )}
         {connectionError && (
-          <div className="error-banner">
-            无法连接工作台服务。请确认服务正在运行。
-            <button onClick={refresh}>重试</button>
+          <div className="error-banner" role="alert">
+            暂时无法更新，当前显示上次读取的内容。
+            <button disabled={refreshing} onClick={refresh}>
+              {refreshing ? '正在重试…' : '重试'}
+            </button>
           </div>
         )}
         {data && !data.config.hasApiKey && isConversationView && (
