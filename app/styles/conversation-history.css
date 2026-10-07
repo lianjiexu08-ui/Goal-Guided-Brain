@@ -1,0 +1,74 @@
+.message-area.conversation-history {
+  overflow-anchor: none;
+  scroll-behavior: auto;
+}
+
+.conversation-history-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 0 20px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.conversation-history-controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 44px;
+  max-width: 100%;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--foreground);
+  background: var(--background);
+  cursor: pointer;
+}
+
+.conversation-history-controls button:hover {
+  background: var(--muted);
+}
+
+.conversation-history-controls button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+
+.history-remaining {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+
+.conversation-top.is-compact > div:first-child {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.conversation-top.is-compact h1 {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  max-width: 100%;
+  align-items: center;
+  gap: 8px;
+}
+
+.conversation-top.is-compact .conversation-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-top.is-compact .quiet-badge {
+  flex-shrink: 0;
+  margin-left: 0;
+}
+
+.conversation-top.is-compact {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}

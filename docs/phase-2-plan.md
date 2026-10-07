@@ -47,6 +47,36 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Local Release Record
 
+Conversation history on 2026-10-07: the initial conversation window renders
+30 recent turns and exposes an explicit earlier-history control. Scrolling up
+pins the window start; loading earlier turns and growing content above the
+viewport preserve a task-and-offset reading anchor. Resize observation handles
+later layout changes, while programmatic adjustments do not replace the anchor.
+Jumping to latest restores the recent window and follow mode. Member session
+identity now scopes the history component independently of the team and role.
+Unchanged Markdown answers are memoized. Existing-history conversations use a
+compact header and mobile composer hints, extending the prior recruitment-only
+layout to team/member discussions without hiding file or draft-sync controls.
+The scoped 12/12 browser regression covers full expansion of 95 unique turns,
+updates above the viewport, new tasks while following, retained drafts, switching
+35-turn member sessions, and prior recruitment/history scrolling. The 320px phone
+fixture retains more than 180px of message viewport. The first checks exposed
+insufficient reading space and automatic scrolling to a clipped load button;
+layout was corrected and anchor measurement now starts with the button reachable.
+The first full run passed 187/188; the narrow mobile fixture hit the 180px
+reading-space boundary. Keeping the compact title and status badge on one line
+reclaims the extra row, and a geometric alignment assertion now prevents that
+regression. The reading-height assertion waits for layout to settle without
+reducing its threshold. The final full desktop/mobile regression passed 188/188.
+Backend regression passed 212/212; lint, typecheck and the 255-source-file line
+limit check also passed. Formatting passed for all 14 changed files; the
+production build and restarted local UI/API smoke checks passed, with no active
+tasks or jobs before restart. The proxied state endpoint retained all 11 tasks
+and returned an empty 304 for an unchanged snapshot. The existing 55-file
+formatting backlog remains. This is client rendering pagination: changed
+state responses still include full history, so server-side pagination and history
+search remain outstanding.
+
 Conditional state refresh on 2026-10-07: state responses now carry a SHA-256
 ETag of the current public JSON. Background requests send If-None-Match; matching
 responses return 304 with no body. Authentication still runs first, and no-store
@@ -228,7 +258,7 @@ The subsequent full 126-run browser regression includes this mobile refinement,
 the ordinary attention-resolution workflow and cross-team overview recovery.
 
 Latest full local regression on 2026-10-07: `npm test` 212/212 and Playwright
-desktop/mobile baseline 184/184 passed on macOS. `npm run lint`,
+desktop/mobile baseline 188/188 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines`, `npm run build` and
 `git diff --check` also passed. The model metrics regression includes task-type
 runtime comparisons, alias filtering, delayed response isolation, retry and
@@ -256,7 +286,7 @@ and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
 The current deterministic suite contains 212 passing tests. The latest
-full Playwright baseline passed 184 desktop/mobile runs covering team
+full Playwright baseline passed 188 desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
 binary drag-and-drop attachments, conversation scroll recovery, evidence quality summaries, Team Charter confirmation and high-risk

@@ -6,7 +6,7 @@ export const dataDir =
   process.env.GGB_E2E_DATA_DIR ||
   path.join(os.tmpdir(), 'ggb-browser-e2e-fixture');
 
-export function seedConversationScrollTeam() {
+export function seedConversationScrollTeam({ count = 18 } = {}) {
   const store = new Store(dataDir, process.cwd(), { seedProjectManager: true });
   try {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -28,7 +28,8 @@ export function seedConversationScrollTeam() {
       },
     });
     let latestTaskId = '';
-    for (let index = 0; index < 18; index += 1) {
+    const taskIds = [];
+    for (let index = 0; index < count; index += 1) {
       const task = store.createTask({
         role: 'project_manager',
         prompt: `历史对话任务 ${index}：保留旧消息阅读位置。`,
@@ -49,8 +50,9 @@ export function seedConversationScrollTeam() {
         result: `历史任务 ${index} 已完成，新的内容不能打断阅读。`,
       });
       latestTaskId = task.id;
+      taskIds.push(task.id);
     }
-    return { id: team.id, name: team.name, latestTaskId };
+    return { id: team.id, name: team.name, latestTaskId, taskIds };
   } finally {
     store.close();
   }

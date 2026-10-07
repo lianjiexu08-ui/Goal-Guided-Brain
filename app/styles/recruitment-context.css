@@ -81,22 +81,22 @@
     font-size: 10px;
   }
 
-  .has-recruitment-history .composer textarea {
+  .has-conversation-history .composer textarea {
     min-height: 64px;
     height: 64px;
     padding: 8px 12px;
   }
 
-  .has-recruitment-history
+  .has-conversation-history
     .composer-attachments:not(.is-dragging):not(:has(.draft-attachments)) {
     display: none;
   }
 
-  .has-recruitment-history .composer-hint > span:not(.draft-sync-status) {
+  .has-conversation-history .composer-hint > span:not(.draft-sync-status) {
     display: none;
   }
 
-  .has-recruitment-history .draft-sync-status {
+  .has-conversation-history .draft-sync-status {
     margin-left: 0;
   }
 }

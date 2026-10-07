@@ -15,6 +15,7 @@ export type Task = {
   error: string;
   log: string;
   createdAt: string;
+  updatedAt?: string;
   sourceTaskId?: string;
   knowledgeIds: string[];
   jobId?: string | null;

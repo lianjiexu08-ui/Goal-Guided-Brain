@@ -3,9 +3,10 @@
 'use client';
 // Focused presentation modules receive a controller context assembled by Workbench.
 /* oxlint-disable no-explicit-any, no-unused-vars */
+import { ConversationHistory } from './conversation-history';
 import { RecruitmentStatus } from './recruitment-status';
 import { useEffect, useRef, useState } from 'react';
-import Markdown from 'react-markdown';
+import { ConversationMarkdown } from './conversation-markdown';
 import { api, entityList, entityText } from '../workbench-api';
 import {
   AssistantEditor,
@@ -152,34 +153,8 @@ export function ConversationMain({ context }: { context: WorkbenchContext }) {
     setRecruitmentApprovals,
     recruitmentSyncState,
   } = context;
-  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const conversationRef = useRef<HTMLElement>(null);
-  const messageAreaRef = useRef<HTMLDivElement>(null);
-  const shouldStickToLatestRef = useRef(true);
-  const previousConversationKeyRef = useRef('');
-  const conversationKey = `${teamSpace?.id || recruitmentSpace?.id || 'standalone'}:${role}`;
-  const currentTaskVersion = currentTasks
-    .map((task) => `${task.id}:${task.updatedAt || ''}:${task.status}`)
-    .join('|');
-
-  useEffect(() => {
-    const messageArea = messageAreaRef.current;
-    if (!messageArea) return undefined;
-    const updateScrollState = () => {
-      const distanceFromLatest =
-        messageArea.scrollHeight -
-        messageArea.scrollTop -
-        messageArea.clientHeight;
-      const nearLatest = distanceFromLatest <= 80;
-      shouldStickToLatestRef.current = nearLatest;
-      setShowJumpToLatest(!nearLatest);
-    };
-    updateScrollState();
-    messageArea.addEventListener('scroll', updateScrollState, {
-      passive: true,
-    });
-    return () => messageArea.removeEventListener('scroll', updateScrollState);
-  }, []);
+  const conversationKey = `${teamSpace?.id || recruitmentSpace?.id || 'standalone'}:${role}:${isTeamConversation ? 'team' : currentSession || 'new'}`;
 
   useEffect(() => {
     const conversation = conversationRef.current;
@@ -198,37 +173,13 @@ export function ConversationMain({ context }: { context: WorkbenchContext }) {
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => {
-    const conversationChanged =
-      previousConversationKeyRef.current !== conversationKey;
-    previousConversationKeyRef.current = conversationKey;
-    if (conversationChanged) {
-      shouldStickToLatestRef.current = true;
-      setShowJumpToLatest(false);
-    }
-    if (!currentTasks.length || !shouldStickToLatestRef.current) {
-      if (!shouldStickToLatestRef.current && currentTasks.length > 0) {
-        setShowJumpToLatest(true);
-      }
-      return;
-    }
-    requestAnimationFrame(() =>
-      endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }),
-    );
-  }, [conversationKey, currentTaskVersion, endRef]);
-
-  const jumpToLatest = () => {
-    shouldStickToLatestRef.current = true;
-    setShowJumpToLatest(false);
-    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  };
   return (
     <section
-      className={`conversation${isRecruitmentView && currentTasks.length ? ' has-recruitment-history' : ''}`}
+      className={`conversation${currentTasks.length ? ' has-conversation-history' : ''}`}
       ref={conversationRef}
     >
       <div
-        className={`conversation-top${isRecruitmentView && currentTasks.length ? ' is-compact' : ''}`}
+        className={`conversation-top${currentTasks.length ? ' is-compact' : ''}`}
       >
         <div>
           <span className="section-kicker">
@@ -239,11 +190,22 @@ export function ConversationMain({ context }: { context: WorkbenchContext }) {
                 : 'AGENT CONVERSATION · 独立讨论'}
           </span>
           <h1>
-            {isRecruitmentView
-              ? '发布需求，招募团队'
-              : isTeamConversation
-                ? teamSpace?.name
-                : assistantName}
+            <span
+              className="conversation-title-text"
+              title={
+                isRecruitmentView
+                  ? '发布需求，招募团队'
+                  : isTeamConversation
+                    ? teamSpace?.name
+                    : assistantName
+              }
+            >
+              {isRecruitmentView
+                ? '发布需求，招募团队'
+                : isTeamConversation
+                  ? teamSpace?.name
+                  : assistantName}
+            </span>
             <span className="quiet-badge">
               {tasks.some((t) => t.role === role && isActive(t))
                 ? '工作中'
@@ -647,12 +609,11 @@ export function ConversationMain({ context }: { context: WorkbenchContext }) {
           )}
         </section>
       )}
-      <div
-        className="message-area"
-        data-testid="message-area"
-        ref={messageAreaRef}
-      >
-        {currentTasks.length === 0 ? (
+      <ConversationHistory
+        key={conversationKey}
+        tasks={currentTasks}
+        endRef={endRef}
+        empty={
           <div className="welcome">
             <div
               className="welcome-icon"
@@ -716,121 +677,108 @@ export function ConversationMain({ context }: { context: WorkbenchContext }) {
               ))}
             </div>
           </div>
-        ) : (
-          currentTasks.map((task) => (
-            <article className="turn" key={task.id}>
-              <div className="user-message">
-                <span className="message-label">
-                  你 <small>{formatTime(task.createdAt)}</small>
+        }
+        renderTask={(task) => (
+          <article className="turn" key={task.id} data-turn-id={task.id}>
+            <div className="user-message">
+              <span className="message-label">
+                你 <small>{formatTime(task.createdAt)}</small>
+              </span>
+              <p>{task.prompt}</p>
+              {!!task.attachments?.length && (
+                <div className="attachment-list" aria-label="任务附件">
+                  {task.attachments.map((attachment) => (
+                    <span className="attachment-chip" key={attachment.id}>
+                      <Paperclip size={13} />
+                      {attachment.name}
+                      <small>{formatBytes(attachment.size)}</small>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="assistant-message">
+              <div className="message-label">
+                <span
+                  className="mini-role"
+                  style={{ background: assistant.color }}
+                >
+                  <Icon size={13} />
                 </span>
-                <p>{task.prompt}</p>
-                {!!task.attachments?.length && (
-                  <div className="attachment-list" aria-label="任务附件">
-                    {task.attachments.map((attachment) => (
-                      <span className="attachment-chip" key={attachment.id}>
-                        <Paperclip size={13} />
-                        {attachment.name}
-                        <small>{formatBytes(attachment.size)}</small>
-                      </span>
-                    ))}
-                  </div>
-                )}
+                {assistantName}
+                <span className={`status ${task.status}`}>
+                  {statusLabels[task.status]}
+                </span>
               </div>
-              <div className="assistant-message">
-                <div className="message-label">
-                  <span
-                    className="mini-role"
-                    style={{ background: assistant.color }}
+              {task.sourceTaskId && (
+                <span className="handoff-label">
+                  <Workflow size={14} />
+                  从其他助手交接的任务
+                </span>
+              )}
+              {task.result ? (
+                <div className="prose-result">
+                  <ConversationMarkdown source={task.result} />
+                </div>
+              ) : isActive(task) ? (
+                <div className="working-message">
+                  <LoaderCircle size={16} className="spin" />
+                  {task.status === 'queued'
+                    ? '任务已排队，轮到后自动开始。'
+                    : '正在处理，你可以切换到其他助手。'}
+                </div>
+              ) : null}
+              {task.error && <p className="task-error">{task.error}</p>}
+              <div className="message-actions">
+                <button onClick={() => setTaskDetail(task)}>
+                  <Terminal size={14} />
+                  执行记录
+                </button>
+                {task.result && (
+                  <>
+                    <button onClick={() => openKnowledge(task)}>
+                      <ArrowDownToLine size={14} />
+                      存入知识库
+                    </button>
+                    <button
+                      disabled={!activeRoles.some((r) => r.id !== task.role)}
+                      onClick={() => openHandoff(task)}
+                    >
+                      <Workflow size={14} />
+                      交给其他助手
+                    </button>
+                  </>
+                )}
+                {isActive(task) && (
+                  <button
+                    onClick={() =>
+                      action(async () => {
+                        await api(`tasks/${task.id}/cancel`, 'POST');
+                      })
+                    }
                   >
-                    <Icon size={13} />
-                  </span>
-                  {assistantName}
-                  <span className={`status ${task.status}`}>
-                    {statusLabels[task.status]}
-                  </span>
-                </div>
-                {task.sourceTaskId && (
-                  <span className="handoff-label">
-                    <Workflow size={14} />
-                    从其他助手交接的任务
-                  </span>
-                )}
-                {task.result ? (
-                  <div className="prose-result">
-                    <Markdown>{task.result}</Markdown>
-                  </div>
-                ) : isActive(task) ? (
-                  <div className="working-message">
-                    <LoaderCircle size={16} className="spin" />
-                    {task.status === 'queued'
-                      ? '任务已排队，轮到后自动开始。'
-                      : '正在处理，你可以切换到其他助手。'}
-                  </div>
-                ) : null}
-                {task.error && <p className="task-error">{task.error}</p>}
-                <div className="message-actions">
-                  <button onClick={() => setTaskDetail(task)}>
-                    <Terminal size={14} />
-                    执行记录
+                    <Square size={12} />
+                    停止
                   </button>
-                  {task.result && (
-                    <>
-                      <button onClick={() => openKnowledge(task)}>
-                        <ArrowDownToLine size={14} />
-                        存入知识库
-                      </button>
-                      <button
-                        disabled={!activeRoles.some((r) => r.id !== task.role)}
-                        onClick={() => openHandoff(task)}
-                      >
-                        <Workflow size={14} />
-                        交给其他助手
-                      </button>
-                    </>
-                  )}
-                  {isActive(task) && (
-                    <button
-                      onClick={() =>
-                        action(async () => {
-                          await api(`tasks/${task.id}/cancel`, 'POST');
-                        })
-                      }
-                    >
-                      <Square size={12} />
-                      停止
-                    </button>
-                  )}
-                  {['failed', 'interrupted', 'cancelled'].includes(
-                    task.status,
-                  ) && (
-                    <button
-                      onClick={() =>
-                        action(async () => {
-                          await api(`tasks/${task.id}/retry`, 'POST');
-                        })
-                      }
-                    >
-                      重试
-                    </button>
-                  )}
-                </div>
+                )}
+                {['failed', 'interrupted', 'cancelled'].includes(
+                  task.status,
+                ) && (
+                  <button
+                    onClick={() =>
+                      action(async () => {
+                        await api(`tasks/${task.id}/retry`, 'POST');
+                      })
+                    }
+                  >
+                    重试
+                  </button>
+                )}
               </div>
-            </article>
-          ))
+            </div>
+          </article>
         )}
-        <div ref={endRef} />
-      </div>
-      {showJumpToLatest && (
-        <button
-          type="button"
-          className="jump-latest-button"
-          aria-label="回到最新消息"
-          onClick={jumpToLatest}
-        >
-          <ArrowDownToLine size={15} />
-          回到最新
-        </button>
-      )}
+      />
       <ConversationComposer context={context} />
     </section>
   );
