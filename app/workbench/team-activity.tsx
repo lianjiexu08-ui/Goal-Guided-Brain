@@ -55,6 +55,7 @@ export type TeamActivityProps = {
   recruitment?: { phase: string };
   openRiskTeam: (id: string) => void;
   openRiskTask: (id: string) => void;
+  openPlanTask: (id: string) => void;
   tasks: Task[];
   refresh: () => Promise<void>;
   projectManager?: { name: string };
@@ -100,6 +101,7 @@ export function TeamActivity({
   recruitment,
   openRiskTeam,
   openRiskTask,
+  openPlanTask,
   tasks,
   refresh,
   projectManager,
@@ -294,6 +296,8 @@ export function TeamActivity({
       )}
       <TeamPlan
         key={`team-plan:${teamSpace?.id || 'none'}`}
+        tasks={tasks}
+        onOpenTask={openPlanTask}
         teamSpace={teamSpace}
         onChanged={refresh}
       />

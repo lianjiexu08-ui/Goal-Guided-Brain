@@ -9,6 +9,7 @@ import { DEFAULT_PROFILE, validateProfile } from './profile.mjs';
 import { ROLES } from './store/roles.mjs';
 import { knowledgeMethods } from './store/knowledge.mjs';
 import { teamLifecycleMethods } from './store/team-lifecycle.mjs';
+import { normalizePlanTaskIds } from './store/plan-tasks.mjs';
 export { ROLES } from './store/roles.mjs';
 import {
   buildRecruitmentPage,
@@ -336,9 +337,7 @@ export class Store {
         status: milestoneStatus,
         dueAt,
         ownerRoleId,
-        taskIds: Array.isArray(item.taskIds)
-          ? [...new Set(item.taskIds.filter((value) => typeof value === 'string').slice(0, 40))]
-          : [],
+        taskIds: normalizePlanTaskIds(this, spaceId, item.taskIds),
         order: Number.isSafeInteger(item.order) ? item.order : index,
         completedAt: milestoneStatus === 'completed'
           ? (item.completedAt || new Date().toISOString())

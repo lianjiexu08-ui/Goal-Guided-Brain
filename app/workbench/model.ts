@@ -22,6 +22,7 @@ export type Task = {
   parentTaskId?: string | null;
   parentJobId?: string | null;
   spaceId?: string | null;
+  teamId?: string | null;
   artifactCount?: number;
   verificationStatus?: string | null;
   deliveryStatus?: string | null;

@@ -1,0 +1,171 @@
+.team-plan-milestone {
+  min-width: 0;
+  border-bottom: 1px solid #e5efea;
+}
+.team-plan-milestone .team-plan-item {
+  border-bottom: 0;
+}
+.team-plan-evidence-note {
+  margin: 8px 0 12px;
+  color: #708780;
+  font-size: 12px;
+}
+.milestone-tasks {
+  padding: 0 0 14px 38px;
+  min-width: 0;
+}
+.milestone-tasks-head,
+.milestone-task-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.milestone-tasks-head {
+  justify-content: space-between;
+  color: #54756b;
+  font-size: 12px;
+}
+.milestone-tasks .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+}
+.milestone-task-links {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  margin: 8px 0;
+  list-style: none;
+}
+.milestone-task-links button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #e0ebe6;
+  border-radius: 10px;
+  background: #f7faf9;
+  color: #33574d;
+  text-align: left;
+}
+.milestone-task-links button:hover:not(:disabled) {
+  background: #edf5f1;
+  border-color: #bbd4ca;
+}
+.milestone-task-links button:disabled {
+  color: #78847f;
+  cursor: default;
+}
+.milestone-task-links button > span {
+  min-width: 0;
+}
+.milestone-task-links svg {
+  flex-shrink: 0;
+}
+.milestone-task-links strong,
+.milestone-task-options strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.milestone-task-links small,
+.milestone-task-options small {
+  display: block;
+  margin-top: 4px;
+  color: #71847d;
+  font-size: 12px;
+}
+.milestone-task-picker {
+  margin-top: 10px;
+  padding: 14px;
+  border: 1px solid #dce8e2;
+  border-radius: 12px;
+  background: #fafcfb;
+}
+.milestone-task-picker > label {
+  display: grid;
+  gap: 6px;
+  color: #586f65;
+  font-size: 12px;
+}
+.milestone-task-picker input[type='search'] {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid #d5e3dc;
+  border-radius: 8px;
+  background: #fff;
+}
+.milestone-task-picker fieldset {
+  min-width: 0;
+  margin: 12px 0;
+  padding: 0;
+  border: 0;
+}
+.milestone-task-picker legend {
+  padding: 0 0 8px;
+  color: #5e766b;
+  font-size: 12px;
+}
+.milestone-task-options {
+  display: grid;
+  max-height: 280px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.milestone-task-options label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 4px;
+  border-bottom: 1px solid #e7eee9;
+  cursor: pointer;
+}
+.milestone-task-options label > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.milestone-task-options input {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: #2d8170;
+}
+.milestone-task-picker p {
+  color: #71847d;
+  font-size: 12px;
+}
+.team-plan-error {
+  flex-wrap: wrap;
+}
+.team-plan-error > span {
+  flex: 1;
+  min-width: 140px;
+}
+@media (max-width: 767px) {
+  .milestone-tasks {
+    padding-left: 0;
+  }
+  .milestone-task-picker {
+    padding: 12px;
+  }
+  .milestone-task-picker input[type='search'] {
+    min-height: 44px;
+    font-size: 16px;
+  }
+  .milestone-tasks .text-button,
+  .milestone-task-actions .primary-button {
+    min-height: 44px;
+  }
+  .team-plan-error .text-button {
+    min-height: 44px;
+  }
+}

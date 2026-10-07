@@ -11,7 +11,8 @@ import {
   Save,
 } from 'lucide-react';
 import { api } from '../workbench-api';
-import type { TeamSpace } from './model';
+import type { Task, TeamSpace } from './model';
+import { MilestoneTasks } from './milestone-tasks';
 
 type PlanStatus = 'active' | 'paused' | 'completed';
 type MilestoneStatus = 'planned' | 'active' | 'blocked' | 'completed';
@@ -24,6 +25,7 @@ type Milestone = {
   ownerRoleId?: string | null;
   order: number;
   completedAt?: string | null;
+  taskIds?: string[];
 };
 type TeamPlanData = {
   id: string;
@@ -52,8 +54,12 @@ const riskLabels: Record<TeamPlanData['riskPreference'], string> = {
 export function TeamPlan({
   teamSpace,
   onChanged,
+  tasks,
+  onOpenTask,
 }: {
   teamSpace?: TeamSpace;
+  tasks: Task[];
+  onOpenTask: (id: string) => void;
   onChanged?: () => Promise<void>;
 }) {
   const [plan, setPlan] = useState<TeamPlanData | null>(null);
@@ -71,6 +77,10 @@ export function TeamPlan({
     useState<TeamPlanData['riskPreference']>('balanced');
   const [draftBudgetTokens, setDraftBudgetTokens] = useState('');
   const [now] = useState(() => Date.now());
+  const [reload, setReload] = useState(0);
+  const teamTasks = tasks.filter(
+    (task) => (task.spaceId || task.teamId) === teamSpace?.id,
+  );
 
   useEffect(() => {
     let current = true;
@@ -81,7 +91,10 @@ export function TeamPlan({
     }
     void api<TeamPlanData>(`spaces/${encodeURIComponent(teamSpace.id)}/plan`)
       .then((next) => {
-        if (current) setPlan(next);
+        if (current) {
+          setPlan(next);
+          setError('');
+        }
       })
       .catch((reason) => {
         if (current)
@@ -93,7 +106,7 @@ export function TeamPlan({
     return () => {
       current = false;
     };
-  }, [teamSpace?.id]);
+  }, [teamSpace?.id, reload]);
 
   const completedCount = useMemo(
     () =>
@@ -115,9 +128,15 @@ export function TeamPlan({
         next,
       );
       setPlan(saved);
-      await onChanged?.();
+      try {
+        await onChanged?.();
+      } catch {
+        setError('计划已保存，但工作台刷新失败，请重新加载。');
+      }
+      return true;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '计划保存失败。');
+      return false;
     } finally {
       setSaving(false);
     }
@@ -146,10 +165,10 @@ export function TeamPlan({
     });
   }
 
-  function addMilestone() {
+  async function addMilestone() {
     if (!plan || !draftTitle.trim()) return;
     const milestone: Milestone = {
-      id: `local-${Date.now()}`,
+      id: crypto.randomUUID(),
       title: draftTitle.trim(),
       description: draftDescription.trim(),
       status: 'planned',
@@ -158,14 +177,17 @@ export function TeamPlan({
       order: plan.milestones.length,
       completedAt: null,
     };
-    setAdding(false);
-    setDraftTitle('');
-    setDraftDescription('');
-    void save({
-      ...plan,
-      status: 'active',
-      milestones: [...plan.milestones, milestone],
-    });
+    if (
+      await save({
+        ...plan,
+        status: 'active',
+        milestones: [...plan.milestones, milestone],
+      })
+    ) {
+      setAdding(false);
+      setDraftTitle('');
+      setDraftDescription('');
+    }
   }
 
   function beginSummaryEdit() {
@@ -174,10 +196,10 @@ export function TeamPlan({
     setEditingSummary(true);
   }
 
-  function saveSummary() {
+  async function saveSummary() {
     if (!plan || !draftSummary.trim()) return;
-    setEditingSummary(false);
-    void save({ ...plan, summary: draftSummary.trim() });
+    if (await save({ ...plan, summary: draftSummary.trim() }))
+      setEditingSummary(false);
   }
 
   function beginControlsEdit() {
@@ -192,15 +214,17 @@ export function TeamPlan({
     setEditingControls(true);
   }
 
-  function saveControls() {
+  async function saveControls() {
     if (!plan) return;
-    setEditingControls(false);
-    void save({
-      ...plan,
-      dueAt: draftDueAt || null,
-      riskPreference: draftRiskPreference,
-      budgetTokens: draftBudgetTokens ? Number(draftBudgetTokens) : null,
-    });
+    if (
+      await save({
+        ...plan,
+        dueAt: draftDueAt || null,
+        riskPreference: draftRiskPreference,
+        budgetTokens: draftBudgetTokens ? Number(draftBudgetTokens) : null,
+      })
+    )
+      setEditingControls(false);
   }
 
   const dueState = useMemo(() => {
@@ -220,6 +244,7 @@ export function TeamPlan({
           {editingSummary ? (
             <div className="team-plan-summary-form">
               <textarea
+                disabled={saving || loading}
                 aria-label="团队目标"
                 value={draftSummary}
                 onChange={(event) => setDraftSummary(event.target.value)}
@@ -229,7 +254,7 @@ export function TeamPlan({
               <button
                 className="primary-button"
                 type="button"
-                disabled={!draftSummary.trim() || saving}
+                disabled={!draftSummary.trim() || saving || loading}
                 onClick={saveSummary}
               >
                 <Save size={13} /> 保存目标
@@ -242,7 +267,7 @@ export function TeamPlan({
                 className="team-plan-edit"
                 type="button"
                 aria-label="编辑团队目标"
-                disabled={saving || !plan}
+                disabled={saving || loading || !plan}
                 onClick={beginSummaryEdit}
               >
                 <Pencil size={12} /> 编辑
@@ -253,7 +278,7 @@ export function TeamPlan({
         <div className="team-plan-progress">
           <strong>{progress}%</strong>
           <span>
-            {completedCount}/{plan?.milestones.length || 0} 项完成
+            {completedCount}/{plan?.milestones.length || 0} 项手动标记完成
           </span>
         </div>
       </div>
@@ -263,6 +288,7 @@ export function TeamPlan({
             <label>
               截止日期
               <input
+                disabled={saving || loading}
                 aria-label="计划截止日期"
                 type="date"
                 value={draftDueAt}
@@ -272,6 +298,7 @@ export function TeamPlan({
             <label>
               风险偏好
               <select
+                disabled={saving || loading}
                 aria-label="计划风险偏好"
                 value={draftRiskPreference}
                 onChange={(event) =>
@@ -290,6 +317,7 @@ export function TeamPlan({
             <label>
               计划预算（tokens）
               <input
+                disabled={saving || loading}
                 aria-label="计划预算"
                 type="number"
                 min={1000}
@@ -304,7 +332,7 @@ export function TeamPlan({
               <button
                 className="primary-button"
                 type="button"
-                disabled={saving}
+                disabled={saving || loading}
                 onClick={saveControls}
               >
                 <Save size={13} /> 保存边界
@@ -340,7 +368,7 @@ export function TeamPlan({
               className="team-plan-edit"
               type="button"
               aria-label="编辑计划边界"
-              disabled={saving || !plan}
+              disabled={saving || loading || !plan}
               onClick={beginControlsEdit}
             >
               <Pencil size={12} /> 编辑边界
@@ -351,59 +379,96 @@ export function TeamPlan({
       <div className="team-plan-track" aria-label={`计划完成度 ${progress}%`}>
         <span style={{ width: `${progress}%` }} />
       </div>
-      {loading ? (
+      <p className="team-plan-evidence-note">
+        阶段状态由你确认；关联任务的交付验收单独追踪。
+      </p>
+      {error && (
+        <div className="team-plan-error" role="alert">
+          <CircleAlert size={15} />
+          <span>{error} 当前输入已保留，重新加载后请核对再保存。</span>
+          <button
+            type="button"
+            className="text-button"
+            disabled={saving || loading}
+            onClick={() => {
+              setLoading(true);
+              setReload((value) => value + 1);
+            }}
+          >
+            重新加载计划
+          </button>
+        </div>
+      )}
+      {loading && !plan ? (
         <div className="team-plan-empty">
           <LoaderCircle size={15} className="spin" /> 正在加载计划…
-        </div>
-      ) : error ? (
-        <div className="team-plan-error">
-          <CircleAlert size={15} /> {error}
         </div>
       ) : plan?.milestones.length ? (
         <div className="team-plan-list">
           {plan.milestones.map((item) => (
-            <div className={`team-plan-item is-${item.status}`} key={item.id}>
-              <button
-                className="team-plan-status"
-                type="button"
-                aria-label={`${item.title}：${statusLabels[item.status]}`}
-                disabled={saving}
-                onClick={() =>
-                  updateMilestone(
-                    item.id,
-                    item.status === 'completed' ? 'active' : 'completed',
-                  )
-                }
-              >
-                {item.status === 'completed' ? (
-                  <Check size={14} />
-                ) : (
-                  <Flag size={14} />
-                )}
-              </button>
-              <div className="team-plan-copy">
-                <strong>{item.title}</strong>
-                {item.description && <p>{item.description}</p>}
+            <div key={item.id} className="team-plan-milestone">
+              <div className={`team-plan-item is-${item.status}`}>
+                <button
+                  className="team-plan-status"
+                  type="button"
+                  aria-label={`${item.title}：${statusLabels[item.status]}`}
+                  disabled={saving || loading}
+                  onClick={() =>
+                    updateMilestone(
+                      item.id,
+                      item.status === 'completed' ? 'active' : 'completed',
+                    )
+                  }
+                >
+                  {item.status === 'completed' ? (
+                    <Check size={14} />
+                  ) : (
+                    <Flag size={14} />
+                  )}
+                </button>
+                <div className="team-plan-copy">
+                  <strong>{item.title}</strong>
+                  {item.description && <p>{item.description}</p>}
+                </div>
+                <span className="team-plan-badge">
+                  {statusLabels[item.status]}
+                </span>
               </div>
-              <span className="team-plan-badge">
-                {statusLabels[item.status]}
-              </span>
+              <MilestoneTasks
+                title={item.title}
+                taskIds={item.taskIds}
+                tasks={teamTasks}
+                disabled={saving || loading}
+                onOpenTask={onOpenTask}
+                onSave={(ids) =>
+                  save({
+                    ...plan,
+                    milestones: plan.milestones.map((milestone) =>
+                      milestone.id === item.id
+                        ? { ...milestone, taskIds: ids }
+                        : milestone,
+                    ),
+                  })
+                }
+              />
             </div>
           ))}
         </div>
-      ) : (
+      ) : !error ? (
         <div className="team-plan-empty">
           还没有里程碑，把团队目标拆成可验收的阶段吧。
         </div>
-      )}
+      ) : null}
       {adding ? (
         <div className="team-plan-form">
           <input
+            disabled={saving || loading}
             value={draftTitle}
             onChange={(event) => setDraftTitle(event.target.value)}
             placeholder="里程碑标题"
           />
           <input
+            disabled={saving || loading}
             value={draftDescription}
             onChange={(event) => setDraftDescription(event.target.value)}
             placeholder="验收说明（可选）"
@@ -412,7 +477,7 @@ export function TeamPlan({
             <button
               className="primary-button"
               type="button"
-              disabled={!draftTitle.trim() || saving}
+              disabled={!draftTitle.trim() || saving || loading}
               onClick={addMilestone}
             >
               <Save size={14} /> 保存
@@ -430,7 +495,7 @@ export function TeamPlan({
         <button
           className="text-button team-plan-add"
           type="button"
-          disabled={saving}
+          disabled={saving || loading || !plan}
           onClick={() => setAdding(true)}
         >
           <Plus size={14} /> 添加里程碑

@@ -288,6 +288,10 @@ export function RouteContent({ context }: { context: WorkbenchContext }) {
           recruitment={recruitment}
           openRiskTeam={openRiskTeam}
           openRiskTask={openRiskTask}
+          openPlanTask={(id) => {
+            const task = tasks.find((item) => item.id === id);
+            if (task) setTaskDetail(task);
+          }}
           tasks={tasks}
           refresh={refresh}
           projectManager={projectManager}
