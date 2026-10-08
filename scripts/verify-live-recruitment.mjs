@@ -12,9 +12,11 @@ function option(name) {
 }
 const providerId = option('--provider');
 const model = option('--model');
+const probeTools = args.includes('--probe-tools');
+const clarificationFile = option('--clarification-file');
 if (!providerId || !model) {
   console.error(
-    'Usage: node scripts/verify-live-recruitment.mjs --provider ID --model ID\nReads the existing vault password from stdin. Calls a real provider in an isolated workspace.',
+    'Usage: node scripts/verify-live-recruitment.mjs --provider ID --model ID [--probe-tools] [--clarification-file PATH]\nReads the existing vault password from stdin. Calls a real provider in an isolated workspace.',
   );
   process.exit(2);
 }
@@ -81,7 +83,12 @@ try {
   const rows = await response.json();
   const provider = (rows.items || rows).find((item) => item.id === providerId);
   const spec = provider?.models?.find((item) => item.id === model);
-  if (!provider?.enabled || !provider.credentialId || spec?.tools !== true)
+  if (
+    !provider?.enabled ||
+    !provider.credentialId ||
+    !spec ||
+    (!probeTools && spec.tools !== true)
+  )
     throw Error(
       'Choose an enabled configured model with verified tool support and a credential.',
     );
@@ -99,6 +106,15 @@ try {
     { ...provider, models: [spec] },
     providerId,
   );
+  if (probeTools) {
+    report.probe = await app.platform.providers.probe(providerId, {
+      model,
+      toolTest: true,
+    });
+    console.log(JSON.stringify({ phase: 'tool-probe', ...report.probe }));
+    if (!report.probe.ok)
+      throw Error(`Tool probe failed: ${report.probe.error}`);
+  }
   for (const role of app.store.roles())
     app.store.saveRole(
       {
@@ -204,6 +220,21 @@ try {
       throw Error(
         `Turn ${index + 1} did not complete: ${task.error || task.status}`,
       );
+    // A synthetic owner can answer an unresolved charter once; never erase
+    // open questions or weaken the confirmation gate to make a run pass.
+    if (
+      index === 2 &&
+      space.recruitment.proposal?.openQuestions?.length &&
+      clarificationFile
+    ) {
+      const clarification = fs.readFileSync(clarificationFile, 'utf8').trim();
+      if (!clarification || clarification.length > 10000)
+        throw Error('Clarification must contain 1 through 10000 characters.');
+      report.clarificationQuestions = [
+        ...space.recruitment.proposal.openQuestions,
+      ];
+      prompts.push(clarification);
+    }
   }
   const before = app.store.teamSpace(team.id);
   const proposal = before.recruitment.proposal;

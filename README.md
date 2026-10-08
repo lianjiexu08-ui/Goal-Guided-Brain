@@ -292,4 +292,4 @@ https://github.com/lianjiexu08-ui/Goal-Guided-Brain.git
 
 仓库的 GitHub Actions 会在每次主分支推送和 Pull Request 上，用 Node.js 22 和 24 分别运行 Ubuntu、macOS、Windows 的 lint、类型检查、后端/CLI 测试、`ggb doctor` 和生产构建，并在 Ubuntu 上运行桌面/移动 Chromium 回归。这个矩阵是跨平台兼容性门禁，不能替代真实 Windows/WSL2 节点、HTTPS 和离线调度验收。
 
-真实模型招募验收：已在隔离环境用 GPT · Autofish / `gpt-5.6` 完成三轮澄清、提案和确认创建；精简招募上下文后的同场景复核用量为 36,660 tokens（上次 99,514），该单次对照不代表长期平均。其他模型与完整开发交付仍需验证。可复现的实模脚本、用量与已知边界见 [本地验收记录](docs/phase-2-plan.md#local-release-record)。
+真实模型招募验收：已在隔离环境用 GPT · Autofish / `gpt-5.6` 完成三轮澄清、提案和确认创建；精简招募上下文后的同场景复核用量为 36,660 tokens（上次 99,514），该单次对照不代表长期平均。DeepSeek 官方 `deepseek-flash` 也已完成三轮招募和确认创建（该次 52,080 tokens）。Gemini、Kimi 与完整开发交付仍需验证。可复现的实模脚本、用量与已知边界见 [本地验收记录](docs/phase-2-plan.md#local-release-record)。

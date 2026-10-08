@@ -52,7 +52,7 @@ void test('vault encrypts credentials and restores with correct passphrase only'
   }
 });
 
-void test('provider probes speak three protocols, retry transient failures and disable rejected credentials', async () => {
+void test('provider probes speak four protocols, retry transient failures and disable rejected credentials', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-provider-'));
   const db = new DatabaseSync(':memory:');
   db.exec(RECORDS_SCHEMA);
@@ -65,7 +65,11 @@ void test('provider probes speak three protocols, retry transient failures and d
     for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw);
     requests.push({ path: req.url, headers: req.headers, body });
-    const status = nextStatuses.shift() ?? 200;
+    const status =
+      nextStatuses.shift() ??
+      (body.model === 'deepseek-probe' && body.thinking?.type !== 'disabled'
+        ? 400
+        : 200);
     res.writeHead(status, { 'Content-Type': 'application/json' });
     if (status !== 200)
       return res.end(JSON.stringify({ error: 'secret-must-not-be-echoed' }));
@@ -139,13 +143,19 @@ void test('provider probes speak three protocols, retry transient failures and d
       'openai-completions',
       'openai-responses',
       'anthropic-messages',
+      'deepseek',
     ]) {
       const provider = service.save({
         name: protocol,
         protocol,
         baseUrl,
         credentialId: credential.id,
-        models: [{ id: 'fixture-model', tools: true }],
+        models: [
+          {
+            id: protocol === 'deepseek' ? 'deepseek-probe' : 'fixture-model',
+            tools: true,
+          },
+        ],
       });
       saved.push(provider);
       assert.equal((await service.probe(provider.id)).ok, true);
@@ -154,6 +164,9 @@ void test('provider probes speak three protocols, retry transient failures and d
         true,
       );
       const call = requests.at(-1);
+      if (protocol === 'deepseek')
+        assert.deepEqual(call.body.thinking, { type: 'disabled' });
+      else assert.equal(call.body.thinking, undefined);
       assert.equal(
         protocol === 'anthropic-messages'
           ? call.headers['x-api-key']

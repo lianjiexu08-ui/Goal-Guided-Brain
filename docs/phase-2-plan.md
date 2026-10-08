@@ -47,6 +47,47 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Local Release Record
 
+DeepSeek interoperability follow-up on 2026-10-08: the real tool probe for
+`deepseek-flash` returned HTTP 400 because the probe forced a named tool without
+disabling thinking. DeepSeek documents that combination as unsupported
+([Chat Completions API](https://api-docs.deepseek.com/api/create-chat-completion/)).
+Only DeepSeek probe requests now explicitly disable thinking; ordinary agent
+execution settings and other provider protocols remain unchanged. The four-wire-
+protocol regression checks the outgoing request and still verifies transient
+retries, credential rejection and capability updates. Live tool probes returned
+HTTP 200 after this change.
+
+An isolated native DeepSeek run completed three turns and saved a valid proposal
+with five unresolved questions (44,379 reported tokens); the confirmation gate
+correctly prevented team creation. A subsequent run completed three turns,
+saved a ready three-member proposal and passed owner confirmation with 52,080
+reported tokens in approximately 51 seconds. The result was inspected for CSV
+requirements, responsive controls, tests, dependencies, models and permissions.
+This is evidence for a second provider, not proof that every recruitment converges
+in three turns. The model's choices differ between runs; incomplete proposals
+must remain blocked. The recruitment skill now explicitly asks owners to answer
+open questions before inviting confirmation.
+
+The opt-in harness accepts `--probe-tools` to perform a real capability test on
+its isolated provider copy before recruitment, and `--clarification-file PATH`
+to supply one additional synthetic-owner answer when turn three still has open
+questions. That optional fourth turn was not needed by the successful DeepSeek
+run. Neither option enables a model without successful evidence or clears open
+questions on the model's behalf. Probe calls are small but billed separately
+from the reported task-token totals.
+
+Browser verification exposed an existing CSS cascade issue: generic secondary
+button styles made the mobile-only attachment button visible on desktop. Scoped
+composer selectors fix visibility, and the test now waits for the composer and
+button DOM to mount before asserting hidden state. Final production model-setup
+and recruitment runs passed 26/26 on desktop/mobile; backend/CLI 279/279,
+formatting, lint, types, build and the 337-source line gate passed. This is focused
+regression, not a new run of the earlier 282-case full browser suite.
+The restarted local service then ran its own successful `deepseek-flash` tool
+probe and persisted `tools: true`; `deepseek-v4-pro` remains unverified. The
+vault was restored to its prior locked state. Original 11 tasks, 10 jobs and
+2 unconfirmed spaces remained unchanged; mobile startup passed without errors.
+
 Recruitment context follow-up on 2026-10-08: inspection of the preceding real
 trace found 17 tool calls, including loading the execution skill during discovery,
 routine checkpoint/plan reads and repeated proposal attempts. Project-manager

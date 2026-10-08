@@ -672,6 +672,11 @@ export class ProviderService {
         model: model.id,
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 256,
+        // DeepSeek thinking mode rejects a forced tool_choice. Probe the
+        // callable function interface without spending this small output budget on reasoning.
+        ...(provider.protocol === 'deepseek'
+          ? { thinking: { type: 'disabled' } }
+          : {}),
         ...(toolTest
           ? {
               tools: [{ type: 'function', function: fn }],
