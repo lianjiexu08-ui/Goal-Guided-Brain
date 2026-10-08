@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { inspectModelSetup } from './model-setup.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -549,6 +550,12 @@ export function createWorkbench({
   const getState = ({ includeTeamActivity = true } = {}) => {
     const read = new StoreReadIndex(store);
     const roles = store.roles();
+    const providers = platform.providers.list();
+    const modelSetup = inspectModelSetup({
+      providers,
+      vault: platform.vault,
+      legacyAvailable: !providers.length && platform.hasCredential(),
+    });
     return {
       ...(!includeTeamActivity ? { teamActivityDeferred: true } : {}),
       roles,
@@ -583,7 +590,8 @@ export function createWorkbench({
             }
           : null,
       })),
-      providers: platform.providers.list().map((provider) => ({
+      providers: providers.map((provider) => ({
+        credentialState: modelSetup.credentialStates[provider.id],
         id: provider.id,
         name: provider.name,
         protocol: provider.protocol,
@@ -667,6 +675,7 @@ export function createWorkbench({
       config: {
         ...store.config,
         hasApiKey: platform.hasCredential(),
+        modelSetup: modelSetup.summary,
         dshReady: !!findDsh(),
         dataDir,
         roleSkills: Object.fromEntries(

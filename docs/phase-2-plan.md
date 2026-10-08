@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 261/261, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 264/264, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Cross-platform CI matrix is configured to run formatting, file-size checks, lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
@@ -46,6 +46,32 @@ They are not sign-off for the separate real deployment gates below.
 - [ ] Real cloud continues scheduled work while the owner's computer is offline.
 
 ## Local Release Record
+
+Model setup guidance on 2026-10-08: recruitment now distinguishes absent chat
+models, disabled providers, empty model lists, decision-only configurations,
+unsupported protocols and unavailable credentials. The selected provider's
+credential problem takes precedence over another configured provider. Unlocking,
+credential deletion and model changes refresh the guidance; configuration trips
+retain the recruitment draft. Legacy default models show their configured ID.
+The check reads credential metadata only and does not claim connectivity or
+make paid probes. TypeSafe and capability extensions remain optional.
+
+The three new backend/HTTP tests cover configuration states and the real vault
+lifecycle without returning credential references or secret values. The full
+backend suite passed 264/264. Six desktop/mobile scenarios passed, including
+real unlock/delete actions, alternative model selection and 320px controls.
+Focused-run fixture failures were corrected by adding the required team goal
+and JSON request bodies; product assertions and timeouts were not relaxed.
+Existing conversation context and composer layout scenarios passed 16/16.
+Evidence is retained in `/tmp/ggb-setup-evidence`. The full desktop/mobile
+browser regression passed 260/260 in 13.2 minutes without skips or retries.
+Whole-repository formatting, Lint, typecheck, the 320-source line gate and
+production build passed. Local production was restarted only after confirming
+zero active tasks/jobs; the original 11 tasks, 10 jobs and 2 unconfirmed spaces
+retained their IDs. Five UI/API smoke endpoints returned 200. A 393px production
+browser check showed the selected provider’s locked-credential message without
+horizontal overflow. Real device, cross-platform and paid-model quality
+acceptance remain separate gates.
 
 Whole-chain owner review on 2026-10-08: the collaboration graph now has an
 explicit all-request preview and complete/end/reopen actions. Preview includes
@@ -754,8 +780,8 @@ format checks for changed code, file-size checks and production build passed.
 The subsequent full 126-run browser regression includes this mobile refinement,
 the ordinary attention-resolution workflow and cross-team overview recovery.
 
-Latest full local regression on 2026-10-08: `npm test` 261/261 and Playwright
-desktop/mobile baseline 254/254 passed on macOS. `npm run lint`,
+Latest full local regression on 2026-10-08: `npm test` 264/264 and Playwright
+desktop/mobile baseline 260/260 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines`, `npm run build` and
 `git diff --check` also passed. The model metrics regression includes task-type
 runtime comparisons, alias filtering, delayed response isolation, retry and
@@ -782,8 +808,8 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 261 passing tests. The latest
-full Playwright baseline passed 254 desktop/mobile runs covering team
+The current deterministic suite contains 264 passing tests. The latest
+full Playwright baseline passed 260 desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
 binary drag-and-drop attachments, conversation scroll recovery, evidence quality summaries, Team Charter confirmation and high-risk

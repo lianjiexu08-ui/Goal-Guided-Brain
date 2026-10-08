@@ -226,7 +226,11 @@ export function ConversationComposer({
                 {!selectedModelOption.model.tools && <small>纯文本模式</small>}
               </label>
             ) : (
-              <span className="model-label">尚未配置模型</span>
+              <span className="model-label">
+                {data?.config.modelSetup?.state === 'legacy'
+                  ? `默认模型 · ${data.config.model}`
+                  : '尚未配置模型'}
+              </span>
             )}
             <button
               className="send-button"

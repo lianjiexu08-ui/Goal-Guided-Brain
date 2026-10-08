@@ -1,6 +1,7 @@
 /* oxlint-disable */
 // @ts-nocheck
 'use client';
+import { modelSetupLabel } from './model-setup-notice';
 // Focused presentation modules receive a controller context assembled by Workbench.
 /* oxlint-disable no-explicit-any, no-unused-vars */
 import { useState } from 'react';
@@ -472,7 +473,7 @@ export function WorkbenchSidebar({ context }: { context: WorkbenchContext }) {
             <strong>工作空间</strong>
             <span>
               {data?.config.dshReady ? '执行引擎已连接' : '连接执行引擎'} ·{' '}
-              {data?.config.hasApiKey ? '模型已配置' : '待配置模型'}
+              {modelSetupLabel(data?.config)}
             </span>
           </div>
           <Settings2 size={17} />

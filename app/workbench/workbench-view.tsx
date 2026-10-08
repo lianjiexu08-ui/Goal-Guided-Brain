@@ -4,6 +4,7 @@
 // Focused presentation modules receive a controller context assembled by Workbench.
 /* oxlint-disable no-explicit-any, no-unused-vars */
 import Markdown from 'react-markdown';
+import { ModelSetupNotice } from './model-setup-notice';
 import { WorkbenchLoading } from './workbench-loading';
 import { api, entityList, entityText } from '../workbench-api';
 import {
@@ -316,14 +317,17 @@ export function WorkbenchView({ context }: { context: WorkbenchContext }) {
             </button>
           </div>
         )}
-        {data && !data.config.hasApiKey && isConversationView && (
-          <div className="setup-banner">
-            <Sparkles size={17} />
-            <span>尚未配置可用模型。</span>
-            <button onClick={() => setView('models')}>
-              配置模型 <ArrowRight size={14} />
-            </button>
-          </div>
+        {isConversationView && (
+          <ModelSetupNotice
+            config={data.config}
+            providers={data.providers || []}
+            providerId={selectedModelOption?.providerId}
+            modelId={selectedModelOption?.model.id}
+            firstRecruitment={isRecruitmentView && currentTasks.length === 0}
+            disconnected={Boolean(connectionError)}
+            onModels={() => setView('models')}
+            onCredentials={() => setView('resources')}
+          />
         )}
         <RouteContent context={context} />
       </div>

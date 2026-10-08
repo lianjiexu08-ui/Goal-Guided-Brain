@@ -67,10 +67,31 @@ export type Knowledge = {
   projectPath: string;
   teamId?: string | null;
 };
+export type ModelSetup = {
+  state:
+    | 'missing'
+    | 'legacy'
+    | 'decision-only'
+    | 'unsupported'
+    | 'disabled'
+    | 'empty-models'
+    | 'credentials'
+    | 'configured';
+  configuredProviders: number;
+  readyProviders: number;
+  readyModels: number;
+};
+export type CredentialState =
+  | 'not-required'
+  | 'missing-vault'
+  | 'locked'
+  | 'ready'
+  | 'missing';
 export type Config = {
   workspace: string;
   model: string;
   hasApiKey: boolean;
+  modelSetup?: ModelSetup;
   dshReady: boolean;
   maxConcurrent: number;
   dataDir: string;
@@ -363,6 +384,7 @@ export type ProviderModel = {
   contextWindow: number;
 };
 export type Provider = {
+  credentialState?: CredentialState;
   id: string;
   name: string;
   protocol: string;

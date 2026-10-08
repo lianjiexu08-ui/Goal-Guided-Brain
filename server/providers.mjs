@@ -5,7 +5,7 @@ const PROTOCOLS = [
   'anthropic-messages',
   'typesafe-system-one',
 ];
-const TEXT_PROTOCOLS = new Set(
+export const TEXT_PROTOCOLS = new Set(
   PROTOCOLS.filter((protocol) => protocol !== 'typesafe-system-one'),
 );
 const text = (value, label, max = 160, required = true) => {

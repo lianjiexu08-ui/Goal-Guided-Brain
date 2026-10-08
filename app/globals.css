@@ -18,3 +18,5 @@
 @import './styles/recruitment-context.css';
 @import './styles/conversation-history.css';
 @import './styles/conversation-search.css';
+
+@import './styles/model-setup.css';
