@@ -67,3 +67,36 @@ References:
 - [YAML 2.8.3 release](https://github.com/eemeli/yaml/releases/tag/v2.8.3)
 - [Vinext beta.9 release](https://github.com/cloudflare/vinext/releases/tag/vinext%401.0.0-beta.9)
 - [Undici 7.29.1 security fixes](https://github.com/nodejs/undici/releases/tag/v7.29.1)
+
+## Production Connection Lifecycle Compatibility Patch
+
+On 2026-10-08, the pinned `vinext@1.0.0-beta.9` Node App Router adapter
+reproduced two lifecycle defects: pending Web Requests did not receive client
+cancellation, and late response bodies attempted to pipe into a destroyed
+ServerResponse. This is a local compatibility fix, not a new security advisory
+or a claim that an upstream release contains the fix.
+
+`npm ci` / `npm install` runs `scripts/patch-vinext.mjs` through `postinstall`.
+The patch only accepts the exact published adapter SHA-256 and package version,
+is idempotent, and refuses modified or partially patched files. Its output was
+compared with the original package archive. If installation deliberately uses
+`--ignore-scripts`, run `node scripts/patch-vinext.mjs` before building or starting
+the production service. A dependency upgrade must review or remove this patch
+and rerun its regression tests; do not merely update the expected hash.
+
+The adapter connects request abort and response disconnect to the Web Request's
+signal, removes listeners on normal completion, and cancels late response bodies.
+The application proxy forwards that signal to the local API. Only a matching
+client cancellation is discarded (an internal empty 499 response that the closed
+connection does not receive); unrelated failures still propagate and genuine
+handler failures still produce a logged 500. This releases HTTP subscriptions;
+it does not issue task-stop commands or roll back work already accepted by the API.
+
+`tests/production-stream.test.mjs` uses the actual production adapter and real
+loopback sockets for cancellation before headers, late bodies, 12 repeated
+pending/SSE disconnect cycles, resume cursor forwarding, normal POST completion,
+genuine errors, and cancellation partway through a POST upload before the API
+is contacted. It also checks cookie/authentication/state headers, binary
+attachment responses and the patch's version/source guards. These tests use no
+paid models. Production browser regression additionally exercises the built
+router, desktop and mobile workflows.

@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 268/268, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 276/276, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Cross-platform CI matrix is configured to run formatting, file-size checks, lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
@@ -46,6 +46,33 @@ They are not sign-off for the separate real deployment gates below.
 - [ ] Real cloud continues scheduled work while the owner's computer is offline.
 
 ## Local Release Record
+
+Production connection lifecycle on 2026-10-08: the pinned Node adapter now
+propagates client disconnect to pending API requests and cancels late response
+bodies before attempting to write to closed connections. Normal response finish
+removes listeners without aborting successful requests. The proxy forwards the
+signal and handles only matching cancellation; genuine errors remain visible.
+A reproducible postinstall patch verifies the package version and original
+adapter hash, rejects partial changes, and reproduces the installed result from
+the original package archive. Upgrade instructions are in dependency-security.md.
+
+Eight new regression cases exercise the actual adapter and real HTTP sockets,
+including 12 repeated before/after-header disconnect cycles, cursor forwarding,
+normal POST completion, failure reporting, attachment bytes, authentication and
+state headers, patch guards, and incomplete POST upload cancellation. An upload
+that ends before its declared body length reaches neither the API nor a task;
+its Node ECONNRESET is translated only while reading the cancelled client body.
+Backend/CLI tests passed 276/276 without skips.
+Importing the typed production adapter also exposed existing Node test registration
+Promise lint errors: registrations now explicitly use `void`, and runtime method
+callbacks preserve their receiver through wrappers. No rule or assertion was disabled.
+The complete production desktop/mobile suite passed 266/266 in 11.1 minutes,
+with no closed-stream or route-cancellation errors. The subsequent incomplete
+upload correction is covered by the eighth socket regression and a rebuilt
+production workflow run: 54/54 passed in 1.5 minutes. Six additional incomplete
+uploads against the real local production service left its API healthy with no
+cancellation errors. Existing user data retained 11 tasks, 10 jobs and
+2 unconfirmed spaces; restart checks found zero active tasks or jobs.
 
 Local execution checks on 2026-10-08: workspace and team settings now inspect
 the entered directory on the control-plane host, distinguishing missing paths,
@@ -835,7 +862,7 @@ format checks for changed code, file-size checks and production build passed.
 The subsequent full 126-run browser regression includes this mobile refinement,
 the ordinary attention-resolution workflow and cross-team overview recovery.
 
-Latest full local regression on 2026-10-08: `npm test` 268/268 and Playwright
+Latest full local regression on 2026-10-08: `npm test` 276/276 and Playwright
 desktop/mobile baseline 266/266 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines`, `npm run build` and
 `git diff --check` also passed. The model metrics regression includes task-type
@@ -863,7 +890,7 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 268 passing tests. The latest
+The current deterministic suite contains 276 passing tests. The latest
 full Playwright baseline passed 266 desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,

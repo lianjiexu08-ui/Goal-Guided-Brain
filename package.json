@@ -25,7 +25,8 @@
     "test:e2e:production": "node scripts/e2e.mjs --production",
     "typecheck": "tsc --noEmit",
     "quality:lines": "node scripts/check-file-lines.mjs",
-    "stop": "node scripts/stop.mjs"
+    "stop": "node scripts/stop.mjs",
+    "postinstall": "node scripts/patch-vinext.mjs"
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",
