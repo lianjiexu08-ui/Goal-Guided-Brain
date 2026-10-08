@@ -47,6 +47,39 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Local Release Record
 
+Execution detail recovery on 2026-10-08: the inspector now separates operation
+errors from read failures, shows connection mode and last successful read time,
+and provides manual retry after initial failure, malformed data or timeout.
+Refresh failure keeps the existing evidence and unsent acceptance note. Task-keyed
+components isolate inputs and connections; forced refresh cancels older reads,
+and events received during a pending snapshot are merged before display.
+
+The feed preserves native SSE reconnect, recreates closed streams from their
+last cursor, reads immediately on reconnection/focus/network recovery, polls
+incremental events every 2.5 seconds, and requests a fresh aggregate when the last successful read is at least
+15 seconds old. Reads have a 10-second timeout and are
+cancelled on unmount. A browser without EventSource now enters the workbench
+normally and uses cursor polling. The task-events API advances its cursor on
+short pages and retains it on empty pages, preventing repeated partial replay.
+
+Eight browser scenarios cover failure and malformed data, normal reconnect,
+real offline/online transitions, delayed snapshots and new events, acceptance
+note retention, timeout retry, task isolation, and absence of EventSource.
+The existing API test now checks the final short page, an empty poll and a later
+event. The first production run revealed the pre-existing unguarded team stream
+constructor and a missing screenshot-test parameter; both were corrected without
+relaxing assertions. Final production desktop/mobile regression passed 282/282
+in 12.0 minutes, without skips or retries. Backend/CLI tests passed 276/276;
+formatting, Lint, TypeScript, build and the 332-source line gate passed. Production
+mobile screenshots were reviewed; the inspector heading now keeps its icon on
+the same line. The final development-mode focused run passed 16/16 after narrowing
+a test selector to the actual inspector and awaiting delayed response delivery.
+The same strengthened production scenarios then passed 16/16 in 41.0 seconds.
+The real local mobile startup passed both with native events and without
+EventSource. All five health endpoints responded, and the original 11 tasks,
+10 jobs and 2 unconfirmed spaces retained their IDs with zero active work during
+the restart. Evidence is retained under `/tmp/ggb-feed-evidence`.
+
 Production connection lifecycle on 2026-10-08: the pinned Node adapter now
 propagates client disconnect to pending API requests and cancels late response
 bodies before attempting to write to closed connections. Normal response finish
@@ -863,7 +896,7 @@ The subsequent full 126-run browser regression includes this mobile refinement,
 the ordinary attention-resolution workflow and cross-team overview recovery.
 
 Latest full local regression on 2026-10-08: `npm test` 276/276 and Playwright
-desktop/mobile baseline 266/266 passed on macOS. `npm run lint`,
+production desktop/mobile baseline 282/282 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines`, `npm run build` and
 `git diff --check` also passed. The model metrics regression includes task-type
 runtime comparisons, alias filtering, delayed response isolation, retry and
@@ -891,7 +924,7 @@ and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
 The current deterministic suite contains 276 passing tests. The latest
-full Playwright baseline passed 266 desktop/mobile runs covering team
+full production Playwright baseline passed 282 desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
 binary drag-and-drop attachments, conversation scroll recovery, evidence quality summaries, Team Charter confirmation and high-risk

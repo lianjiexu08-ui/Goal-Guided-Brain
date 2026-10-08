@@ -1,0 +1,32 @@
+.execution-feed-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.execution-feed-status output {
+  display: grid;
+  gap: 3px;
+  flex: 1 1 180px;
+}
+.execution-feed-status small {
+  color: var(--muted-foreground);
+}
+.execution-feed-status button {
+  min-height: 44px;
+  flex-shrink: 0;
+}
+
+.manage-detail .execution-feed-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.execution-feed-heading svg {
+  flex-shrink: 0;
+}

@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
+import { useExecutionFeed } from './use-execution-feed';
 import {
   Check,
   FileText,
@@ -21,7 +22,18 @@ import {
 import { Badge, Empty, ErrorMessage, status, time, title } from './shared';
 
 export function ExecutionInspector({ taskId }: { taskId: string }) {
-  const [execution, setExecution] = useState<Entity | null>(null);
+  return <ExecutionDetail key={taskId} taskId={taskId} />;
+}
+
+function ExecutionDetail({ taskId }: { taskId: string }) {
+  const {
+    execution,
+    error: readError,
+    refreshing,
+    updatedAt,
+    connection,
+    refresh,
+  } = useExecutionFeed(taskId);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<'diff' | 'commit' | 'verify' | null>(null);
@@ -30,126 +42,6 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
   const [acceptanceNote, setAcceptanceNote] = useState('');
   const [command, setCommand] = useState('npm');
   const [args, setArgs] = useState('test');
-  const eventCursorRef = useRef<string | null>(null);
-  const eventPollBusyRef = useRef(false);
-  const mergeEvents = useCallback(
-    (current: Entity | null, incoming: Entity[]) => {
-      if (!current || !incoming.length) return current;
-      const byId = new Map(
-        entityList(current.events).map((event) => [String(event.id), event]),
-      );
-      for (const event of incoming) byId.set(String(event.id), event);
-      const events = [...byId.values()].sort((a, b) => {
-        const at = txt(a, 'createdAt') || txt(a, 'at');
-        const bt = txt(b, 'createdAt') || txt(b, 'at');
-        return bt.localeCompare(at) || String(b.id).localeCompare(String(a.id));
-      });
-      return { ...current, events };
-    },
-    [],
-  );
-  useEffect(() => {
-    let cancelled = false;
-    eventCursorRef.current = null;
-    void api<Entity>(`tasks/${taskId}`)
-      .then((item) => {
-        if (!cancelled) {
-          const events = entityList(item.events).sort((a, b) => {
-            const at = txt(a, 'createdAt') || txt(a, 'at');
-            const bt = txt(b, 'createdAt') || txt(b, 'at');
-            return (
-              bt.localeCompare(at) || String(b.id).localeCompare(String(a.id))
-            );
-          });
-          const latest = events[0];
-          eventCursorRef.current = latest
-            ? `${txt(latest, 'createdAt') || txt(latest, 'at')}|${String(latest.id)}`
-            : null;
-          setExecution(item);
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) setError((err as Error).message);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [taskId]);
-  useEffect(() => {
-    let cancelled = false;
-    let streamReady = false;
-    const source =
-      typeof window !== 'undefined' && 'EventSource' in window
-        ? new EventSource(
-            `/api/tasks/${encodeURIComponent(taskId)}/events/stream`,
-          )
-        : null;
-    const onTaskEvent = (event: MessageEvent<string>) => {
-      try {
-        const item = JSON.parse(event.data) as Entity;
-        if (!item || typeof item !== 'object' || !item.id) return;
-        eventCursorRef.current =
-          event.lastEventId ||
-          `${txt(item, 'createdAt') || txt(item, 'at')}|${String(item.id)}`;
-        setExecution((current) =>
-          current ? mergeEvents(current, [item]) : current,
-        );
-        if (streamReady) {
-          void api<Entity>(`tasks/${taskId}`)
-            .then((item) => {
-              if (!cancelled) setExecution(item);
-            })
-            .catch(() => {});
-        }
-      } catch {
-        // Ignore malformed events; the cursor API below remains the recovery path.
-      }
-    };
-    source?.addEventListener('task_event', onTaskEvent as EventListener);
-    source?.addEventListener('ready', () => {
-      streamReady = true;
-    });
-    source?.addEventListener('error', () => source.close());
-    const poll = async () => {
-      if (cancelled || eventPollBusyRef.current) return;
-      eventPollBusyRef.current = true;
-      try {
-        const after = eventCursorRef.current;
-        const suffix = after
-          ? `?after=${encodeURIComponent(after)}&limit=100`
-          : '?limit=100';
-        const page = await api<{ items?: Entity[]; cursor?: string | null }>(
-          `tasks/${taskId}/events${suffix}`,
-        );
-        const items = Array.isArray(page.items) ? page.items : [];
-        if (!cancelled && items.length) {
-          eventCursorRef.current = page.cursor || eventCursorRef.current;
-          setExecution((current) => mergeEvents(current, items));
-          // Status, delivery and verification live beside the event log. Refresh
-          // the aggregate only when new events arrive, keeping idle polling cheap.
-          void api<Entity>(`tasks/${taskId}`)
-            .then((item) => {
-              if (!cancelled) setExecution(item);
-            })
-            .catch(() => {});
-        } else if (!cancelled && page.cursor) {
-          eventCursorRef.current = page.cursor;
-        }
-      } catch {
-        // The initial task request surfaces errors. A transient poll failure
-        // should not replace a usable execution detail with an error state.
-      } finally {
-        eventPollBusyRef.current = false;
-      }
-    };
-    void poll();
-    const timer = window.setInterval(() => void poll(), 2500);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-      source?.close();
-    };
-  }, [mergeEvents, taskId]);
   const workspace =
     execution?.executionWorkspace &&
     typeof execution.executionWorkspace === 'object'
@@ -266,7 +158,7 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
             : undefined,
       );
       setResult(output);
-      setExecution(await api<Entity>(`tasks/${taskId}`));
+      await refresh();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -283,7 +175,7 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
     setError('');
     try {
       await api<Entity>(`tasks/${taskId}/${decision}`, 'POST', { note });
-      setExecution(await api<Entity>(`tasks/${taskId}`));
+      await refresh();
       setAcceptanceNote('');
     } catch (err) {
       setError((err as Error).message);
@@ -312,12 +204,48 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
     txt(artifact, 'content');
   return (
     <section className="manage-detail">
-      <h3>
+      <h3 className="execution-feed-heading">
         <FolderGit2 size={16} /> 执行目录与验收
       </h3>
+      <div className="execution-feed-status" aria-label="执行进展更新状态">
+        <output>
+          <span>
+            {connection === 'offline'
+              ? '当前离线，恢复网络后自动更新'
+              : readError
+                ? execution
+                  ? '更新失败，显示上次结果'
+                  : '暂时无法读取执行详情'
+                : connection === 'live'
+                  ? '实时更新'
+                  : connection === 'reconnecting'
+                    ? '正在重连，暂用定时更新'
+                    : connection === 'polling'
+                      ? '定时更新'
+                      : '正在连接执行进展'}
+          </span>
+          {updatedAt > 0 && (
+            <small>
+              最近读取{' '}
+              {new Date(updatedAt).toLocaleTimeString('zh-CN', {
+                hour12: false,
+              })}
+            </small>
+          )}
+        </output>
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={refreshing && !readError}
+          onClick={() => void refresh()}
+        >
+          {readError ? '重试读取' : refreshing ? '正在读取…' : '刷新进展'}
+        </button>
+      </div>
+      <ErrorMessage error={readError} />
       <ErrorMessage error={error} />
       {!execution ? (
-        <Empty busy={!error} />
+        <Empty busy={refreshing && !readError} />
       ) : (
         <>
           <div

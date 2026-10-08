@@ -81,6 +81,31 @@ void test('task events expose an oldest-first incremental cursor', async (t) => 
     ['turn/end'],
   );
   assert.equal(second.body.hasMore, false);
+  assert.match(second.body.cursor, /\|event-c$/);
+  const empty = await request(
+    `tasks/${task.id}/events?after=${encodeURIComponent(second.body.cursor)}`,
+  );
+  assert.deepEqual(empty.body.items, []);
+  assert.equal(empty.body.cursor, second.body.cursor);
+  app.store.records.save(
+    'task-events',
+    {
+      taskId: task.id,
+      type: 'later/event',
+      data: {},
+      at: new Date().toISOString(),
+    },
+    'event-d',
+  );
+  const later = await request(
+    `tasks/${task.id}/events?after=${encodeURIComponent(empty.body.cursor)}`,
+  );
+  assert.deepEqual(
+    later.body.items.map((item) => item.id),
+    ['event-d'],
+  );
+  assert.match(later.body.cursor, /\|event-d$/);
+
   assert.equal((await request('tasks/missing-task/events')).status, 404);
   assert.equal((await request('tasks/missing-task/events/stream')).status, 404);
 });

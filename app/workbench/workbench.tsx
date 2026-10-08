@@ -478,7 +478,12 @@ export function Workbench() {
   ]);
   useEffect(() => {
     const spaceId = teamSpace?.id;
-    if (!spaceId || !(isConversationView || view === 'team')) return;
+    if (
+      !spaceId ||
+      !(isConversationView || view === 'team') ||
+      typeof EventSource !== 'function'
+    )
+      return;
     const source = new EventSource(
       `/api/spaces/${encodeURIComponent(spaceId)}/events/stream?limit=120`,
     );

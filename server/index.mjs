@@ -114,7 +114,7 @@ export function createWorkbench({
       ...event,
       at: event.at || event.createdAt,
     }));
-    const last = page[pageSize - 1];
+    const last = items[items.length - 1];
     return {
       items,
       hasMore,
