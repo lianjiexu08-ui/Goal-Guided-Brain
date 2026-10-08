@@ -7,7 +7,7 @@ import { Store } from '../server/store.mjs';
 import { createWorkbench } from '../server/index.mjs';
 import { sandbox, tick } from './helpers/workbench-helpers.mjs';
 
-test('assistant migration preserves existing instructions and only seeds defaults once', () => {
+void test('assistant migration preserves existing instructions and only seeds defaults once', () => {
   const s = sandbox();
   fs.mkdirSync(s.dataDir);
   const legacy = new DatabaseSync(path.join(s.dataDir, 'workspace.sqlite'));
@@ -64,7 +64,7 @@ test('assistant migration preserves existing instructions and only seeds default
   }
 });
 
-test('custom assistant journey persists edits, controls runtime, queues terminal work, and preserves archived history', async () => {
+void test('custom assistant journey persists edits, controls runtime, queues terminal work, and preserves archived history', async () => {
   const s = sandbox(),
     runtimes = [];
   const app = createWorkbench({
@@ -185,7 +185,7 @@ test('custom assistant journey persists edits, controls runtime, queues terminal
   }
 });
 
-test('batch delivery review accepts atomically and records rejection attention', async () => {
+void test('batch delivery review accepts atomically and records rejection attention', async () => {
   const s = sandbox();
   const app = createWorkbench({ ...s, requireCredential: false });
   await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
@@ -324,7 +324,7 @@ test('batch delivery review accepts atomically and records rejection attention',
   }
 });
 
-test('knowledge retrieval isolates role and project, preserves sources, and exports readable files', () => {
+void test('knowledge retrieval isolates role and project, preserves sources, and exports readable files', () => {
   const s = sandbox(),
     store = new Store(s.dataDir, s.workspace);
   try {
@@ -391,7 +391,7 @@ test('knowledge retrieval isolates role and project, preserves sources, and expo
   }
 });
 
-test('knowledge versions keep task references and expired entries out of new context', () => {
+void test('knowledge versions keep task references and expired entries out of new context', () => {
   const s = sandbox();
   const store = new Store(s.dataDir, s.workspace);
   try {
@@ -457,7 +457,7 @@ test('knowledge versions keep task references and expired entries out of new con
   }
 });
 
-test('team-scoped knowledge stays isolated when teams share a workspace', () => {
+void test('team-scoped knowledge stays isolated when teams share a workspace', () => {
   const s = sandbox();
   const store = new Store(s.dataDir, s.workspace, { seedProjectManager: true });
   try {
@@ -524,7 +524,7 @@ test('team-scoped knowledge stays isolated when teams share a workspace', () => 
   }
 });
 
-test('state exposes risk counts per confirmed team for workspace switching', async () => {
+void test('state exposes risk counts per confirmed team for workspace switching', async () => {
   const s = sandbox();
   const app = createWorkbench({ ...s, requireCredential: false });
   await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
@@ -585,7 +585,7 @@ test('state exposes risk counts per confirmed team for workspace switching', asy
   }
 });
 
-test('team knowledge freshness becomes an actionable risk and clears after review', async () => {
+void test('team knowledge freshness becomes an actionable risk and clears after review', async () => {
   const s = sandbox();
   const app = createWorkbench({ ...s, requireCredential: false });
   await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
@@ -661,7 +661,7 @@ test('team knowledge freshness becomes an actionable risk and clears after revie
   }
 });
 
-test('team plan persists a goal and milestone progress per team', async () => {
+void test('team plan persists a goal and milestone progress per team', async () => {
   const s = sandbox();
   const app = createWorkbench({ ...s, requireCredential: false });
   await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
@@ -790,7 +790,7 @@ test('team plan persists a goal and milestone progress per team', async () => {
   }
 });
 
-test('running tasks become interrupted after a restart; queued work remains queued', () => {
+void test('running tasks become interrupted after a restart; queued work remains queued', () => {
   const s = sandbox();
   let store = new Store(s.dataDir, s.workspace);
   const active = store.createTask({ role: 'developer', prompt: '修改代码' }),

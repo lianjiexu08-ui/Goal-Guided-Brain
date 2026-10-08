@@ -13,7 +13,7 @@ function sandbox() {
   return { dir, workspace, dataDir: path.join(dir, 'data') };
 }
 
-test('personal profile has stable defaults, validates updates, and persists', () => {
+void test('personal profile has stable defaults, validates updates, and persists', () => {
   const s = sandbox();
   const store = new Store(s.dataDir, s.workspace);
   try {
@@ -46,7 +46,7 @@ test('personal profile has stable defaults, validates updates, and persists', ()
   }
 });
 
-test('profile API exposes updates and task context includes preferences', async () => {
+void test('profile API exposes updates and task context includes preferences', async () => {
   const s = sandbox();
   const runtimes = [];
   const app = createWorkbench({

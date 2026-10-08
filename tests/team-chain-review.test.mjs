@@ -22,7 +22,7 @@ const decision = (
   requestId,
 });
 
-test('HTTP whole-chain review includes history beyond the first page, is atomic and returns the original receipt on late retry', async (t) => {
+void test('HTTP whole-chain review includes history beyond the first page, is atomic and returns the original receipt on late retry', async (t) => {
   const { store, source, target, send, request } = await fixture(t);
   const root = await send();
   const rows = [root];
@@ -66,7 +66,7 @@ test('HTTP whole-chain review includes history beyond the first page, is atomic 
   );
 });
 
-test('chain preview rejects added branches, changed content/results/replies and archived source before any batch write', async (t) => {
+void test('chain preview rejects added branches, changed content/results/replies and archived source before any batch write', async (t) => {
   for (const mutation of ['branch', 'content', 'result', 'reply', 'archived']) {
     const f = await fixture(t);
     const root = await f.send();
@@ -117,7 +117,7 @@ test('chain preview rejects added branches, changed content/results/replies and 
   }
 });
 
-test('complete requires every current acceptance, stale results can be re-reviewed, reopening never reruns tasks', async (t) => {
+void test('complete requires every current acceptance, stale results can be re-reviewed, reopening never reruns tasks', async (t) => {
   const { store, source, target, send, request } = await fixture(t);
   const root = await send();
   const child = await send(root, target, 'queued');
@@ -164,7 +164,7 @@ test('complete requires every current acceptance, stale results can be re-review
   );
 });
 
-test('failed final receipt write rolls back every review, audit event and consumed draft without notifications', async (t) => {
+void test('failed final receipt write rolls back every review, audit event and consumed draft without notifications', async (t) => {
   const { store, source, send } = await fixture(t);
   const root = await send();
   await send(root);
@@ -205,7 +205,7 @@ test('failed final receipt write rolls back every review, audit event and consum
   assert.equal(events.length, 0);
 });
 
-test('versioned chain drafts prevent concurrent overwrite and stale receipt cannot erase a newer draft', async (t) => {
+void test('versioned chain drafts prevent concurrent overwrite and stale receipt cannot erase a newer draft', async (t) => {
   const { store, source, send } = await fixture(t);
   const root = await send();
   const id = root.sourceMessageId;
@@ -242,7 +242,7 @@ test('versioned chain drafts prevent concurrent overwrite and stale receipt cann
   assert.deepEqual(readChainReviewDraft(store, source.id, id), fresh);
 });
 
-test('HTTP chain review enforces ownership, complete provenance and required reasons', async (t) => {
+void test('HTTP chain review enforces ownership, complete provenance and required reasons', async (t) => {
   const { app, store, source, other, send, request } = await fixture(t);
   const root = await send();
   const url = endpoint(source, root);
@@ -270,7 +270,7 @@ test('HTTP chain review enforces ownership, complete provenance and required rea
   assert.equal(store.records.list('handoff-reviews').length, 0);
 });
 
-test('onward delegation closes all three teams together and preserves per-source audit ownership', async (t) => {
+void test('onward delegation closes all three teams together and preserves per-source audit ownership', async (t) => {
   const { commitTeamHandoff } =
     await import('../server/team-handoff-store.mjs');
   const { store, source, target, other, send, request } = await fixture(t);

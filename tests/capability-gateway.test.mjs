@@ -119,7 +119,7 @@ async function setup(t) {
   };
 }
 
-test('gateway exposes only selected tools and never calls an unapproved write or unknown tool', async (t) => {
+void test('gateway exposes only selected tools and never calls an unapproved write or unknown tool', async (t) => {
   const { client, calls, store } = await setup(t);
   assert.deepEqual(
     (await client.listTools()).tools.map((tool) => tool.name),
@@ -153,7 +153,7 @@ test('gateway exposes only selected tools and never calls an unapproved write or
   );
 });
 
-test('exact-argument approval calls upstream once and replays the saved result for duplicate attempts', async (t) => {
+void test('exact-argument approval calls upstream once and replays the saved result for duplicate attempts', async (t) => {
   const { client, calls, store, control } = await setup(t);
   const request = {
     name: 'merge_pr',
@@ -185,7 +185,7 @@ test('exact-argument approval calls upstream once and replays the saved result f
   assert.equal(store.records.list('operations')[0].status, 'succeeded');
 });
 
-test('unknown external result blocks automatic retries and revoked instances lose gateway access', async (t) => {
+void test('unknown external result blocks automatic retries and revoked instances lose gateway access', async (t) => {
   const { client, calls, store, control, job, failWrites } = await setup(t);
   const request = { name: 'merge_pr', arguments: { number: 12 } };
   await client.callTool(request);
@@ -203,7 +203,7 @@ test('unknown external result blocks automatic retries and revoked instances los
   assert.equal(calls.length, 1);
 });
 
-test('running gateway cannot silently use a modified capability config', async (t) => {
+void test('running gateway cannot silently use a modified capability config', async (t) => {
   const { client, store, cap, calls } = await setup(t);
   store.records.save(
     'capabilities',
@@ -217,7 +217,7 @@ test('running gateway cannot silently use a modified capability config', async (
   assert.equal(calls.length, 0);
 });
 
-test('captured capability config survives health updates while explicit disabling revokes access', async (t) => {
+void test('captured capability config survives health updates while explicit disabling revokes access', async (t) => {
   const { client, store, cap, job, calls } = await setup(t);
   const snapshot = store.records.get('runtime-snapshots', job.taskId);
   store.records.save(
@@ -239,7 +239,7 @@ test('captured capability config survives health updates while explicit disablin
   assert.equal(calls.length, 1);
 });
 
-test('gateway redacts configured credentials in tool metadata, results and failure evidence', async (t) => {
+void test('gateway redacts configured credentials in tool metadata, results and failure evidence', async (t) => {
   const { client, store, control, failWrites } = await setup(t);
   assert.equal(
     JSON.stringify(await client.listTools()).includes('fixture-gateway-secret'),

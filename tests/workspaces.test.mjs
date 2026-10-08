@@ -47,7 +47,7 @@ async function initializeGit(source, commit = true) {
   }
 }
 
-test('command preserves raw whitespace and NUL output and rejects overflow', async () => {
+void test('command preserves raw whitespace and NUL output and rejects overflow', async () => {
   const original = process.env.WORKBENCH_TEST_PUBLISH_TOKEN;
   process.env.WORKBENCH_TEST_PUBLISH_TOKEN = 'sensitive-fixture-token';
   try {
@@ -85,7 +85,7 @@ test('command preserves raw whitespace and NUL output and rejects overflow', asy
   );
 });
 
-test('worktree preserves dirty source, unusual names and complete large diffs', async () => {
+void test('worktree preserves dirty source, unusual names and complete large diffs', async () => {
   const f = fixture();
   try {
     await initializeGit(f.source);
@@ -145,7 +145,7 @@ test('worktree preserves dirty source, unusual names and complete large diffs', 
   }
 });
 
-test('no-HEAD snapshot excludes secrets and symlinks and refuses explicit worktree', async () => {
+void test('no-HEAD snapshot excludes secrets and symlinks and refuses explicit worktree', async () => {
   const f = fixture();
   try {
     await initializeGit(f.source, false);
@@ -185,7 +185,7 @@ test('no-HEAD snapshot excludes secrets and symlinks and refuses explicit worktr
   }
 });
 
-test('integration retains conflicts for review without modifying the source checkout', async () => {
+void test('integration retains conflicts for review without modifying the source checkout', async () => {
   const f = fixture();
   try {
     await initializeGit(f.source);
@@ -220,7 +220,7 @@ test('integration retains conflicts for review without modifying the source chec
   }
 });
 
-test('port reservations are exclusive and restart rejects a conflicting port', async () => {
+void test('port reservations are exclusive and restart rejects a conflicting port', async () => {
   const f = fixture();
   let occupant;
   try {

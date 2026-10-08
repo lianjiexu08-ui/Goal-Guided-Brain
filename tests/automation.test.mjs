@@ -50,7 +50,7 @@ function fixture() {
   };
 }
 
-test('cron preserves local wall time across timezones and DST changes', () => {
+void test('cron preserves local wall time across timezones and DST changes', () => {
   assert.deepEqual(
     nextTimes(
       '0 9 * * *',
@@ -89,7 +89,7 @@ test('cron preserves local wall time across timezones and DST changes', () => {
   assert.throws(() => nextTimes('invalid cron'));
 });
 
-test('schedule previews validate both modes and intervals retain elapsed time through DST', () => {
+void test('schedule previews validate both modes and intervals retain elapsed time through DST', () => {
   const current = new Date('2026-03-08T06:30:00Z');
   assert.deepEqual(
     scheduleNextTimes(
@@ -161,7 +161,7 @@ test('schedule previews validate both modes and intervals retain elapsed time th
     assert.throws(() => scheduleNextTimes({}, current, count), /预览数量/);
 });
 
-test('schedule edits preserve interval cadence and retain legacy cron records', () => {
+void test('schedule edits preserve interval cadence and retain legacy cron records', () => {
   const f = fixture();
   try {
     const interval = f.service.saveSchedule({
@@ -207,7 +207,7 @@ test('schedule edits preserve interval cadence and retain legacy cron records', 
   }
 });
 
-test('interval misfires catch up at most once with stable slots, deduplication, and overlap protection', async () => {
+void test('interval misfires catch up at most once with stable slots, deduplication, and overlap protection', async () => {
   for (const misfire of ['skip', 'once']) {
     const f = fixture();
     try {
@@ -261,7 +261,7 @@ test('interval misfires catch up at most once with stable slots, deduplication, 
   }
 });
 
-test('schedule triggers are idempotent and workflow steps retain batch dependencies', async () => {
+void test('schedule triggers are idempotent and workflow steps retain batch dependencies', async () => {
   const f = fixture();
   try {
     const workflow = f.records.save('workflows', {
@@ -311,7 +311,7 @@ test('schedule triggers are idempotent and workflow steps retain batch dependenc
   }
 });
 
-test('schedule overlap and completion follow replacement attempts and unknown executions', async () => {
+void test('schedule overlap and completion follow replacement attempts and unknown executions', async () => {
   const f = fixture();
   try {
     const rule = f.service.saveSchedule({
@@ -350,7 +350,7 @@ test('schedule overlap and completion follow replacement attempts and unknown ex
   }
 });
 
-test('misfires skip or catch up once and failed workflow creation rolls back', async () => {
+void test('misfires skip or catch up once and failed workflow creation rolls back', async () => {
   const f = fixture();
   try {
     for (const misfire of ['skip', 'once'])
@@ -405,7 +405,7 @@ test('misfires skip or catch up once and failed workflow creation rolls back', a
   }
 });
 
-test('schedule failures use the shared attention callback with a stable id', async () => {
+void test('schedule failures use the shared attention callback with a stable id', async () => {
   const f = fixture();
   const events = [];
   f.service.attention = (input, id) => {
@@ -438,7 +438,7 @@ test('schedule failures use the shared attention callback with a stable id', asy
   }
 });
 
-test('HTTP and TCP checks return actual connection outcomes', async () => {
+void test('HTTP and TCP checks return actual connection outcomes', async () => {
   const server = http.createServer((_req, res) => {
     res.writeHead(200);
     res.end('healthy');
@@ -471,7 +471,7 @@ test('HTTP and TCP checks return actual connection outcomes', async () => {
   );
 });
 
-test('monitor changes deduplicate notifications and retry webhook with stable idempotency key', async () => {
+void test('monitor changes deduplicate notifications and retry webhook with stable idempotency key', async () => {
   const f = fixture();
   let healthy = false;
   const deliveries = [];

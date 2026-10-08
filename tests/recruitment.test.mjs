@@ -38,7 +38,7 @@ async function createRecruitmentTeam(request, name = '待招募团队') {
   return response.body;
 }
 
-test('team recruitment keeps one PM session across completed discovery turns', async () => {
+void test('team recruitment keeps one PM session across completed discovery turns', async () => {
   const fixture = sandbox();
   const runs = [];
   const app = createWorkbench({
@@ -165,7 +165,7 @@ test('team recruitment keeps one PM session across completed discovery turns', a
   }
 });
 
-test('project manager proposes a Team Charter and owner confirmation materializes members', async () => {
+void test('project manager proposes a Team Charter and owner confirmation materializes members', async () => {
   const fixture = sandbox();
   const runs = [];
   const app = createWorkbench({
@@ -492,7 +492,7 @@ test('project manager proposes a Team Charter and owner confirmation materialize
   }
 });
 
-test('team confirmation rejects disabled capabilities and unavailable model hints', async () => {
+void test('team confirmation rejects disabled capabilities and unavailable model hints', async () => {
   const fixture = sandbox();
   const runs = [];
   const app = createWorkbench({
@@ -681,7 +681,7 @@ test('team confirmation rejects disabled capabilities and unavailable model hint
   }
 });
 
-test('publishing a new demand creates an independent recruitment draft beside an existing team', async () => {
+void test('publishing a new demand creates an independent recruitment draft beside an existing team', async () => {
   const fixture = sandbox();
   const app = createWorkbench({
     ...fixture,

@@ -129,7 +129,7 @@ async function fixture(t) {
   };
 }
 
-test('authenticated onward MCP delegation traces three teams while agent reads retain direct-delegation boundaries', async (t) => {
+void test('authenticated onward MCP delegation traces three teams while agent reads retain direct-delegation boundaries', async (t) => {
   const { app, store, a, b, c, request, handoff, caller, chain, snapshot } =
     await fixture(t);
   const root = await handoff();
@@ -193,7 +193,7 @@ test('authenticated onward MCP delegation traces three teams while agent reads r
   assert.ok(b.id);
 });
 
-test('member jobs and retried attempts retain verifiable inbound origin without trusting free-form context', async (t) => {
+void test('member jobs and retried attempts retain verifiable inbound origin without trusting free-form context', async (t) => {
   const { store, control, role, request, handoff, caller, chain } =
     await fixture(t);
   const root = await handoff();
@@ -239,7 +239,7 @@ test('member jobs and retried attempts retain verifiable inbound origin without 
   assert.equal((await chain(root)).body.counts.total, 3);
 });
 
-test('origin write failure rolls back task, messages and trace together; retries and legacy receipts stay idempotent', async (t) => {
+void test('origin write failure rolls back task, messages and trace together; retries and legacy receipts stay idempotent', async (t) => {
   const { app, store, a, b, c, handoff, caller, snapshot, chain } =
     await fixture(t);
   const root = await handoff();
@@ -292,7 +292,7 @@ test('origin write failure rolls back task, messages and trace together; retries
   assert.equal((await chain(root, a)).body.counts.total, 1);
 });
 
-test('follow-up and initiator relationships retain both roots and deduplicate their shared successor', async (t) => {
+void test('follow-up and initiator relationships retain both roots and deduplicate their shared successor', async (t) => {
   const { store, a, b, c, control, handoff, caller, chain } = await fixture(t);
   const firstRoot = await handoff();
   const secondRoot = await handoff();
@@ -331,7 +331,7 @@ test('follow-up and initiator relationships retain both roots and deduplicate th
   );
 });
 
-test('damaged provenance never pulls foreign work into a chain and removed targets make the owner view incomplete', async (t) => {
+void test('damaged provenance never pulls foreign work into a chain and removed targets make the owner view incomplete', async (t) => {
   const { store, b, c, handoff, caller, chain } = await fixture(t);
   const root = await handoff();
   const agent = await caller(root.taskId);
@@ -376,7 +376,7 @@ test('damaged provenance never pulls foreign work into a chain and removed targe
   assert.equal((await chain(root)).body.incomplete, true);
 });
 
-test('a copied inbound message ID from another logical job is not enough to manufacture onward ancestry', async (t) => {
+void test('a copied inbound message ID from another logical job is not enough to manufacture onward ancestry', async (t) => {
   const { store, b, handoff, caller, chain } = await fixture(t);
   const firstRoot = await handoff();
   const unrelatedRoot = await handoff();

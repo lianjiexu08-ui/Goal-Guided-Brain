@@ -38,7 +38,7 @@ async function openApp(fixture) {
   return { app, request };
 }
 
-test('server-backed drafts persist across restart, retain attachments, and stay team-scoped', async () => {
+void test('server-backed drafts persist across restart, retain attachments, and stay team-scoped', async () => {
   const fixture = sandbox();
   let current = await openApp(fixture);
   try {
@@ -211,7 +211,7 @@ test('server-backed drafts persist across restart, retain attachments, and stay 
   }
 });
 
-test('standalone drafts can be recovered by role without exposing another role scope', async () => {
+void test('standalone drafts can be recovered by role without exposing another role scope', async () => {
   const fixture = sandbox();
   const { app, request } = await openApp(fixture);
   try {

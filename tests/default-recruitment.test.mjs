@@ -6,7 +6,7 @@ import path from 'node:path';
 import { Store } from '../server/store.mjs';
 import { ControlPlane } from '../server/control.mjs';
 
-test('a new workspace starts with one PM recruitment draft and cannot delegate before confirmation', () => {
+void test('a new workspace starts with one PM recruitment draft and cannot delegate before confirmation', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ggb-first-run-'));
   let store;
   try {
@@ -45,7 +45,7 @@ test('a new workspace starts with one PM recruitment draft and cannot delegate b
   }
 });
 
-test('initialization preserves existing confirmed teams and their members', () => {
+void test('initialization preserves existing confirmed teams and their members', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ggb-existing-team-'));
   let store;
   try {

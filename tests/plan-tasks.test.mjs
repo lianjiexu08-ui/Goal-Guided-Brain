@@ -53,7 +53,7 @@ async function fixture(t) {
   return { app, team, task, foreign, save };
 }
 
-test('milestones persist same-team task links without accepting or changing execution', async (t) => {
+void test('milestones persist same-team task links without accepting or changing execution', async (t) => {
   const { app, team, task, save } = await fixture(t);
   const result = await save({
     revision: 0,
@@ -80,7 +80,7 @@ test('milestones persist same-team task links without accepting or changing exec
   assert.deepEqual(removed.body.milestones[0].taskIds, []);
 });
 
-test('foreign, missing and malformed task links reject the entire plan update', async (t) => {
+void test('foreign, missing and malformed task links reject the entire plan update', async (t) => {
   const { app, team, task, foreign, save } = await fixture(t);
   const original = await save({
     revision: 0,
@@ -114,7 +114,7 @@ test('foreign, missing and malformed task links reject the entire plan update', 
   );
 });
 
-test('job-scoped tasks can be linked and stale revisions cannot overwrite newer links', async (t) => {
+void test('job-scoped tasks can be linked and stale revisions cannot overwrite newer links', async (t) => {
   const { app, team, task, save } = await fixture(t);
   const job = app.store.records.save('jobs', {
     teamId: team.id,

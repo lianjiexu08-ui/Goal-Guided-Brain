@@ -41,7 +41,7 @@ async function fixture(t) {
   return { app, request, item };
 }
 
-test('owner can resolve an attention without a task and close only its linked notification', async (t) => {
+void test('owner can resolve an attention without a task and close only its linked notification', async (t) => {
   const { app, request, item } = await fixture(t);
   const { records } = app.store;
   app.platform.control.attention({ title: '另一事项' }, 'other-decision');
@@ -67,7 +67,7 @@ test('owner can resolve an attention without a task and close only its linked no
   assert.equal(records.list('jobs').length, 0);
 });
 
-test('attention resolution rejects missing records and empty or invalid notes without writes', async (t) => {
+void test('attention resolution rejects missing records and empty or invalid notes without writes', async (t) => {
   const { app, request, item } = await fixture(t);
   for (const resolution of ['', '   ', null, {}, 'a'.repeat(4001)]) {
     assert.equal((await request(item.id, { resolution })).status, 400);
@@ -86,7 +86,7 @@ test('attention resolution rejects missing records and empty or invalid notes wi
   );
 });
 
-test('failure saving attention rolls back its linked notification changes', async (t) => {
+void test('failure saving attention rolls back its linked notification changes', async (t) => {
   const { app, request, item } = await fixture(t);
   const { records } = app.store;
   const original = records.save.bind(records);
@@ -111,7 +111,7 @@ test('failure saving attention rolls back its linked notification changes', asyn
   }
 });
 
-test('resolving attention neither grants tools nor resumes its failed task', async (t) => {
+void test('resolving attention neither grants tools nor resumes its failed task', async (t) => {
   const { app, request, item } = await fixture(t);
   const task = app.store.createTask({
     role: 'developer',

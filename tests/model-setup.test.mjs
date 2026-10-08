@@ -21,7 +21,7 @@ const vault = (initialized = false, unlocked = false, entries = []) => ({
   },
 });
 
-test('model setup distinguishes absent, disabled, structured-only, empty and unsupported configurations without requiring optional capabilities', () => {
+void test('model setup distinguishes absent, disabled, structured-only, empty and unsupported configurations without requiring optional capabilities', () => {
   for (const [providers, expected] of [
     [[], 'missing'],
     [[provider('disabled', { enabled: false })], 'disabled'],
@@ -52,7 +52,7 @@ test('model setup distinguishes absent, disabled, structured-only, empty and uns
   );
 });
 
-test('credential readiness uses metadata only, handles vault lifecycle and keeps selected-provider evidence separate from alternatives', () => {
+void test('credential readiness uses metadata only, handles vault lifecycle and keeps selected-provider evidence separate from alternatives', () => {
   const providers = [
     provider('secure', { credentialId: 'secret-id' }),
     provider('public'),
@@ -77,7 +77,7 @@ test('credential readiness uses metadata only, handles vault lifecycle and keeps
   );
 });
 
-test('real state API tracks vault lock/unlock/deletion without returning secrets or claiming a network probe', async (t) => {
+void test('real state API tracks vault lock/unlock/deletion without returning secrets or claiming a network probe', async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ggb-model-setup-'));
   const app = createWorkbench({
     dataDir: path.join(directory, 'data'),

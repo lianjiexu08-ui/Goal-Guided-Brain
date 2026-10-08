@@ -5,7 +5,7 @@ import { seedConfirmedDefaultTeam } from './fixtures/confirmed-default-team.mjs'
 import { createWorkbench } from '../server/index.mjs';
 import { sandbox, tick, waitFor } from './helpers/team-helpers.mjs';
 
-test('team sessions cannot be reused across teams', async () => {
+void test('team sessions cannot be reused across teams', async () => {
   const fixture = sandbox();
   const runs = [];
   const app = createWorkbench({
@@ -102,7 +102,7 @@ test('team sessions cannot be reused across teams', async () => {
   }
 });
 
-test('team task handoff keeps the receiving task in the same team', async () => {
+void test('team task handoff keeps the receiving task in the same team', async () => {
   const fixture = sandbox();
   const runs = [];
   const app = createWorkbench({
@@ -190,7 +190,7 @@ test('team task handoff keeps the receiving task in the same team', async () => 
   }
 });
 
-test('multiple Chat teams keep independent ownership and can hand work to another team', async () => {
+void test('multiple Chat teams keep independent ownership and can hand work to another team', async () => {
   const fixture = sandbox();
   const runs = [];
   const app = createWorkbench({
@@ -434,7 +434,7 @@ test('multiple Chat teams keep independent ownership and can hand work to anothe
   }
 });
 
-test('twenty alternating messages keep two confirmed teams, models, and tasks isolated', async () => {
+void test('twenty alternating messages keep two confirmed teams, models, and tasks isolated', async () => {
   const fixture = sandbox();
   const runs = [];
   const app = createWorkbench({

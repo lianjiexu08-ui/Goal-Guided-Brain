@@ -26,7 +26,8 @@ export function dshCandidates({
 } = {}) {
   const names =
     platform === 'win32' ? ['dsh.exe', 'dsh.cmd', 'dsh.bat', 'dsh'] : ['dsh'];
-  const join = platform === 'win32' ? path.win32.join : path.join;
+  const join = (...parts) =>
+    platform === 'win32' ? path.win32.join(...parts) : path.join(...parts);
   const homeCandidates =
     platform === 'win32'
       ? [
@@ -85,7 +86,7 @@ export function terminateProcessTree(
   pid,
   {
     platform = process.platform,
-    kill = process.kill,
+    kill = (target, signal) => process.kill(target, signal),
     run = execFileSync,
     force = false,
   } = {},

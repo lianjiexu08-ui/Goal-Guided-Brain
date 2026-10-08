@@ -13,7 +13,7 @@ const waitFor = async (predicate, message) => {
   assert.fail(message);
 };
 
-test('failed task retry creates a linked isolated attempt and keeps the old result', async () => {
+void test('failed task retry creates a linked isolated attempt and keeps the old result', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-recovery-'));
   const workspace = path.join(directory, 'workspace');
   fs.mkdirSync(workspace);

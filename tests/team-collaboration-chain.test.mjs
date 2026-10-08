@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture } from './helpers/collaboration-chain-fixture.mjs';
 
-test('HTTP chain connects nested follow-ups and branches, separates state and exposes shared replies only', async (t) => {
+void test('HTTP chain connects nested follow-ups and branches, separates state and exposes shared replies only', async (t) => {
   const { app, store, source, target, request, send, endpoint } =
     await fixture(t);
   const root = await send();
@@ -86,7 +86,7 @@ test('HTTP chain connects nested follow-ups and branches, separates state and ex
   );
 });
 
-test('HTTP chain pagination scopes cursors, rejects changed topology and refreshes edited historical content', async (t) => {
+void test('HTTP chain pagination scopes cursors, rejects changed topology and refreshes edited historical content', async (t) => {
   const { app, store, target, request, send, endpoint } = await fixture(t);
   const root = await send();
   const rows = [root];
@@ -144,7 +144,7 @@ test('HTTP chain pagination scopes cursors, rejects changed topology and refresh
   );
 });
 
-test('HTTP chain refuses foreign and forged associations and detects cyclic references without leaking another pair', async (t) => {
+void test('HTTP chain refuses foreign and forged associations and detects cyclic references without leaking another pair', async (t) => {
   const { store, other, request, send, endpoint } = await fixture(t);
   const root = await send();
   const foreign = await send(null, other);
@@ -175,7 +175,7 @@ test('HTTP chain refuses foreign and forged associations and detects cyclic refe
   assert.equal((await request(endpoint(root))).status, 404);
 });
 
-test('chain summary keeps acceptance independent and turns changed closed work into stale review', async (t) => {
+void test('chain summary keeps acceptance independent and turns changed closed work into stale review', async (t) => {
   const { store, source, request, send, endpoint } = await fixture(t);
   const root = await send();
   store.records.save('artifacts', {

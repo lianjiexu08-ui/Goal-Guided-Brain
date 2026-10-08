@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 
 const cli = path.resolve('scripts/cli.mjs');
 
-test('package exposes the cross-platform ggb executable alias', () => {
+void test('package exposes the cross-platform ggb executable alias', () => {
   const packageJson = JSON.parse(
     fs.readFileSync(path.resolve('package.json'), 'utf8'),
   );
@@ -181,7 +181,7 @@ function runRpc(url, args, messages, extraEnv = {}) {
   });
 }
 
-test('CLI doctor reports cross-platform runtime and service checks without exposing credentials', async (t) => {
+void test('CLI doctor reports cross-platform runtime and service checks without exposing credentials', async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cli-doctor-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const api = http.createServer((_req, res) => {
@@ -231,7 +231,7 @@ test('CLI doctor reports cross-platform runtime and service checks without expos
   assert.equal(report.checks.find((check) => check.id === 'ui').status, 'pass');
 });
 
-test('CLI doctor strict mode returns a gateable status for deployment checks', async (t) => {
+void test('CLI doctor strict mode returns a gateable status for deployment checks', async (t) => {
   const api = http.createServer((_req, res) => {
     res.setHeader('content-type', 'application/json');
     res.end(JSON.stringify({ status: 'ok' }));
@@ -280,7 +280,7 @@ test('CLI doctor strict mode returns a gateable status for deployment checks', a
   assert.equal(JSON.parse(unhealthy.stdout).strictOk, false);
 });
 
-test('CLI doctor validates a node config without exposing identity data', async (t) => {
+void test('CLI doctor validates a node config without exposing identity data', async (t) => {
   const directory = fs.mkdtempSync(
     path.join(os.tmpdir(), 'dsh-cli-node-doctor-'),
   );
@@ -370,7 +370,7 @@ test('CLI doctor validates a node config without exposing identity data', async 
   );
 });
 
-test('CLI doctor identifies a WSL2 environment from standard process variables', async (t) => {
+void test('CLI doctor identifies a WSL2 environment from standard process variables', async (t) => {
   const directory = fs.mkdtempSync(
     path.join(os.tmpdir(), 'dsh-cli-wsl-doctor-'),
   );
@@ -397,7 +397,7 @@ test('CLI doctor identifies a WSL2 environment from standard process variables',
   );
 });
 
-test('CLI exposes the execution node worker through the ggb command', async (t) => {
+void test('CLI exposes the execution node worker through the ggb command', async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-ggb-node-'));
   const workspace = path.join(directory, 'project');
   fs.mkdirSync(workspace);
@@ -423,7 +423,7 @@ test('CLI exposes the execution node worker through the ggb command', async (t) 
   assert.equal(result.stdout.includes('identity'), false);
 });
 
-test('CLI prints a focused execution node help page', async () => {
+void test('CLI prints a focused execution node help page', async () => {
   const result = await runNode(['--help']);
   assert.equal(result.code, 0);
   assert.equal(result.stderr, '');
@@ -431,7 +431,7 @@ test('CLI prints a focused execution node help page', async () => {
   assert.match(result.stdout, /--workspace/);
 });
 
-test('CLI sends a unified prompt to an OpenAI-compatible provider', async (t) => {
+void test('CLI sends a unified prompt to an OpenAI-compatible provider', async (t) => {
   const requests = [];
   const server = http.createServer(async (req, res) => {
     let body = '';
@@ -460,7 +460,7 @@ test('CLI sends a unified prompt to an OpenAI-compatible provider', async (t) =>
   assert.equal(requests[0].body.messages[0].content, 'hello\n\ncontext');
 });
 
-test('CLI decide sends a TypeSafe System One request and prints structured answers', async (t) => {
+void test('CLI decide sends a TypeSafe System One request and prints structured answers', async (t) => {
   const requests = [];
   const server = http.createServer(async (req, res) => {
     let body = '';
@@ -497,7 +497,7 @@ test('CLI decide sends a TypeSafe System One request and prints structured answe
   assert.deepEqual(requests[0].body.state, { goal: 'ship' });
 });
 
-test('CLI accepts gpt as an OpenAI-compatible provider alias', async (t) => {
+void test('CLI accepts gpt as an OpenAI-compatible provider alias', async (t) => {
   const requests = [];
   const server = http.createServer(async (req, res) => {
     let body = '';
@@ -520,7 +520,7 @@ test('CLI accepts gpt as an OpenAI-compatible provider alias', async (t) => {
   assert.equal(requests[0].model, 'fixture-gpt');
 });
 
-test('CLI parses Anthropic message responses', async (t) => {
+void test('CLI parses Anthropic message responses', async (t) => {
   const server = http.createServer((req, res) => {
     assert.equal(req.url, '/v1/messages');
     assert.equal(req.headers['x-api-key'], 'fixture-key');
@@ -540,7 +540,7 @@ test('CLI parses Anthropic message responses', async (t) => {
   assert.equal(result.stdout, 'claude answer\n');
 });
 
-test('CLI emits streaming SSE chunks as they arrive', async (t) => {
+void test('CLI emits streaming SSE chunks as they arrive', async (t) => {
   const server = http.createServer(async (_req, res) => {
     res.writeHead(200, { 'content-type': 'text/event-stream' });
     res.write('data: {"choices":[{"delta":{"content":"one "}}]}\n\n');
@@ -560,7 +560,7 @@ test('CLI emits streaming SSE chunks as they arrive', async (t) => {
   assert.equal(result.stdout, 'one two\n');
 });
 
-test('CLI events follows the workbench task stream and supports cursor recovery', async (t) => {
+void test('CLI events follows the workbench task stream and supports cursor recovery', async (t) => {
   const requests = [];
   const server = http.createServer(async (req, res) => {
     requests.push(req.url);
@@ -608,7 +608,7 @@ test('CLI events follows the workbench task stream and supports cursor recovery'
   );
 });
 
-test('CLI events can follow a team activity stream with cursor recovery', async (t) => {
+void test('CLI events can follow a team activity stream with cursor recovery', async (t) => {
   const requests = [];
   const server = http.createServer(async (req, res) => {
     requests.push(req.url);
@@ -660,7 +660,7 @@ test('CLI events can follow a team activity stream with cursor recovery', async 
   );
 });
 
-test('CLI rpc exposes stable JSONL events and switches models between turns', async (t) => {
+void test('CLI rpc exposes stable JSONL events and switches models between turns', async (t) => {
   const requests = [];
   const server = http.createServer(async (req, res) => {
     let body = '';
@@ -727,7 +727,7 @@ test('CLI rpc exposes stable JSONL events and switches models between turns', as
   assert.match(session, /second/);
 });
 
-test('CLI rpc aborts the active turn without writing a false response', async (t) => {
+void test('CLI rpc aborts the active turn without writing a false response', async (t) => {
   const server = http.createServer(async (_req, res) => {
     res.writeHead(200, { 'content-type': 'text/event-stream' });
     await new Promise((resolve) => setTimeout(resolve, 250));
@@ -765,7 +765,7 @@ test('CLI rpc aborts the active turn without writing a false response', async (t
   assert.equal(session.includes('"type":"response"'), false);
 });
 
-test('CLI persists JSONL sessions and continues the latest turns', async (t) => {
+void test('CLI persists JSONL sessions and continues the latest turns', async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cli-session-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const requests = [];
@@ -827,7 +827,7 @@ test('CLI persists JSONL sessions and continues the latest turns', async (t) => 
   assert.equal(lines[0].provider, 'gemini');
 });
 
-test('CLI JSON event includes a session id and session logs redact the API key', async (t) => {
+void test('CLI JSON event includes a session id and session logs redact the API key', async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cli-json-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const server = http.createServer((_req, res) => {

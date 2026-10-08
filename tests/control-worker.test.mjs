@@ -9,7 +9,7 @@ import {
 } from '../server/node-client.mjs';
 import { setup } from './helpers/control-helpers.mjs';
 
-test('worker rejects insecure remote control, resolves local workspace mapping and retains rejected results', async (t) => {
+void test('worker rejects insecure remote control, resolves local workspace mapping and retains rejected results', async (t) => {
   const { directory, workspace } = setup(t);
   assert.throws(() => validateControlUrl('http://example.com'), /HTTPS/);
   assert.throws(
@@ -60,7 +60,7 @@ test('worker rejects insecure remote control, resolves local workspace mapping a
   );
 });
 
-test('worker self-stops an expired lease even without a successful controller heartbeat', async (t) => {
+void test('worker self-stops an expired lease even without a successful controller heartbeat', async (t) => {
   const { directory, workspace } = setup(t);
   let time = 10000,
     cancelled = 0;
@@ -97,7 +97,7 @@ test('worker self-stops an expired lease even without a successful controller he
   );
 });
 
-test('worker exposes offline and restored connection events while retrying the control plane', async (t) => {
+void test('worker exposes offline and restored connection events while retrying the control plane', async (t) => {
   const { directory, workspace } = setup(t);
   let attempts = 0;
   const events = [];
@@ -141,7 +141,7 @@ test('worker exposes offline and restored connection events while retrying the c
   );
 });
 
-test('HTTP and TCP monitors execute deterministically without a model', async (t) => {
+void test('HTTP and TCP monitors execute deterministically without a model', async (t) => {
   const server = http.createServer((_req, res) => res.end('ok'));
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise((resolve) => server.close(resolve)));

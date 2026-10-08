@@ -115,7 +115,7 @@ const update = (revision, extra = {}) => ({
   ...extra,
 });
 
-test('MCP exposes scoped plans, paginates team tasks and persists audited milestones', async (t) => {
+void test('MCP exposes scoped plans, paginates team tasks and persists audited milestones', async (t) => {
   const f = await fixture(t);
   assert.ok(
     (await f.client.listTools()).tools.some(
@@ -157,7 +157,7 @@ test('MCP exposes scoped plans, paginates team tasks and persists audited milest
   assert.equal(f.store.teamPlan(f.team.id).revision, 1);
 });
 
-test('only current-version owner-accepted tasks allow agent completion', async (t) => {
+void test('only current-version owner-accepted tasks allow agent completion', async (t) => {
   const f = await fixture(t);
   const child = f.task();
   data(
@@ -215,7 +215,7 @@ test('only current-version owner-accepted tasks allow agent completion', async (
   );
 });
 
-test('team plan tools reject scope forgery, foreign links and protected settings', async (t) => {
+void test('team plan tools reject scope forgery, foreign links and protected settings', async (t) => {
   const f = await fixture(t);
   const foreign = f.task(f.other.id);
   for (const args of [
@@ -239,7 +239,7 @@ test('team plan tools reject scope forgery, foreign links and protected settings
   assert.equal(f.store.records.list('team-plan-events').length, 0);
 });
 
-test('members can read but cannot write, and revoked or unconfirmed actors cannot access plans', async (t) => {
+void test('members can read but cannot write, and revoked or unconfirmed actors cannot access plans', async (t) => {
   const f = await fixture(t);
   const member = await f.connect('developer');
   assert.equal(data(await member.call('read_team_plan')).teamId, f.team.id);
@@ -262,7 +262,7 @@ test('members can read but cannot write, and revoked or unconfirmed actors canno
   );
 });
 
-test('paused plans and teams remain protected and failed writes roll back audit plus plan', async (t) => {
+void test('paused plans and teams remain protected and failed writes roll back audit plus plan', async (t) => {
   const f = await fixture(t);
   f.store.saveTeamPlan(f.team.id, { status: 'paused' });
   assert.equal(
@@ -293,7 +293,7 @@ test('paused plans and teams remain protected and failed writes roll back audit 
   );
 });
 
-test('runtime context contains a bounded real plan and omits unrelated teams', async (t) => {
+void test('runtime context contains a bounded real plan and omits unrelated teams', async (t) => {
   const f = await fixture(t);
   f.store.saveTeamPlan(f.team.id, {
     summary: '上下文中的真实目标',

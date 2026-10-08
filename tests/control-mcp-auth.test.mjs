@@ -6,7 +6,7 @@ import { AuthService } from '../server/auth.mjs';
 import { createOrchestrationServer } from '../server/orchestration-mcp.mjs';
 import { setup } from './helpers/control-helpers.mjs';
 
-test('owner auth has no public setup endpoint and sessions expire and are revoked on password change', async (t) => {
+void test('owner auth has no public setup endpoint and sessions expire and are revoked on password change', async (t) => {
   const { store, advance } = setup(t);
   let now = 10000;
   const auth = new AuthService({
@@ -64,7 +64,7 @@ test('owner auth has no public setup endpoint and sessions expire and are revoke
   assert.equal(auth.authorize(authenticated).authorized, false);
 });
 
-test('MCP tools derive sender identity from a revocable instance token', async (t) => {
+void test('MCP tools derive sender identity from a revocable instance token', async (t) => {
   const { control, store } = setup(t);
   const job = control.createJob({ role: 'assistant', prompt: 'Research' });
   const claim = control.claimLocal(store.task(job.taskId));
@@ -95,7 +95,7 @@ test('MCP tools derive sender identity from a revocable instance token', async (
   );
 });
 
-test('MCP can call the optional structured decision backend', async (t) => {
+void test('MCP can call the optional structured decision backend', async (t) => {
   const { control, store } = setup(t, {
     evaluateDecision: async (input) => ({
       model: input.model || 'jev-latest',
@@ -125,7 +125,7 @@ test('MCP can call the optional structured decision backend', async (t) => {
   assert.equal(JSON.parse(response.content[0].text).answers.urgent.noul, 0.8);
 });
 
-test('MCP capability listing is scoped to the running assistant and omits secrets', async (t) => {
+void test('MCP capability listing is scoped to the running assistant and omits secrets', async (t) => {
   const { control, store } = setup(t);
   store.records.save(
     'capabilities',
@@ -244,7 +244,7 @@ test('MCP capability listing is scoped to the running assistant and omits secret
   ]);
 });
 
-test('MCP capability commands require a bound plugin and enqueue a controlled child task', async (t) => {
+void test('MCP capability commands require a bound plugin and enqueue a controlled child task', async (t) => {
   const { control, store } = setup(t);
   store.saveRole(
     { ...store.role('assistant'), capabilityIds: ['cap-plugin'] },

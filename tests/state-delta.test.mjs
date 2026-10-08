@@ -13,7 +13,7 @@ const state = () => ({
   obsolete: true,
 });
 
-test('state deltas reproduce updates, insertion, deletion, reordering, empty collections and scalar changes without mutating the base', () => {
+void test('state deltas reproduce updates, insertion, deletion, reordering, empty collections and scalar changes without mutating the base', () => {
   const base = state();
   const original = structuredClone(base);
   const next = {
@@ -56,7 +56,7 @@ test('state deltas reproduce updates, insertion, deletion, reordering, empty col
   );
 });
 
-test('malformed or mismatched deltas are rejected atomically', () => {
+void test('malformed or mismatched deltas are rejected atomically', () => {
   const base = state();
   const original = structuredClone(base);
   const valid = createStateDelta(
@@ -124,7 +124,7 @@ function request(send, value, etag, accept = true) {
   return { headers, status, body, json: body ? JSON.parse(body) : null };
 }
 
-test('delta opt-in preserves full and 304 responses, falls back on unknown bases and isolates responder instances', () => {
+void test('delta opt-in preserves full and 304 responses, falls back on unknown bases and isolates responder instances', () => {
   const send = createStateResponder();
   const base = state();
   const initial = request(send, base);
@@ -150,7 +150,7 @@ test('delta opt-in preserves full and 304 responses, falls back on unknown bases
   assert.equal(tiny.headers['x-ggb-state-format'], undefined);
 });
 
-test('diff bases expire and are evicted by serialized byte and entry limits, while a restart needs no persisted cache', () => {
+void test('diff bases expire and are evicted by serialized byte and entry limits, while a restart needs no persisted cache', () => {
   const base = state();
   const next = { ...base, count: 1 };
   let clock = 0;

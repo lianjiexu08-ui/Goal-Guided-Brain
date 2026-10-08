@@ -8,7 +8,7 @@ import { Records, RECORDS_SCHEMA } from '../server/records.mjs';
 import { AttachmentService } from '../server/attachments.mjs';
 import { createWorkbench } from '../server/index.mjs';
 
-test('attachments retain bytes, safe metadata, and staged execution paths', () => {
+void test('attachments retain bytes, safe metadata, and staged execution paths', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-attachments-'));
   const db = new DatabaseSync(':memory:');
   db.exec(RECORDS_SCHEMA);
@@ -38,7 +38,7 @@ test('attachments retain bytes, safe metadata, and staged execution paths', () =
   }
 });
 
-test('task submission carries uploaded attachment bytes into the local runtime', async () => {
+void test('task submission carries uploaded attachment bytes into the local runtime', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-attachment-task-'));
   const workspace = path.join(dir, 'project');
   fs.mkdirSync(workspace);
@@ -100,7 +100,7 @@ test('task submission carries uploaded attachment bytes into the local runtime',
   }
 });
 
-test('HTTP attachment upload keeps binary content and task references it', async (t) => {
+void test('HTTP attachment upload keeps binary content and task references it', async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-attachment-http-'));
   const workspace = path.join(dir, 'workspace');
   const dataDir = path.join(dir, 'data');
@@ -169,7 +169,7 @@ test('HTTP attachment upload keeps binary content and task references it', async
   assert.equal(stateSpace.messages[0].content, '请查看随附文件并处理。');
 });
 
-test('team-scoped attachments cannot be referenced by another team', async () => {
+void test('team-scoped attachments cannot be referenced by another team', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-attachment-scope-'));
   const workspace = path.join(dir, 'workspace');
   fs.mkdirSync(workspace);
@@ -259,7 +259,7 @@ test('team-scoped attachments cannot be referenced by another team', async () =>
   }
 });
 
-test('retrying a stopped task rematerializes the original attachment bytes', async () => {
+void test('retrying a stopped task rematerializes the original attachment bytes', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-attachment-retry-'));
   const workspace = path.join(dir, 'workspace');
   fs.mkdirSync(workspace);

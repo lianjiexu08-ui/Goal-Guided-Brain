@@ -23,7 +23,7 @@ const waitFor = async (predicate, message) => {
   assert.fail(message);
 };
 
-test('team MCP can discover and delegate to an allowed long-lived team', async () => {
+void test('team MCP can discover and delegate to an allowed long-lived team', async () => {
   const fixture = sandbox();
   const runs = [];
   const app = createWorkbench({

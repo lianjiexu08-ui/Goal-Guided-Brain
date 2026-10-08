@@ -106,7 +106,7 @@ async function fixture(t) {
   return { app, store, control, source, target, caller, snapshot };
 }
 
-test('MCP scopes identical keys to the source task and creates independent target sessions and groups', async (t) => {
+void test('MCP scopes identical keys to the source task and creates independent target sessions and groups', async (t) => {
   const { store, target, caller } = await fixture(t);
   const first = await caller();
   const second = await caller();
@@ -145,7 +145,7 @@ test('MCP scopes identical keys to the source task and creates independent targe
   );
 });
 
-test('MCP late write failure rolls back the entire delegation and emits no success; replay creates one job', async (t) => {
+void test('MCP late write failure rolls back the entire delegation and emits no success; replay creates one job', async (t) => {
   const { app, store, target, caller, snapshot } = await fixture(t);
   const origin = await caller();
   const before = snapshot();
@@ -176,7 +176,7 @@ test('MCP late write failure rolls back the entire delegation and emits no succe
   assert.equal(messages[0].taskId, accepted.taskId);
 });
 
-test('MCP repairs a legacy blocked message with a persisted task instead of creating another task', async (t) => {
+void test('MCP repairs a legacy blocked message with a persisted task instead of creating another task', async (t) => {
   const { app, store, source, target, caller } = await fixture(t);
   const origin = await caller();
   const legacyId = `handoff:${source.id}:${target.id}:same-key`;
@@ -215,7 +215,7 @@ test('MCP repairs a legacy blocked message with a persisted task instead of crea
   assert.equal(store.records.get('space-messages', legacyId).taskId, child.id);
 });
 
-test('MCP counts active capacity rather than lifetime jobs and leaves no handoff when capacity is exhausted', async (t) => {
+void test('MCP counts active capacity rather than lifetime jobs and leaves no handoff when capacity is exhausted', async (t) => {
   const { store, target, caller, snapshot } = await fixture(t);
   const origin = await caller();
   store.saveTeamSpace(
@@ -234,7 +234,7 @@ test('MCP counts active capacity rather than lifetime jobs and leaves no handoff
   assert.equal((await origin.invoke()).taskId, accepted.taskId);
 });
 
-test('MCP delegation retains whitelist, auto-handoff, recruitment, team pause and lease revocation boundaries', async (t) => {
+void test('MCP delegation retains whitelist, auto-handoff, recruitment, team pause and lease revocation boundaries', async (t) => {
   const { store, control, source, target, caller, snapshot } = await fixture(t);
   const origin = await caller();
   const before = snapshot();
@@ -286,7 +286,7 @@ test('MCP delegation retains whitelist, auto-handoff, recruitment, team pause an
   assert.deepEqual(snapshot(), before);
 });
 
-test('authenticated MCP follow-up reads original team context and preserves idempotent task isolation', async (t) => {
+void test('authenticated MCP follow-up reads original team context and preserves idempotent task isolation', async (t) => {
   const { store, caller } = await fixture(t);
   const origin = await caller();
   const first = await origin.invoke();

@@ -47,7 +47,7 @@ function fixture() {
   };
 }
 
-test('bundle inspection distinguishes unsupported hooks, LSP and OpenClaw dependencies', () => {
+void test('bundle inspection distinguishes unsupported hooks, LSP and OpenClaw dependencies', () => {
   const f = fixture();
   try {
     f.write(
@@ -99,7 +99,7 @@ test('bundle inspection distinguishes unsupported hooks, LSP and OpenClaw depend
   }
 });
 
-test('bundle inspection rejects malformed manifests, YAML and hook shapes', () => {
+void test('bundle inspection rejects malformed manifests, YAML and hook shapes', () => {
   const f = fixture();
   try {
     f.write('.codex-plugin/plugin.json', '{not-json');
@@ -129,7 +129,7 @@ test('bundle inspection rejects malformed manifests, YAML and hook shapes', () =
   }
 });
 
-test('local capability install pins exact skill version and rollback, detects tampering', async () => {
+void test('local capability install pins exact skill version and rollback, detects tampering', async () => {
   const f = fixture();
   try {
     f.write('SKILL.md', skill(1));
@@ -182,7 +182,7 @@ test('local capability install pins exact skill version and rollback, detects ta
   }
 });
 
-test('capability install refuses path traversal, symlinks and inline credentials', async () => {
+void test('capability install refuses path traversal, symlinks and inline credentials', async () => {
   const f = fixture();
   try {
     f.write('SKILL.md', skill(1));
@@ -213,7 +213,7 @@ test('capability install refuses path traversal, symlinks and inline credentials
   }
 });
 
-test('MCP metadata uses credential references and runtime namespaces fit native limits', () => {
+void test('MCP metadata uses credential references and runtime namespaces fit native limits', () => {
   const f = fixture();
   try {
     const mcp = f.service.save({
@@ -259,7 +259,7 @@ test('MCP metadata uses credential references and runtime namespaces fit native 
   }
 });
 
-test('capability risk summaries distinguish read-only connectors from executable integrations', () => {
+void test('capability risk summaries distinguish read-only connectors from executable integrations', () => {
   const skill = assessCapabilityRisk({ kind: 'skill', diagnostics: [] });
   assert.equal(skill.level, 'low');
   assert.equal(skill.requiresReview, false);
@@ -310,7 +310,7 @@ test('capability risk summaries distinguish read-only connectors from executable
   assert.equal(hookedPlugin.signals.hasCommands, true);
 });
 
-test('bounded downloads reject oversized local fixture responses', async () => {
+void test('bounded downloads reject oversized local fixture responses', async () => {
   const server = http.createServer((_req, res) => {
     res.writeHead(200);
     res.end('x'.repeat(4096));

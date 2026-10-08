@@ -98,7 +98,7 @@ async function fixture(t) {
   };
 }
 
-test('completion requires actual current owner acceptance and stale evidence invalidates the closure', async (t) => {
+void test('completion requires actual current owner acceptance and stale evidence invalidates the closure', async (t) => {
   const { store, source, target, sent, endpoint, request, settle, decision } =
     await fixture(t);
   const task = settle();
@@ -144,7 +144,7 @@ test('completion requires actual current owner acceptance and stale evidence inv
   assert.equal((await decision('complete')).response.status, 409);
 });
 
-test('ending follow-up retains failed delivery and reopening restores follow-up without rerunning tasks', async (t) => {
+void test('ending follow-up retains failed delivery and reopening restores follow-up without rerunning tasks', async (t) => {
   const {
     store,
     source,
@@ -185,7 +185,7 @@ test('ending follow-up retains failed delivery and reopening restores follow-up 
   assert.equal((await request(endpoint)).body.history.length, 3);
 });
 
-test('concurrent decisions reject stale revision and lost receipts retry without duplicate audit entries', async (t) => {
+void test('concurrent decisions reject stale revision and lost receipts retry without duplicate audit entries', async (t) => {
   const { store, endpoint, request, settle, decision } = await fixture(t);
   settle('cancelled');
   const snapshot = (await request(endpoint)).body;
@@ -210,7 +210,7 @@ test('concurrent decisions reject stale revision and lost receipts retry without
   );
 });
 
-test('late audit failure rolls back closure and publishes no team success; retry commits both team refreshes', async (t) => {
+void test('late audit failure rolls back closure and publishes no team success; retry commits both team refreshes', async (t) => {
   const { app, store, source, target, endpoint, request, settle, decision } =
     await fixture(t);
   settle('cancelled');
@@ -237,7 +237,7 @@ test('late audit failure rolls back closure and publishes no team success; retry
   );
 });
 
-test('review is source-owner scoped and cannot end running, unknown or paused-team work', async (t) => {
+void test('review is source-owner scoped and cannot end running, unknown or paused-team work', async (t) => {
   const {
     app,
     store,

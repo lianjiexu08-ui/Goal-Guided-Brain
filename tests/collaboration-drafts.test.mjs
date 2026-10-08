@@ -71,7 +71,7 @@ async function fixture(t) {
   return { app, store, source, target, request, endpoint, value, save, send };
 }
 
-test('collaboration drafts are versioned per source and stale offline writes cannot resurrect cleared data', async (t) => {
+void test('collaboration drafts are versioned per source and stale offline writes cannot resurrect cleared data', async (t) => {
   const { endpoint, value, save, request, target } = await fixture(t);
   assert.equal((await request(endpoint)).body.revision, 0);
   assert.equal((await save(value, 0)).body.revision, 1);
@@ -100,7 +100,7 @@ test('collaboration drafts are versioned per source and stale offline writes can
   assert.equal((await request(endpoint)).body.revision, 2);
 });
 
-test('handoff creation consumes only the reviewed pending version atomically and replay preserves a newer draft', async (t) => {
+void test('handoff creation consumes only the reviewed pending version atomically and replay preserves a newer draft', async (t) => {
   const { store, endpoint, value, save, send, request } = await fixture(t);
   const pending = { ...value, clientMessageId: 'pending-one' };
   await save(pending, 0);
@@ -137,7 +137,7 @@ test('handoff creation consumes only the reviewed pending version atomically and
   assert.equal(store.tasks().length, before + 1);
 });
 
-test('review draft is scoped to the source request; stale draft prevents a decision and atomic consumption preserves replay', async (t) => {
+void test('review draft is scoped to the source request; stale draft prevents a decision and atomic consumption preserves replay', async (t) => {
   const { store, source, target, request, send, save } = await fixture(t);
   const sent = (await send()).body;
   store.updateTask(sent.taskId, { status: 'cancelled' });
@@ -200,7 +200,7 @@ test('review draft is scoped to the source request; stale draft prevents a decis
   assert.deepEqual((await request(draftPath)).body.value, newer);
 });
 
-test('draft payload cannot change after review and instance authentication cannot read owner drafts', async (t) => {
+void test('draft payload cannot change after review and instance authentication cannot read owner drafts', async (t) => {
   const { app, store, source, endpoint, value, save, send, request } =
     await fixture(t);
   await save({ ...value, clientMessageId: 'pending-one' }, 0);

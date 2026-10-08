@@ -32,7 +32,7 @@ function fixture(t, format = 'claude') {
   return { dir, source, store, service, write };
 }
 
-test('Claude commands expand quoted arguments once and preserve original permission boundaries', async (t) => {
+void test('Claude commands expand quoted arguments once and preserve original permission boundaries', async (t) => {
   const f = fixture(t);
   f.write(
     'commands/review.md',
@@ -60,7 +60,7 @@ test('Claude commands expand quoted arguments once and preserve original permiss
   );
 });
 
-test('host shell preprocessing and fork commands are identified without executing them', async (t) => {
+void test('host shell preprocessing and fork commands are identified without executing them', async (t) => {
   const f = fixture(t);
   f.write(
     'commands/shell.md',
@@ -81,7 +81,7 @@ test('host shell preprocessing and fork commands are identified without executin
   }
 });
 
-test('agent template imports are idempotent and preserve model and tool hints without implicit privilege', async (t) => {
+void test('agent template imports are idempotent and preserve model and tool hints without implicit privilege', async (t) => {
   const f = fixture(t);
   f.write(
     'agents/reviewer.md',
@@ -103,7 +103,7 @@ test('agent template imports are idempotent and preserve model and tool hints wi
   assert.equal(f.store.records.list('capability-imports').length, 1);
 });
 
-test('portable OpenAI plugin discovers MCP and commands are explicitly workbench imports', async (t) => {
+void test('portable OpenAI plugin discovers MCP and commands are explicitly workbench imports', async (t) => {
   const f = fixture(t, 'portable');
   f.write(
     'mcp.json',
@@ -134,7 +134,7 @@ test('portable OpenAI plugin discovers MCP and commands are explicitly workbench
   assert.equal(f.service.importMcp(installed.id, entry.id).id, connection.id);
 });
 
-test('plugin MCP imports resolve plugin root and preserve only independently configured credential references', async (t) => {
+void test('plugin MCP imports resolve plugin root and preserve only independently configured credential references', async (t) => {
   const f = fixture(t, 'codex');
   f.write(
     '.mcp.json',
@@ -166,7 +166,7 @@ test('plugin MCP imports resolve plugin root and preserve only independently con
   );
 });
 
-test('inline MCP credentials are rejected before any installed bundle is persisted', async (t) => {
+void test('inline MCP credentials are rejected before any installed bundle is persisted', async (t) => {
   const f = fixture(t);
   for (const server of [
     { command: 'node', env: { TOKEN: 'private-inline-value' } },
@@ -184,7 +184,7 @@ test('inline MCP credentials are rejected before any installed bundle is persist
   }
 });
 
-test('custom manifest component paths cannot escape a pinned bundle', async (t) => {
+void test('custom manifest component paths cannot escape a pinned bundle', async (t) => {
   const f = fixture(t);
   f.write(
     '.claude-plugin/plugin.json',
@@ -193,7 +193,7 @@ test('custom manifest component paths cannot escape a pinned bundle', async (t) 
   assert.throws(() => inspectBundle(f.source), /越界/);
 });
 
-test('explicit unsupported portable hooks never fall back to a different default hook file', (t) => {
+void test('explicit unsupported portable hooks never fall back to a different default hook file', (t) => {
   const f = fixture(t, 'portable');
   f.write(
     'plugin.json',

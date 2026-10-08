@@ -23,7 +23,7 @@ async function fixture(t) {
   return app;
 }
 
-test('state reads each shared collection once as teams and task history grow', async (t) => {
+void test('state reads each shared collection once as teams and task history grow', async (t) => {
   const app = await fixture(t);
   const seeded = seedStateLoad(app.store, { teams: 8, tasksPerTeam: 12 });
   let scans = {};
@@ -90,7 +90,7 @@ test('state reads each shared collection once as teams and task history grow', a
   verify(186);
 });
 
-test('HTTP state immediately reflects acceptance, requirements and deletion from another SQLite connection', async (t) => {
+void test('HTTP state immediately reflects acceptance, requirements and deletion from another SQLite connection', async (t) => {
   const app = await fixture(t);
   const { spaces, tasks } = seedStateLoad(app.store, {
     teams: 2,
@@ -185,7 +185,7 @@ test('HTTP state immediately reflects acceptance, requirements and deletion from
   }
 });
 
-test('indexed timelines preserve team boundaries and paginate equal timestamps without gaps', async (t) => {
+void test('indexed timelines preserve team boundaries and paginate equal timestamps without gaps', async (t) => {
   const app = await fixture(t);
   const { spaces, tasks } = seedStateLoad(app.store, {
     teams: 2,

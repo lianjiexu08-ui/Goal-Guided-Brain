@@ -14,7 +14,7 @@ function directory(t) {
 }
 const discover = () => '';
 
-test('execution inspection reads existing directories without creating files, running engines or resolving relative paths', async (t) => {
+void test('execution inspection reads existing directories without creating files, running engines or resolving relative paths', async (t) => {
   const root = directory(t);
   const executable = path.join(root, 'engine');
   fs.writeFileSync(executable, '#!/bin/sh\ntouch should-not-run\n', {
@@ -55,7 +55,7 @@ test('execution inspection reads existing directories without creating files, ru
   await assert.rejects(inspectLocalExecution('a'.repeat(2001)), /2000/);
 });
 
-test('execution inspection distinguishes unreadable, read-only and inaccessible volumes', async () => {
+void test('execution inspection distinguishes unreadable, read-only and inaccessible volumes', async () => {
   for (const [code, message] of [
     ['EACCES', '目录权限'],
     ['ENOTDIR', '目录不存在'],
@@ -86,7 +86,7 @@ test('execution inspection distinguishes unreadable, read-only and inaccessible 
   assert.match(report.checks[0].detail, /没有写入权限/);
 });
 
-test('runtime discovery rejects searchable directories and accepts regular executables and file symlinks', (t) => {
+void test('runtime discovery rejects searchable directories and accepts regular executables and file symlinks', (t) => {
   const root = directory(t);
   const options = { homeDir: root, pathValue: '', configured: root };
   assert.equal(findDsh(options), '');
@@ -105,7 +105,7 @@ test('runtime discovery rejects searchable directories and accepts regular execu
   }
 });
 
-test('execution check HTTP requires owner access, validates requests and leaves configuration and tasks unchanged', async (t) => {
+void test('execution check HTTP requires owner access, validates requests and leaves configuration and tasks unchanged', async (t) => {
   const root = directory(t);
   let runs = 0;
   const app = createWorkbench({

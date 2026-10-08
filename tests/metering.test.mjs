@@ -48,7 +48,7 @@ function fixture(modelSpec = { inputPrice: 2, outputPrice: 4 }) {
   return { db, records, record, step };
 }
 
-test(
+void test(
   'native token meter includes cache inputs and replaces partial totals without duplicate billing',
   { skip: !findDsh() },
   async () => {
@@ -127,7 +127,7 @@ test(
   },
 );
 
-test(
+void test(
   'unknown prices remain null and incomplete lifecycle cannot invent usage',
   { skip: !findDsh() },
   async () => {

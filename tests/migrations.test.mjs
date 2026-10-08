@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { migrate } from '../server/migrations.mjs';
 
 for (const failing of [false, true])
-  test(`legacy WAL data survives ${failing ? 'failed' : 'successful'} migration with a consistent backup`, (t) => {
+  void test(`legacy WAL data survives ${failing ? 'failed' : 'successful'} migration with a consistent backup`, (t) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-migration-'));
     const db = new DatabaseSync(path.join(dir, 'workspace.sqlite'));
     t.after(() => {

@@ -12,7 +12,7 @@ import {
 } from '../server/runtime.mjs';
 import { ROLES } from '../server/store.mjs';
 
-test('runtime discovery includes npm Windows shims and platform-aware termination uses taskkill', () => {
+void test('runtime discovery includes npm Windows shims and platform-aware termination uses taskkill', () => {
   const candidates = dshCandidates({
     platform: 'win32',
     homeDir: 'C:\\Users\\fixture',
@@ -57,7 +57,7 @@ test('runtime discovery includes npm Windows shims and platform-aware terminatio
   ]);
 });
 
-test(
+void test(
   'configured execution duration terminates a stalled native runtime',
   { timeout: 10000, skip: !findDsh() },
   async () => {
@@ -113,7 +113,7 @@ test(
   },
 );
 
-test(
+void test(
   'cancellation reports completion exactly once after process exit',
   { timeout: 60000, skip: !findDsh() },
   async () => {
@@ -177,7 +177,7 @@ for (const protocol of [
   'openai-responses',
   'anthropic-messages',
 ])
-  test(
+  void test(
     `native DSH ${protocol} route authenticates and executes a tool`,
     { timeout: 60000, skip: !findDsh() },
     async () => {
@@ -508,7 +508,7 @@ for (const protocol of [
   );
 
 for (const role of ['product', 'developer', 'custom', 'no-tools'])
-  test(
+  void test(
     `real DSH ${role} runtime executes its tool with a local model fixture`,
     { timeout: 60000, skip: !findDsh() },
     async () => {

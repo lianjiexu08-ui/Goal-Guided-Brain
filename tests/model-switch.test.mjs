@@ -13,7 +13,7 @@ const waitFor = async (predicate) => {
   throw new Error('模型切换任务未启动。');
 };
 
-test('an explicit provider and model are used for a task, including text-only mode', async () => {
+void test('an explicit provider and model are used for a task, including text-only mode', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-model-switch-'));
   const runs = [];
   const app = createWorkbench({
@@ -68,7 +68,7 @@ test('an explicit provider and model are used for a task, including text-only mo
   }
 });
 
-test('team Chat persists its model choice and sends it to the project manager', async () => {
+void test('team Chat persists its model choice and sends it to the project manager', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-team-model-'));
   const runs = [];
   const app = createWorkbench({
@@ -140,7 +140,7 @@ test('team Chat persists its model choice and sends it to the project manager', 
   }
 });
 
-test('team member conversations retain team context and member model bindings', async () => {
+void test('team member conversations retain team context and member model bindings', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-member-model-'));
   const runs = [];
   const app = createWorkbench({

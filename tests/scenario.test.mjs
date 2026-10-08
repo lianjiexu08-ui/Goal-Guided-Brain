@@ -30,7 +30,7 @@ async function call(client, name, args = {}) {
   return JSON.parse(result.content[0].text);
 }
 
-test(
+void test(
   'parent delegates isolated frontend/backend work, resumes another model and reviews a tested integration',
   { timeout: 30000 },
   async (t) => {

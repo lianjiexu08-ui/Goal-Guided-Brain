@@ -13,7 +13,7 @@ const sandbox = () => {
   return { dir, workspace, dataDir: path.join(dir, 'data') };
 };
 
-test('overdue team plans create one deduplicated attention and resolve after rescheduling', async () => {
+void test('overdue team plans create one deduplicated attention and resolve after rescheduling', async () => {
   const fixture = sandbox();
   const app = createWorkbench({
     ...fixture,

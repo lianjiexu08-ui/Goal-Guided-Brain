@@ -17,7 +17,7 @@ import { stringify } from 'yaml';
 import { validateRole } from '../server/roles.mjs';
 import { ROLES } from '../server/store.mjs';
 
-test('vault encrypts credentials and restores with correct passphrase only', async () => {
+void test('vault encrypts credentials and restores with correct passphrase only', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-vault-'));
   const vault = new Vault(dir);
   try {
@@ -52,7 +52,7 @@ test('vault encrypts credentials and restores with correct passphrase only', asy
   }
 });
 
-test('provider probes speak three protocols, retry transient failures and disable rejected credentials', async () => {
+void test('provider probes speak three protocols, retry transient failures and disable rejected credentials', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-provider-'));
   const db = new DatabaseSync(':memory:');
   db.exec(RECORDS_SCHEMA);
@@ -213,7 +213,7 @@ test('provider probes speak three protocols, retry transient failures and disabl
   }
 });
 
-test('TypeSafe decision provider stays out of text routing and returns typed decisions', async (t) => {
+void test('TypeSafe decision provider stays out of text routing and returns typed decisions', async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-typesafe-'));
   const db = new DatabaseSync(':memory:');
   db.exec(RECORDS_SCHEMA);
@@ -287,7 +287,7 @@ test('TypeSafe decision provider stays out of text routing and returns typed dec
   );
 });
 
-test('automatic routing prefers healthy providers and keeps health evidence credential-free', () => {
+void test('automatic routing prefers healthy providers and keeps health evidence credential-free', () => {
   const db = new DatabaseSync(':memory:');
   db.exec(RECORDS_SCHEMA);
   const service = new ProviderService({
@@ -355,7 +355,7 @@ test('automatic routing prefers healthy providers and keeps health evidence cred
   db.close();
 });
 
-test('provider model sync uses the remote catalog and removes unsupported modalities', async (t) => {
+void test('provider model sync uses the remote catalog and removes unsupported modalities', async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-provider-sync-'));
   const db = new DatabaseSync(':memory:');
   db.exec(RECORDS_SCHEMA);
@@ -411,7 +411,7 @@ test('provider model sync uses the remote catalog and removes unsupported modali
   assert.equal(synced.provider.credentialId, credential.id);
 });
 
-test('runtime isolates environment and merges installed skill directories', () => {
+void test('runtime isolates environment and merges installed skill directories', () => {
   process.env.WORKBENCH_TEST_RELEASE_TOKEN = 'do-not-inherit';
   try {
     assert.equal(childEnvironment().WORKBENCH_TEST_RELEASE_TOKEN, undefined);

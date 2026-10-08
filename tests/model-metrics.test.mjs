@@ -149,7 +149,7 @@ function saveQualityOnlyTask(
   return task;
 }
 
-test('model metrics aggregate retries by attempt and logical task, preserve unknown cost, and support filters', async (t) => {
+void test('model metrics aggregate retries by attempt and logical task, preserve unknown cost, and support filters', async (t) => {
   const { app, request } = await fixture(t);
   const alpha = app.platform.providers.save({
     id: 'metrics-provider-alpha',
@@ -564,7 +564,7 @@ test('model metrics aggregate retries by attempt and logical task, preserve unkn
   assert.equal(developmentAlias.body.filters.taskType, 'development');
 });
 
-test('model metrics evidence trend follows date and filters', async (t) => {
+void test('model metrics evidence trend follows date and filters', async (t) => {
   const { app, request } = await fixture(t);
   const team = app.store.saveTeamSpace({
     id: 'trend-team',
@@ -612,7 +612,7 @@ test('model metrics evidence trend follows date and filters', async (t) => {
   ]);
 });
 
-test('task types persist on jobs, task metadata, and child tasks', async (t) => {
+void test('task types persist on jobs, task metadata, and child tasks', async (t) => {
   const { app, request } = await fixture(t);
   const parent = app.platform.control.createJob({
     role: 'developer',
@@ -646,7 +646,7 @@ test('task types persist on jobs, task metadata, and child tasks', async (t) => 
   );
 });
 
-test('model metrics reject an invalid time window', async (t) => {
+void test('model metrics reject an invalid time window', async (t) => {
   const { request } = await fixture(t);
   const result = await request('metrics/models?since=not-a-date');
   assert.equal(result.status, 400);

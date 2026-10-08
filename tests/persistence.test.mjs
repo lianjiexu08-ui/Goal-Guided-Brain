@@ -27,7 +27,7 @@ function fixture() {
   };
 }
 
-test('old schema migration makes a consistent backup and preserves user records', () => {
+void test('old schema migration makes a consistent backup and preserves user records', () => {
   const f = fixture();
   try {
     const task = f.store.createTask({
@@ -62,7 +62,7 @@ test('old schema migration makes a consistent backup and preserves user records'
   }
 });
 
-test('control lock refuses duplicate owners and pending restores', () => {
+void test('control lock refuses duplicate owners and pending restores', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-lock-'));
   try {
     const release = lockControl(dir);
@@ -77,7 +77,7 @@ test('control lock refuses duplicate owners and pending restores', () => {
   }
 });
 
-test('restore preserves legacy vault without companion and backs up current database', async () => {
+void test('restore preserves legacy vault without companion and backs up current database', async () => {
   const f = fixture();
   const vault = new Vault(f.dataDir);
   try {
@@ -152,7 +152,7 @@ test('restore preserves legacy vault without companion and backs up current data
   }
 });
 
-test('restore rejects live control, invalid databases and malformed vault before replacement', () => {
+void test('restore rejects live control, invalid databases and malformed vault before replacement', () => {
   const f = fixture();
   try {
     const backup = backupDatabase(f.store.db, f.dataDir, 'valid');
@@ -193,7 +193,7 @@ test('restore rejects live control, invalid databases and malformed vault before
   }
 });
 
-test('encrypted companion restores and failed replacement rolls both files back', async () => {
+void test('encrypted companion restores and failed replacement rolls both files back', async () => {
   const f = fixture();
   const vault = new Vault(f.dataDir);
   try {

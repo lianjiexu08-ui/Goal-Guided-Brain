@@ -87,7 +87,7 @@ async function fixture() {
   };
 }
 
-test('team member tasks use the team directory; history retains its directory and cannot cross teams', async () => {
+void test('team member tasks use the team directory; history retains its directory and cannot cross teams', async () => {
   const f = await fixture();
   try {
     const alpha = f.team(f.roots.alpha);
@@ -133,7 +133,7 @@ test('team member tasks use the team directory; history retains its directory an
   }
 });
 
-test('PM messages start a new session after directory changes and isolated execution copies the correct project', async () => {
+void test('PM messages start a new session after directory changes and isolated execution copies the correct project', async () => {
   const f = await fixture();
   try {
     const team = f.team(f.roots.alpha, 'isolated');

@@ -33,7 +33,7 @@ async function fixture(t) {
   return { app, get };
 }
 
-test('workbench projection defers team activity without losing tasks, counts or metadata, and skips activity collection reads', async (t) => {
+void test('workbench projection defers team activity without losing tasks, counts or metadata, and skips activity collection reads', async (t) => {
   const { app, get } = await fixture(t);
   seedStateLoad(app.store, { teams: 4, tasksPerTeam: 10 });
   const complete = app.getState();
@@ -76,7 +76,7 @@ test('workbench projection defers team activity without losing tasks, counts or 
   );
 });
 
-test('team timeline filters before pagination and returns every matching record once across cursors', async (t) => {
+void test('team timeline filters before pagination and returns every matching record once across cursors', async (t) => {
   const { app, get } = await fixture(t);
   const { spaces, tasks } = seedStateLoad(app.store, {
     teams: 2,

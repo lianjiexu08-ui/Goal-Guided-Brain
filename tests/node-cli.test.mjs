@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 
 const script = path.resolve('scripts/node.mjs');
 
-test('node CLI can bootstrap a portable config from direct flags without exposing identity data', () => {
+void test('node CLI can bootstrap a portable config from direct flags without exposing identity data', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-node-cli-'));
   const workspace = path.join(directory, 'project');
   fs.mkdirSync(workspace);
@@ -44,7 +44,7 @@ test('node CLI can bootstrap a portable config from direct flags without exposin
   }
 });
 
-test('node CLI rejects incomplete or unsafe bootstrap flags', () => {
+void test('node CLI rejects incomplete or unsafe bootstrap flags', () => {
   const missing = spawnSync(
     process.execPath,
     [script, '--control-url', 'https://workbench.example.test'],

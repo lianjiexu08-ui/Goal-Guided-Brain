@@ -34,14 +34,14 @@ async function fixture(t) {
   return { app, request, url, dataDir, workspace };
 }
 
-test('health endpoint supports HEAD probes without a response body', async (t) => {
+void test('health endpoint supports HEAD probes without a response body', async (t) => {
   const { request } = await fixture(t);
   const response = await request('health', undefined, 'HEAD');
   assert.equal(response.status, 200);
   assert.equal(response.body, null);
 });
 
-test('task events expose an oldest-first incremental cursor', async (t) => {
+void test('task events expose an oldest-first incremental cursor', async (t) => {
   const { app, request } = await fixture(t);
   const task = app.store.createTask({
     role: 'developer',
@@ -85,7 +85,7 @@ test('task events expose an oldest-first incremental cursor', async (t) => {
   assert.equal((await request('tasks/missing-task/events/stream')).status, 404);
 });
 
-test('task event stream replays from a cursor and pushes later events', async (t) => {
+void test('task event stream replays from a cursor and pushes later events', async (t) => {
   const { app, url } = await fixture(t);
   const task = app.store.createTask({
     role: 'developer',
@@ -155,7 +155,7 @@ test('task event stream replays from a cursor and pushes later events', async (t
   resumed.response.destroy();
 });
 
-test('team event stream replays activity and pushes later messages', async (t) => {
+void test('team event stream replays activity and pushes later messages', async (t) => {
   const { app, request, url, workspace } = await fixture(t);
   const team = (
     await request('spaces', {
@@ -286,7 +286,7 @@ test('team event stream replays activity and pushes later messages', async (t) =
   );
 });
 
-test('completed jobs can be archived and restored without losing history', async (t) => {
+void test('completed jobs can be archived and restored without losing history', async (t) => {
   const { app, request } = await fixture(t);
   const job = app.store.records.save(
     'jobs',
@@ -322,7 +322,7 @@ test('completed jobs can be archived and restored without losing history', async
   assert.equal(restored.body.title, '可归档任务');
 });
 
-test('TypeSafe-only configuration does not masquerade as a chat model', async (t) => {
+void test('TypeSafe-only configuration does not masquerade as a chat model', async (t) => {
   const { app, request } = await fixture(t);
   app.platform.providers.save({
     name: 'TypeSafe decisions',
@@ -340,7 +340,7 @@ test('TypeSafe-only configuration does not masquerade as a chat model', async (t
   assert.equal((await request('state')).body.config.hasApiKey, true);
 });
 
-test('management API synchronizes a provider catalog without exposing its credential', async (t) => {
+void test('management API synchronizes a provider catalog without exposing its credential', async (t) => {
   const { app, request, dataDir } = await fixture(t);
   let authorization = '';
   const remote = http.createServer((req, res) => {
@@ -390,7 +390,7 @@ test('management API synchronizes a provider catalog without exposing its creden
   assert.equal(JSON.stringify(synced.body).includes('catalog-secret'), false);
 });
 
-test('legacy key migration preserves the old file until encrypted storage succeeds and wires the provider', async (t) => {
+void test('legacy key migration preserves the old file until encrypted storage succeeds and wires the provider', async (t) => {
   const { app, request, dataDir } = await fixture(t);
   const filename = path.join(dataDir, 'secrets.json'),
     secret = 'fixture-old-private-token';
@@ -431,7 +431,7 @@ test('legacy key migration preserves the old file until encrypted storage succee
   );
 });
 
-test('custom skill details preserve frontmatter and keep previous pinned versions on edit', async (t) => {
+void test('custom skill details preserve frontmatter and keep previous pinned versions on edit', async (t) => {
   const { app, request } = await fixture(t);
   const content =
     '---\nname: fixture-skill\ndescription: Deterministic fixture\n---\n\nOriginal instructions';
@@ -461,7 +461,7 @@ test('custom skill details preserve frontmatter and keep previous pinned version
   assert.equal(current.enabled, false);
 });
 
-test('management capability records expose assistant and team bindings', async (t) => {
+void test('management capability records expose assistant and team bindings', async (t) => {
   const { app, request, workspace } = await fixture(t);
   const created = await request('capabilities', {
     kind: 'skill',
@@ -524,7 +524,7 @@ test('management capability records expose assistant and team bindings', async (
   assert.equal(capability.boundTeamCount, 1);
 });
 
-test('team lifecycle archives and restores history while blocking active work', async (t) => {
+void test('team lifecycle archives and restores history while blocking active work', async (t) => {
   const { app, request, workspace } = await fixture(t);
   const created = await request('teams', {
     name: '生命周期团队',
@@ -574,7 +574,7 @@ test('team lifecycle archives and restores history while blocking active work', 
   assert.equal(restoredAgain.body.status, 'active');
 });
 
-test('high-risk capability binding and enablement require explicit owner confirmation and leave an audit trail', async (t) => {
+void test('high-risk capability binding and enablement require explicit owner confirmation and leave an audit trail', async (t) => {
   const { app, request } = await fixture(t);
   const created = await request('capabilities', {
     kind: 'mcp',
@@ -652,7 +652,7 @@ test('high-risk capability binding and enablement require explicit owner confirm
   );
 });
 
-test('knowledge changes and deletion retain versioned source snapshots', async (t) => {
+void test('knowledge changes and deletion retain versioned source snapshots', async (t) => {
   const { request, dataDir } = await fixture(t);
   const original = {
     title: 'Server location',
@@ -696,7 +696,7 @@ test('knowledge changes and deletion retain versioned source snapshots', async (
   assert.equal((await request('state')).body.knowledge.length, 0);
 });
 
-test('team knowledge is persisted with its team scope and rejects unknown teams', async (t) => {
+void test('team knowledge is persisted with its team scope and rejects unknown teams', async (t) => {
   const { app, request, workspace } = await fixture(t);
   const team = (
     await request('spaces', {
@@ -760,7 +760,7 @@ test('team knowledge is persisted with its team scope and rejects unknown teams'
   assert.match(invalid.body.error, /有效的团队/);
 });
 
-test('recruitment endpoint provides a durable cursor for another device to catch up', async (t) => {
+void test('recruitment endpoint provides a durable cursor for another device to catch up', async (t) => {
   const { app, request, workspace } = await fixture(t);
   const team = (
     await request('spaces', {
@@ -822,7 +822,7 @@ test('recruitment endpoint provides a durable cursor for another device to catch
   assert.equal(second.body.hasMore, false);
 });
 
-test('persisted assistant requirements constrain provider selection after editing', async (t) => {
+void test('persisted assistant requirements constrain provider selection after editing', async (t) => {
   const { app, request } = await fixture(t);
   const small = await request('providers', {
     name: 'Small',
@@ -851,7 +851,7 @@ test('persisted assistant requirements constrain provider selection after editin
   assert.equal(app.platform.providers.select(saved).providerId, large.body.id);
 });
 
-test('manual monitor checks keep disabled rules disabled and record history', async (t) => {
+void test('manual monitor checks keep disabled rules disabled and record history', async (t) => {
   const { request, url } = await fixture(t);
   const created = await request('monitors', {
     name: 'Local fixture',
@@ -870,7 +870,7 @@ test('manual monitor checks keep disabled rules disabled and record history', as
   );
 });
 
-test('resource and credential probes validate project paths and tcp connection', async (t) => {
+void test('resource and credential probes validate project paths and tcp connection', async (t) => {
   const { request, workspace } = await fixture(t);
 
   // 1. 测试项目目录探测

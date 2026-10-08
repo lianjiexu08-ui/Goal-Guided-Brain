@@ -110,7 +110,7 @@ for (const error of [
   'HTTP 405 Method Not Allowed',
   'HTTP 503 transient network error',
 ])
-  test(`failed route ${error} retries on an actual alternate provider before tool activity`, async () => {
+  void test(`failed route ${error} retries on an actual alternate provider before tool activity`, async () => {
     const f = await fixture({ error });
     try {
       await waitFor(
@@ -171,7 +171,7 @@ for (const error of [
     }
   });
 
-test('a recorded tool side effect prevents automatic model rerun', async () => {
+void test('a recorded tool side effect prevents automatic model rerun', async () => {
   const f = await fixture({
     error: 'HTTP 503 after tool execution',
     toolActivity: true,
@@ -194,7 +194,7 @@ test('a recorded tool side effect prevents automatic model rerun', async () => {
   }
 });
 
-test('provider fallback preserves an explicit text-only route permission', async () => {
+void test('provider fallback preserves an explicit text-only route permission', async () => {
   const f = await fixture({
     error: 'HTTP 405 Method Not Allowed',
     withoutTools: true,
@@ -217,7 +217,7 @@ test('provider fallback preserves an explicit text-only route permission', async
   }
 });
 
-test('successive fallback preserves the original provider allowlist and exclusions', async () => {
+void test('successive fallback preserves the original provider allowlist and exclusions', async () => {
   const f = await fixture({
     error: 'HTTP 503 transient error',
     failures: 2,
@@ -241,7 +241,7 @@ test('successive fallback preserves the original provider allowlist and exclusio
   }
 });
 
-test('exhausted provider routes stop retrying and create an actionable issue', async () => {
+void test('exhausted provider routes stop retrying and create an actionable issue', async () => {
   const f = await fixture({ error: 'HTTP 503 transient error', failures: 10 });
   try {
     await waitFor(
@@ -261,7 +261,7 @@ test('exhausted provider routes stop retrying and create an actionable issue', a
   }
 });
 
-test('task-level provider restrictions apply to fallback', async () => {
+void test('task-level provider restrictions apply to fallback', async () => {
   const f = await fixture({ error: 'HTTP 401 Unauthorized', restrict: true });
   try {
     await waitFor(() => f.app.store.task(f.task.id)?.status === 'failed');
@@ -273,7 +273,7 @@ test('task-level provider restrictions apply to fallback', async () => {
   }
 });
 
-test('shared group budget stops all running agents after combined reported usage', async (t) => {
+void test('shared group budget stops all running agents after combined reported usage', async (t) => {
   if (!(await loadUsageMeter())) {
     t.skip('Native DSH token meter unavailable');
     return;

@@ -5,7 +5,7 @@ import { seedConfirmedDefaultTeam } from './fixtures/confirmed-default-team.mjs'
 import { createWorkbench } from '../server/index.mjs';
 import { sandbox, tick, waitFor } from './helpers/team-helpers.mjs';
 
-test('team space routes owner messages to the project manager and persists replies', async () => {
+void test('team space routes owner messages to the project manager and persists replies', async () => {
   const fixture = sandbox();
   const runs = [];
   const app = createWorkbench({
@@ -154,7 +154,7 @@ test('team space routes owner messages to the project manager and persists repli
   }
 });
 
-test('team autonomy pause and resume gate new team messages', async () => {
+void test('team autonomy pause and resume gate new team messages', async () => {
   const fixture = sandbox();
   const app = createWorkbench({
     ...fixture,
@@ -241,7 +241,7 @@ test('team autonomy pause and resume gate new team messages', async () => {
   }
 });
 
-test('team token budget pauses autonomous work and records actionable attention', async () => {
+void test('team token budget pauses autonomous work and records actionable attention', async () => {
   const fixture = sandbox();
   const runs = [];
   let reportedTokens = 2000;
@@ -367,7 +367,7 @@ test('team token budget pauses autonomous work and records actionable attention'
   }
 });
 
-test('team templates save durable configuration and create an isolated team copy', async () => {
+void test('team templates save durable configuration and create an isolated team copy', async () => {
   const fixture = sandbox();
   const app = createWorkbench({
     ...fixture,
@@ -518,7 +518,7 @@ test('team templates save durable configuration and create an isolated team copy
   }
 });
 
-test('team timeline exposes an older page without duplicating the latest window', async () => {
+void test('team timeline exposes an older page without duplicating the latest window', async () => {
   const fixture = sandbox();
   const app = createWorkbench({ ...fixture, requireCredential: false });
   seedConfirmedDefaultTeam(app.store);
@@ -579,7 +579,7 @@ test('team timeline exposes an older page without duplicating the latest window'
   }
 });
 
-test('cross-team timeline aggregates confirmed teams with labels and cursor pagination', async () => {
+void test('cross-team timeline aggregates confirmed teams with labels and cursor pagination', async () => {
   const fixture = sandbox();
   const app = createWorkbench({ ...fixture, requireCredential: false });
   seedConfirmedDefaultTeam(app.store);
@@ -689,7 +689,7 @@ test('cross-team timeline aggregates confirmed teams with labels and cursor pagi
   }
 });
 
-test('team risks aggregate confirmed teams and support team, kind, and cursor filters', async () => {
+void test('team risks aggregate confirmed teams and support team, kind, and cursor filters', async () => {
   const fixture = sandbox();
   const app = createWorkbench({ ...fixture, requireCredential: false });
   seedConfirmedDefaultTeam(app.store);

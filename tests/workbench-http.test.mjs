@@ -6,7 +6,7 @@ import path from 'node:path';
 import { createWorkbench } from '../server/index.mjs';
 import { sandbox, tick } from './helpers/workbench-helpers.mjs';
 
-test('HTTP journey: concurrent assistants, developer queue, cancellation, handoff, and secret boundary', async () => {
+void test('HTTP journey: concurrent assistants, developer queue, cancellation, handoff, and secret boundary', async () => {
   const s = sandbox(),
     runtimes = [];
   const app = createWorkbench({

@@ -100,7 +100,7 @@ async function fixture(t, env = {}) {
   };
 }
 
-test('HTTP tasks preserve legacy endpoints and expose a real authenticated orchestration MCP', async (t) => {
+void test('HTTP tasks preserve legacy endpoints and expose a real authenticated orchestration MCP', async (t) => {
   const { app, request, runtimes, clients } = await fixture(t);
   const result = await request('tasks', {
     role: 'assistant',
@@ -142,7 +142,7 @@ test('HTTP tasks preserve legacy endpoints and expose a real authenticated orche
   );
 });
 
-test('a configured public origin requires login even through a loopback reverse proxy', async (t) => {
+void test('a configured public origin requires login even through a loopback reverse proxy', async (t) => {
   const { request } = await fixture(t, {
     WORKBENCH_PUBLIC_URL: 'https://workbench.example.test',
     WORKBENCH_OWNER_PASSWORD: 'fixture-owner-password-12345',
@@ -166,7 +166,7 @@ test('a configured public origin requires login even through a loopback reverse 
   assert.equal((await request('nodes/claim', {})).status, 401);
 });
 
-test('real HTTP node pair claim mapped workspace MCP and durable report complete a remote attempt', async (t) => {
+void test('real HTTP node pair claim mapped workspace MCP and durable report complete a remote attempt', async (t) => {
   const { app, request, url, directory, workspace, clients } = await fixture(t);
   const remote = [];
   const node = new NodeClient({
@@ -276,7 +276,7 @@ test('real HTTP node pair claim mapped workspace MCP and durable report complete
   assert.equal(node.db.prepare('SELECT COUNT(*) AS n FROM outbox').get().n, 0);
 });
 
-test('remote cancellation revokes tools and rejects a late result without overwriting unknown state', async (t) => {
+void test('remote cancellation revokes tools and rejects a late result without overwriting unknown state', async (t) => {
   const { app, request, url, directory, workspace, clients } = await fixture(t);
   let run;
   const node = new NodeClient({
@@ -317,7 +317,7 @@ test('remote cancellation revokes tools and rejects a late result without overwr
   );
 });
 
-test('remote capability bundles are verified and remapped to node-local content-addressed paths', async (t) => {
+void test('remote capability bundles are verified and remapped to node-local content-addressed paths', async (t) => {
   const { directory, workspace, url, clients } = await fixture(t);
   const node = new NodeClient({
     controlUrl: url,
@@ -381,7 +381,7 @@ test('remote capability bundles are verified and remapped to node-local content-
   );
 });
 
-test('remote capability bundles accept controller paths from another operating system', async (t) => {
+void test('remote capability bundles accept controller paths from another operating system', async (t) => {
   const { directory, workspace, url, clients } = await fixture(t);
   const node = new NodeClient({
     controlUrl: url,

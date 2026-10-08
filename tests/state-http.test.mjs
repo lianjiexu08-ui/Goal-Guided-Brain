@@ -28,7 +28,7 @@ async function fixture(t) {
   return { app, read };
 }
 
-test('unchanged state returns an empty 304, while unconditional reads keep the complete representation', async (t) => {
+void test('unchanged state returns an empty 304, while unconditional reads keep the complete representation', async (t) => {
   const { app, read } = await fixture(t);
   seedStateLoad(app.store, { teams: 4, tasksPerTeam: 10 });
   const initial = await read();
@@ -54,7 +54,7 @@ test('unchanged state returns an empty 304, while unconditional reads keep the c
   assert.equal(unauthorized.headers.get('etag'), null);
 });
 
-test('conditional reads observe another writer and deletions without process-local invalidation', async (t) => {
+void test('conditional reads observe another writer and deletions without process-local invalidation', async (t) => {
   const { app, read } = await fixture(t);
   const { tasks } = seedStateLoad(app.store, { teams: 1, tasksPerTeam: 1 });
   let response = await read();
@@ -90,7 +90,7 @@ test('conditional reads observe another writer and deletions without process-loc
   }
 });
 
-test('time-based knowledge expiry changes the state validator even without database writes', async (t) => {
+void test('time-based knowledge expiry changes the state validator even without database writes', async (t) => {
   const { app, read } = await fixture(t);
   const now = Date.now();
   app.store.saveKnowledge({
@@ -111,7 +111,7 @@ test('time-based knowledge expiry changes the state validator even without datab
   assert.equal((await expired.json()).knowledge[0].expired, true);
 });
 
-test('opted-in HTTP deltas preserve the complete state after external writes and deletions, with authorization checked first', async (t) => {
+void test('opted-in HTTP deltas preserve the complete state after external writes and deletions, with authorization checked first', async (t) => {
   const { app, read } = await fixture(t);
   const { spaces, tasks } = seedStateLoad(app.store, {
     teams: 4,

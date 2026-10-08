@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setup, pair } from './helpers/control-helpers.mjs';
 
-test('open attention creates one durable notification without resurrecting a read item', (t) => {
+void test('open attention creates one durable notification without resurrecting a read item', (t) => {
   const { control, store } = setup(t);
   const first = control.attention(
     {
@@ -42,7 +42,7 @@ test('open attention creates one durable notification without resurrecting a rea
   assert.equal(updated.readAt, '2026-09-30T00:00:00.000Z');
 });
 
-test('pair codes are single use, node tokens are hashed and revoked nodes cannot claim', async (t) => {
+void test('pair codes are single use, node tokens are hashed and revoked nodes cannot claim', async (t) => {
   const { store, request } = setup(t);
   const paired = await pair(request);
   assert.equal(
@@ -65,7 +65,7 @@ test('pair codes are single use, node tokens are hashed and revoked nodes cannot
   assert.equal((await request('nodes/claim', {}, paired.token)).status, 401);
 });
 
-test('node list and detail expose the same live status and active executions', async (t) => {
+void test('node list and detail expose the same live status and active executions', async (t) => {
   const { control, request, advance } = setup(t);
   const paired = await pair(request);
   const job = control.createJob({
@@ -108,7 +108,7 @@ test('node list and detail expose the same live status and active executions', a
   assert.equal(Object.hasOwn(revoked.body, 'tokenHash'), false);
 });
 
-test('node liveness transitions create deduplicated notifications and recover on heartbeat', async (t) => {
+void test('node liveness transitions create deduplicated notifications and recover on heartbeat', async (t) => {
   const { control, store, request, advance } = setup(t);
   const paired = await pair(request);
   advance(61000);
@@ -155,7 +155,7 @@ test('node liveness transitions create deduplicated notifications and recover on
   assert.equal(store.records.list('notifications').length, 1);
 });
 
-test('remote leases claim once, reject wrong nodes, accept a result exactly once and reject late results', async (t) => {
+void test('remote leases claim once, reject wrong nodes, accept a result exactly once and reject late results', async (t) => {
   const { store, request, control, advance } = setup(t);
   const first = await pair(request),
     other = await pair(request);
@@ -216,7 +216,7 @@ test('remote leases claim once, reject wrong nodes, accept a result exactly once
   );
 });
 
-test('remote event receipts deduplicate tool activity before the completion hook runs', async (t) => {
+void test('remote event receipts deduplicate tool activity before the completion hook runs', async (t) => {
   const { store, control, request } = setup(t);
   const paired = await pair(request);
   const job = control.createJob({
@@ -262,7 +262,7 @@ test('remote event receipts deduplicate tool activity before the completion hook
   assert.equal(completions, 1);
 });
 
-test('child budgets inherit group limits and exhausted groups cannot claim new work', (t) => {
+void test('child budgets inherit group limits and exhausted groups cannot claim new work', (t) => {
   const { store, control } = setup(t);
   const parent = control.createJob({
     role: 'product',
@@ -286,7 +286,7 @@ test('child budgets inherit group limits and exhausted groups cannot claim new w
   assert.equal(control.claimLocal(store.task(child.taskId)), null);
 });
 
-test('paused team blocks new jobs and local claims until autonomy resumes', (t) => {
+void test('paused team blocks new jobs and local claims until autonomy resumes', (t) => {
   const { store, control } = setup(t);
   const team = store.saveTeamSpace({
     name: '自治暂停回归团队',
@@ -323,7 +323,7 @@ test('paused team blocks new jobs and local claims until autonomy resumes', (t) 
   assert.equal(control.eligible(task, 'local'), true);
 });
 
-test('team autonomy limits cap active jobs and nested task depth', (t) => {
+void test('team autonomy limits cap active jobs and nested task depth', (t) => {
   const { store, control } = setup(t);
   const jobsTeam = store.saveTeamSpace({
     name: '任务上限回归团队',
@@ -391,7 +391,7 @@ test('team autonomy limits cap active jobs and nested task depth', (t) => {
   );
 });
 
-test('owner budget increase pauses an exhausted group until explicit resume and propagates limits', async (t) => {
+void test('owner budget increase pauses an exhausted group until explicit resume and propagates limits', async (t) => {
   const { store, control, request } = setup(t);
   const parent = control.createJob({
     role: 'product',
@@ -462,7 +462,7 @@ test('owner budget increase pauses an exhausted group until explicit resume and 
   );
 });
 
-test('workflow dependencies follow the latest successful attempt after a failed provider attempt', (t) => {
+void test('workflow dependencies follow the latest successful attempt after a failed provider attempt', (t) => {
   const { store, control } = setup(t);
   const dependency = control.createJob({
     role: 'assistant',
@@ -508,7 +508,7 @@ test('workflow dependencies follow the latest successful attempt after a failed 
   assert.ok(control.claimLocal(store.task(next.taskId)));
 });
 
-test('successful child retry clears only automatic child-failure blocking and schedules parent summary', async (t) => {
+void test('successful child retry clears only automatic child-failure blocking and schedules parent summary', async (t) => {
   const { store, control, request } = setup(t);
   const parent = control.createJob({ role: 'product', prompt: 'Deliver' });
   const claimed = control.claimLocal(store.task(parent.taskId));
@@ -540,7 +540,7 @@ test('successful child retry clears only automatic child-failure blocking and sc
   );
 });
 
-test('resume uses a new isolated attempt and retains the requested route and frozen assistant', async (t) => {
+void test('resume uses a new isolated attempt and retains the requested route and frozen assistant', async (t) => {
   const { store, control, request } = setup(t);
   const job = control.createJob({ role: 'assistant', prompt: 'Research' });
   const snapshot = store.role('assistant');
@@ -574,7 +574,7 @@ test('resume uses a new isolated attempt and retains the requested route and fro
   assert.deepEqual(received.assistantSnapshot, snapshot);
 });
 
-test('instance inbox is scoped, idempotent and survives reconnection without exposing another group', async (t) => {
+void test('instance inbox is scoped, idempotent and survives reconnection without exposing another group', async (t) => {
   const { control, store } = setup(t);
   const parent = control.createJob({ role: 'product', prompt: 'Plan' });
   const parentClaim = control.claimLocal(store.task(parent.taskId));
@@ -624,7 +624,7 @@ test('instance inbox is scoped, idempotent and survives reconnection without exp
   assert.throws(() => control.validateInstanceToken(parentClaim.token), /撤销/);
 });
 
-test('stable assistant mailbox waits for a new instance without waking an archived assistant', (t) => {
+void test('stable assistant mailbox waits for a new instance without waking an archived assistant', (t) => {
   const { control, store } = setup(t);
   store.archiveRole('assistant', true);
   const message = control.sendMessage(
@@ -640,7 +640,7 @@ test('stable assistant mailbox waits for a new instance without waking an archiv
   assert.equal(control.readMessages(job.taskId, principal)[0].id, message.id);
 });
 
-test('shared board detects concurrent edits and external operation grants cannot be escalated', async (t) => {
+void test('shared board detects concurrent edits and external operation grants cannot be escalated', async (t) => {
   const { control, store } = setup(t);
   const job = control.createJob({
     role: 'developer',
@@ -699,7 +699,7 @@ test('shared board detects concurrent edits and external operation grants cannot
   assert.equal(control.operation(operation, principal).canExecute, false);
 });
 
-test('parent waits for children and enqueues one summary attempt after all children complete', (t) => {
+void test('parent waits for children and enqueues one summary attempt after all children complete', (t) => {
   const { control, store } = setup(t);
   const parent = control.createJob({
     role: 'product',
@@ -751,7 +751,7 @@ test('parent waits for children and enqueues one summary attempt after all child
   assert.equal(store.tasks().length, 4);
 });
 
-test('paused team defers parent summary until autonomy resumes', (t) => {
+void test('paused team defers parent summary until autonomy resumes', (t) => {
   const { store, control } = setup(t);
   const team = store.saveTeamSpace({
     name: '自治汇总暂停团队',
@@ -797,7 +797,7 @@ test('paused team defers parent summary until autonomy resumes', (t) => {
   assert.equal(resumed.summaryTaskId, resumed.taskId);
 });
 
-test('pause revokes descendants and resume creates a new instance preserving checkpoint context', async (t) => {
+void test('pause revokes descendants and resume creates a new instance preserving checkpoint context', async (t) => {
   const { control, store, request } = setup(t);
   const job = control.createJob({ role: 'developer', prompt: 'Implement' });
   const claim = control.claimLocal(store.task(job.taskId));
@@ -820,7 +820,7 @@ test('pause revokes descendants and resume creates a new instance preserving che
   assert.equal(store.task(resumed.body.taskId).sourceTaskId, job.taskId);
 });
 
-test('requirement changes notify the whole group and older artifacts stay marked until the agent acknowledges', async (t) => {
+void test('requirement changes notify the whole group and older artifacts stay marked until the agent acknowledges', async (t) => {
   const { control, store, request } = setup(t);
   const job = control.createJob({ role: 'product', prompt: 'Version one' });
   const parent = control.claimLocal(store.task(job.taskId));

@@ -139,7 +139,7 @@ async function fixture(t) {
   return { app, store, source, target, other, caller, settle, close };
 }
 
-test('MCP only reads actual source-owned delegations, excluding unrelated tasks and target-private messages', async (t) => {
+void test('MCP only reads actual source-owned delegations, excluding unrelated tasks and target-private messages', async (t) => {
   const { store, source, target, other, caller, settle } = await fixture(t);
   const origin = await caller();
   const stranger = await caller(other);
@@ -195,7 +195,7 @@ test('MCP only reads actual source-owned delegations, excluding unrelated tasks 
   );
 });
 
-test('collaboration list paginates with tied timestamps, filters before paging, and rejects cross-team/filter cursors', async (t) => {
+void test('collaboration list paginates with tied timestamps, filters before paging, and rejects cross-team/filter cursors', async (t) => {
   const { store, target, caller, settle, close } = await fixture(t);
   const origin = await caller();
   const rows = [];
@@ -267,7 +267,7 @@ test('collaboration list paginates with tied timestamps, filters before paging, 
     assert.ok((await origin.call('list_team_collaborations', { limit })).error);
 });
 
-test('owner closure and changed output are visible to agents without granting write authority or leaking raw output into history', async (t) => {
+void test('owner closure and changed output are visible to agents without granting write authority or leaking raw output into history', async (t) => {
   const { store, target, caller, settle, close } = await fixture(t);
   const origin = await caller();
   const receipt = await origin.delegate();
@@ -306,7 +306,7 @@ test('owner closure and changed output are visible to agents without granting wr
   assert.equal(store.records.list('handoff-review-events').length, before);
 });
 
-test('revoked peer access preserves only locally held history and rejects new detail reads; unlinked history cannot grant access', async (t) => {
+void test('revoked peer access preserves only locally held history and rejects new detail reads; unlinked history cannot grant access', async (t) => {
   const { store, source, target, caller, settle } = await fixture(t);
   const origin = await caller();
   const receipt = await origin.delegate();
@@ -345,7 +345,7 @@ test('revoked peer access preserves only locally held history and rejects new de
   assert.equal(legacy.items[0].canFollowUp, false);
 });
 
-test('collaboration reads reject unconfirmed or paused source teams and expired execution leases', async (t) => {
+void test('collaboration reads reject unconfirmed or paused source teams and expired execution leases', async (t) => {
   const { app, store, source, caller } = await fixture(t);
   const origin = await caller();
   const receipt = await origin.delegate();

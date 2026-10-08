@@ -53,7 +53,7 @@ async function fixture(t) {
   return { app, source, target, payload, send };
 }
 
-test('handoff rolls back task, job, sessions and messages after late write failure without publishing success; retry creates exactly one task', async (t) => {
+void test('handoff rolls back task, job, sessions and messages after late write failure without publishing success; retry creates exactly one task', async (t) => {
   const { app, source, target, send } = await fixture(t);
   const records = app.store.records;
   const original = records.save.bind(records);
@@ -113,7 +113,7 @@ test('handoff rolls back task, job, sessions and messages after late write failu
   );
 });
 
-test('legacy handoff without a linked task is repaired, completed jobs do not consume active-job capacity', async (t) => {
+void test('legacy handoff without a linked task is repaired, completed jobs do not consume active-job capacity', async (t) => {
   const { app, source, target, payload, send } = await fixture(t);
   app.store.records.save('jobs', { teamId: target.id, status: 'completed' });
   const id = `handoff:${source.id}:${target.id}:${payload.clientMessageId}`;
@@ -137,7 +137,7 @@ test('legacy handoff without a linked task is repaired, completed jobs do not co
   assert.equal((await send()).body.taskId, result.body.taskId);
 });
 
-test('legacy task metadata repairs a missing message link without creating a second task', async (t) => {
+void test('legacy task metadata repairs a missing message link without creating a second task', async (t) => {
   const { app, source, target, payload, send } = await fixture(t);
   const first = await send();
   assert.equal(first.status, 201);
@@ -155,7 +155,7 @@ test('legacy task metadata repairs a missing message link without creating a sec
   );
 });
 
-test('follow-up carries the original request and returned result in a new session, persists its link and retries once', async (t) => {
+void test('follow-up carries the original request and returned result in a new session, persists its link and retries once', async (t) => {
   const { app, source, target, payload, send } = await fixture(t);
   const first = await send();
   const task = app.store.updateTask(first.body.taskId, {
@@ -204,7 +204,7 @@ test('follow-up carries the original request and returned result in a new sessio
   assert.equal(changedIdentity.status, 409);
 });
 
-test('follow-up rejects foreign records, changed target and unsettled tasks without persisting work', async (t) => {
+void test('follow-up rejects foreign records, changed target and unsettled tasks without persisting work', async (t) => {
   const { app, source, target, payload, send } = await fixture(t);
   const first = await send();
   const before = app.store.tasks().length;
