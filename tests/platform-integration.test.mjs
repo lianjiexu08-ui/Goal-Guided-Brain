@@ -250,6 +250,14 @@ void test('real HTTP node pair claim mapped workspace MCP and durable report com
   );
   assert.notEqual(remote[0].options.task.workspace, workspace);
   assert.ok(
+    remote[0].prompt.startsWith(
+      `本次执行工作目录：${remote[0].options.task.workspace}\n`,
+    ),
+  );
+  assert.ok(
+    remote[0].prompt.includes(`项目来源目录：${app.store.config.workspace}`),
+  );
+  assert.ok(
     remote[0].options.capabilityPatch.some(
       (patch) => patch.id === 'workbench-orchestration',
     ),
@@ -439,4 +447,36 @@ void test('remote capability bundles accept controller paths from another operat
       }),
     /映射路径/,
   );
+});
+
+void test('isolated local context names the actual runtime workspace while preserving source knowledge', async (t) => {
+  const { app, request, runtimes, workspace } = await fixture(t);
+  app.store.saveKnowledge({
+    title: '项目背景',
+    content: '原项目的专属验收约定',
+    scope: 'project',
+    state: 'confirmed',
+    source: 'owner',
+    projectPath: app.store.config.workspace,
+  });
+  const result = await request('tasks', {
+    role: 'developer',
+    prompt: '按项目背景完成开发',
+    workspaceMode: 'isolated',
+  });
+  assert.equal(result.status, 201);
+  await until(() => runtimes.length === 1);
+  const run = runtimes[0];
+  const actual = run.options.task.workspace;
+  assert.notEqual(actual, workspace);
+  assert.ok(run.prompt.startsWith(`本次执行工作目录：${actual}\n`));
+  assert.ok(run.prompt.includes(`项目来源目录：${app.store.config.workspace}`));
+  assert.ok(run.prompt.includes('原项目的专属验收约定'));
+  assert.equal(run.prompt.includes(`工作目录：${workspace}\n`), false);
+  assert.equal(
+    app.store.task(result.body.id).workspace,
+    app.store.config.workspace,
+  );
+  assert.equal(app.store.task(result.body.id).context, run.prompt);
+  run.complete();
 });

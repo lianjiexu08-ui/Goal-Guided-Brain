@@ -779,7 +779,7 @@ export function createPlatform({
           void stopTask(task.id);
       }, 10000);
       run._heartbeat.unref();
-      await run.start(contextFor(task));
+      await run.start(contextFor(task, workspace.path));
     } catch (error) {
       finish('failed', error.message);
       control.attention(

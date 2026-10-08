@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { readPassword } from './live-password.mjs';
 import { createWorkbench } from '../server/index.mjs';
 
 const args = process.argv.slice(2);
@@ -29,41 +30,6 @@ fs.mkdirSync(dataDir, { mode: 0o700 });
 fs.mkdirSync(workspace, { mode: 0o700 });
 console.log(JSON.stringify({ phase: 'password-input', evidence: root }));
 let passphrase = '';
-function readPassword() {
-  return new Promise((resolve, reject) => {
-    let value = '';
-    const wasRaw = process.stdin.isRaw;
-    const cleanup = () => {
-      if (process.stdin.isTTY) process.stdin.setRawMode(!!wasRaw);
-      process.stdin.off('data', onData);
-      process.stdin.off('end', onEnd);
-      process.stdin.pause();
-    };
-    const onEnd = () => {
-      cleanup();
-      reject(Error('Vault password was not supplied.'));
-    };
-    const onData = (chunk) => {
-      for (const char of chunk.toString()) {
-        if (char === '\u0003') {
-          onEnd();
-          return;
-        }
-        if (char === '\n' || char === '\r') {
-          cleanup();
-          resolve(value);
-          return;
-        }
-        if (char === '\u007f' || char === '\b') value = value.slice(0, -1);
-        else value += char;
-      }
-    };
-    if (process.stdin.isTTY) process.stdin.setRawMode(true);
-    process.stdin.on('data', onData);
-    process.stdin.once('end', onEnd);
-    process.stdin.resume();
-  });
-}
 const report = {
   scenario: '家庭账本团队招募',
   startedAt: new Date().toISOString(),

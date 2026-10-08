@@ -118,7 +118,7 @@ const tools = [
   {
     name: 'read_team_task',
     description:
-      '只读取当前团队实际委派且仍获准的任务状态、结果、共享回传和收尾状态；不能读取目标团队其他工作或私有消息。收尾决定仅限所有者。',
+      '仅用于 delegate_to_team 产生的跨团队协作，读取仍获准的目标任务状态和回传；同团队 delegate_task 子任务使用 list_agents/read_inbox。不能读取其他私有工作。收尾决定仅限所有者。',
     inputSchema: objectSchema({ taskId: string }, ['taskId']),
   },
   {

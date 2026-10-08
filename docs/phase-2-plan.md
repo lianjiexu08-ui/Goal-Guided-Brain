@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 279/279, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 280/280, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Cross-platform CI matrix is configured to run formatting, file-size checks, lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
@@ -46,6 +46,49 @@ They are not sign-off for the separate real deployment gates below.
 - [ ] Real cloud continues scheduled work while the owner's computer is offline.
 
 ## Local Release Record
+
+Native delivery attempt on 2026-10-09: the new opt-in harness starts from a
+synthetic owner-confirmed PM/developer team (recruitment has separate coverage).
+It asks the real PM to delegate one dependency-free Node ledger module, then
+requires model-submitted artifacts, an external owner oracle, explicit acceptance
+and unchanged source files. No application data or source project is reused.
+
+```bash
+node scripts/verify-live-delivery.mjs --provider PROVIDER_ID --model MODEL_ID
+```
+
+This calls a real model, reads the vault password without echo, uses a private
+temporary data/workspace directory and removes its encrypted vault copy on exit.
+The current execution bound is five minutes and 200,000 reported team tokens;
+usage can overshoot on the response that triggers the budget stop. Reports retain
+failed attempts. The independent oracle lives outside the model workspace and
+checks integer precision, dates, invalid input, overflow, ordering and mutation.
+The harness does not infer acceptance from a model's statement that tests passed.
+
+The first GPT / gpt-5.6 attempt stopped at 105,089 tokens against a 100,000 limit.
+Its trace exposed a real context bug: the process cwd was isolated but the prompt
+called the original source the working directory. Local and remote runtimes now
+prepend their actual execution cwd, distinguish source/history paths and instruct
+parents to delegate relative filenames instead of their own absolute directory.
+Source task identity and project-scoped knowledge retrieval remain unchanged.
+A local integration test checks prompt, persisted context, runtime cwd and source
+knowledge; the real HTTP worker test checks its own prepared cwd in the prompt.
+
+The second attempt used a 200,000-token limit and stopped at 206,532. The PM ended
+its dispatch turn, and the developer wrote ledger.mjs, ledger.test.mjs and README
+in its isolated workspace. After termination, its seven tests and the external
+oracle passed independently; the original source still contained only the initial
+README. Artifact submission, automatic summary and explicit acceptance were not
+reached, so the full delivery gate remains FAILED. No terminal state was changed
+to manufacture a pass. This is progress on execution correctness, not evidence
+of cost-efficient autonomous delivery. The retry path currently prepares a new
+isolated directory from task.workspace; preservation of previous isolated edits
+needs dedicated implementation/verification before repeating an expensive run.
+
+Backend/CLI passed 280/280 and production task-recovery/milestone browser checks
+passed 18/18 at desktop/mobile sizes. Format, lint, typecheck, build and the
+340-source line gate passed. The real reports and partial output remain in private
+temporary evidence directories for the next recovery investigation.
 
 DeepSeek interoperability follow-up on 2026-10-08: the real tool probe for
 `deepseek-flash` returned HTTP 400 because the probe forced a named tool without
