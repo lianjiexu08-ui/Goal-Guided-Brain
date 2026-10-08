@@ -24,6 +24,7 @@ import { createPlatformManagement } from './platform/management.mjs';
 import { createPlatformReady } from './platform/ready.mjs';
 import { createContextFor } from './platform/context.mjs';
 import { checkPlanDeadlines } from './platform/plan-deadlines.mjs';
+import { createTaskStopper } from './platform/task-stop.mjs';
 import { taskTypeForTask } from './task-types.mjs';
 const nowIso = () => new Date().toISOString();
 
@@ -329,37 +330,15 @@ export function createPlatform({
     queueMicrotask(() => void schedule());
     return task;
   }
-  async function stopTask(id) {
-    const task = store.task(id);
-    if (!task) throw new Error('任务不存在。');
-    stoppingTasks.add(id);
-    const execution = records.get('executions', id);
-    if (execution) control.revokeExecution(id, 'stopping');
-    const run = runs.get(id);
-    if (run) {
-      await run.cancel();
-      if (runs.has(id) && run.child && run.child.exitCode === null) {
-        store.updateTask(id, {
-          status: 'state_unknown',
-          error: '尚未确认执行进程退出，原目录已隔离。',
-        });
-        workspaces.finish(id, 'quarantined');
-        return { status: 'state_unknown' };
-      }
-    } else if (execution && execution.nodeId !== 'local') {
-      store.updateTask(id, {
-        status: 'state_unknown',
-        error: '已撤销执行权限，等待远程节点确认停止。',
-      });
-      return { status: 'state_unknown' };
-    }
-    if (!['completed', 'failed'].includes(store.task(id).status))
-      store.updateTask(id, {
-        status: 'cancelled',
-        error: '任务已停止，已有修改保留。',
-      });
-    return { status: store.task(id).status };
-  }
+  const { stopTask, stopError } = createTaskStopper({
+    store,
+    records,
+    runs,
+    stoppingTasks,
+    workspaces,
+    getControl: () => control,
+    isStopping: () => stopping,
+  });
   const contextFor = createContextFor({
     store,
     records,
@@ -528,7 +507,7 @@ export function createPlatform({
           );
           const current = store.task(job.taskId);
           if (current && ['queued', 'running'].includes(current.status))
-            queueMicrotask(() => void stopTask(current.id));
+            queueMicrotask(() => void stopTask(current.id, 'budget'));
         }
         control.attention(
           {
@@ -600,7 +579,7 @@ export function createPlatform({
             );
             const current = store.task(job.taskId);
             if (current && ['queued', 'running'].includes(current.status))
-              queueMicrotask(() => void stopTask(current.id));
+              queueMicrotask(() => void stopTask(current.id, 'team-budget'));
           }
           control.setTeamStatus(team.id, 'paused');
           control.attention(
@@ -669,9 +648,7 @@ export function createPlatform({
           store.updateTask(task.id, {
             status: stopping ? 'interrupted' : 'cancelled',
             result,
-            error: stopping
-              ? '服务已停止，请从检查点继续。'
-              : '用户已停止任务。',
+            error: stopError(task.id),
           });
         } else
           control.finishLocal(task.id, execution.epoch, {

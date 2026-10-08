@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 276/276, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 279/279, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Cross-platform CI matrix is configured to run formatting, file-size checks, lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
@@ -46,6 +46,46 @@ They are not sign-off for the separate real deployment gates below.
 - [ ] Real cloud continues scheduled work while the owner's computer is offline.
 
 ## Local Release Record
+
+Recruitment contract verification on 2026-10-08: a real GPT · Autofish /
+`gpt-5.6` run in an isolated workspace completed three turns, saved a two-member
+family-ledger proposal, and passed owner confirmation without premature member
+creation or delegation. The initial run exhausted a 60,000-token budget at
+61,083 reported tokens and exposed a descriptive `modelHint` that could never
+confirm, plus budget cancellation mislabeled as an owner stop. Both are fixed.
+Proposal save now rejects invalid model IDs, unavailable providers, decision-only
+backends and incompatible tools; confirmation repeats the same checks to catch
+configuration changes. Failed saves retain the previous proposal. MCP schema,
+catalog and the recruitment skill explain exact IDs and template inheritance.
+
+The rerun used an explicit 100,000-token test budget and reported 99,514 tokens
+(22,999 / 17,342 / 59,173 across the three turns), finishing in about two minutes.
+This is a bounded single-provider success, not a cost or cross-model quality gate.
+The test does not execute the proposed development work. Context cost reduction,
+more varied needs and additional providers remain pending.
+
+The opt-in harness uses the running local provider configuration on port 3089,
+copies only the encrypted vault into a private temporary directory, reads its
+password from stdin without terminal echo, and removes the copied vault on exit.
+It calls a real provider and saves per-turn results, proposal, checks and usage
+in the printed `report.json` path. No password belongs in a command or source file:
+
+```bash
+node scripts/verify-live-recruitment.mjs --provider PROVIDER_ID --model MODEL_ID --budget-tokens 100000
+```
+
+Each turn is limited to 150 seconds. The default test budget is 60,000 reported
+tokens; explicit budgets are capped at 120,000. A provider response can overshoot
+the remaining budget before reported usage is available. Failure preserves
+partial proposal/usage evidence. The harness only confirms its own synthetic
+team, never an existing owner team. The successful report was inspected for
+scope, responsibilities, deliverables and permission boundaries.
+
+Final local backend/CLI regression passed 279/279; production desktop/mobile
+focused regression passed 66/66 for recruitment, draft boundaries, task recovery
+and execution detail. Formatting, lint, types, build and the 337-source line gate
+passed. Original local records remained 11 tasks, 10 jobs and 2 unconfirmed
+spaces with no active work. No remote push or deployment was performed.
 
 Execution detail recovery on 2026-10-08: the inspector now separates operation
 errors from read failures, shows connection mode and last successful read time,

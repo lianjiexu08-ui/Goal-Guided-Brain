@@ -328,6 +328,28 @@ void test('project manager proposes a Team Charter and owner confirmation materi
     );
     assert.equal(proposed.phase, 'proposed');
     assert.equal(proposed.proposal.size, 4);
+    const rejectedModel = await client.callTool({
+      name: 'propose_team',
+      arguments: {
+        teamName: '错误模型草案',
+        goal: '不能覆盖可确认方案',
+        members: [
+          {
+            roleId: 'developer',
+            responsibility: '实现功能',
+            providerIds: [provider.id],
+            modelHint: '沿用当前已配置的 GPT 5.6',
+          },
+        ],
+      },
+    });
+    assert.equal(rejectedModel.isError, true);
+    assert.match(rejectedModel.content[0].text, /精确 model.id/);
+    assert.deepEqual(
+      app.store.teamSpace(team.id).recruitment.proposal,
+      proposed.proposal,
+    );
+
     assert.deepEqual(
       proposed.proposal.members.find((member) => member.memberId === 'frontend')
         .skillIds,
@@ -578,45 +600,45 @@ void test('team confirmation rejects disabled capabilities and unavailable model
       () => app.platform.control.confirmTeamRecruitment(team.id),
       /未启用的能力/,
     );
-    app.platform.control.proposeTeam(
-      {
-        teamName: '校验团队',
-        goal: '验证绑定前置条件。',
-        purpose: '避免不可执行成员进入团队。',
-        members: [
-          {
-            roleId: 'developer',
-            memberId: 'dev',
-            responsibility: '实现功能。',
-            modelHint: 'missing-model',
-          },
-        ],
-      },
-      principal,
-    );
     assert.throws(
-      () => app.platform.control.confirmTeamRecruitment(team.id),
+      () =>
+        app.platform.control.proposeTeam(
+          {
+            teamName: '校验团队',
+            goal: '验证绑定前置条件。',
+            purpose: '避免不可执行成员进入团队。',
+            members: [
+              {
+                roleId: 'developer',
+                memberId: 'dev',
+                responsibility: '实现功能。',
+                modelHint: 'missing-model',
+              },
+            ],
+          },
+          principal,
+        ),
       /模型未在可用供应商中配置/,
     );
-    app.platform.control.proposeTeam(
-      {
-        teamName: '校验团队',
-        goal: '验证绑定前置条件。',
-        purpose: '避免不可执行成员进入团队。',
-        members: [
-          {
-            roleId: 'developer',
-            memberId: 'dev',
-            responsibility: '实现功能。',
-            providerIds: [textProvider.id],
-            modelHint: 'recruitment-text-model',
-          },
-        ],
-      },
-      principal,
-    );
     assert.throws(
-      () => app.platform.control.confirmTeamRecruitment(team.id),
+      () =>
+        app.platform.control.proposeTeam(
+          {
+            teamName: '校验团队',
+            goal: '验证绑定前置条件。',
+            purpose: '避免不可执行成员进入团队。',
+            members: [
+              {
+                roleId: 'developer',
+                memberId: 'dev',
+                responsibility: '实现功能。',
+                providerIds: [textProvider.id],
+                modelHint: 'recruitment-text-model',
+              },
+            ],
+          },
+          principal,
+        ),
       /不支持成员所需的工具或能力/,
     );
     const decisionProvider = app.platform.providers.save({
@@ -626,26 +648,26 @@ void test('team confirmation rejects disabled capabilities and unavailable model
       models: [{ id: 'jev-latest' }],
       enabled: true,
     });
-    app.platform.control.proposeTeam(
-      {
-        teamName: '错误决策团队',
-        goal: '验证决策后端不能执行成员任务。',
-        purpose: '保持聊天模型和结构化判断边界。',
-        members: [
-          {
-            roleId: 'developer',
-            memberId: 'dev',
-            responsibility: '实现功能。',
-            providerIds: [decisionProvider.id],
-            modelHint: 'jev-latest',
-            toolAccess: { files: false, web: false, terminal: false },
-          },
-        ],
-      },
-      principal,
-    );
     assert.throws(
-      () => app.platform.control.confirmTeamRecruitment(team.id),
+      () =>
+        app.platform.control.proposeTeam(
+          {
+            teamName: '错误决策团队',
+            goal: '验证决策后端不能执行成员任务。',
+            purpose: '保持聊天模型和结构化判断边界。',
+            members: [
+              {
+                roleId: 'developer',
+                memberId: 'dev',
+                responsibility: '实现功能。',
+                providerIds: [decisionProvider.id],
+                modelHint: 'jev-latest',
+                toolAccess: { files: false, web: false, terminal: false },
+              },
+            ],
+          },
+          principal,
+        ),
       /不能把 TypeSafe 作为成员执行模型/,
     );
     app.platform.control.proposeTeam(

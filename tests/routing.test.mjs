@@ -357,6 +357,10 @@ void test('shared group budget stops all running agents after combined reported 
         app.store.task(child.taskId).status === 'cancelled',
     );
     assert.equal(cancelled, 2);
+    for (const job of [root, child]) {
+      assert.match(app.store.task(job.taskId).error, /任务组预算已用尽/);
+      assert.doesNotMatch(app.store.task(job.taskId).error, /用户已停止/);
+    }
     assert.equal(
       app.store.records
         .list('usage')

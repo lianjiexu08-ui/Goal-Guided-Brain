@@ -331,6 +331,7 @@ void test('team token budget pauses autonomous work and records actionable atten
         ),
     );
 
+    run.options.onResult('已保存的团队提案和部分结论。');
     reportedTokens = 3000;
     run.options.onEvent({ type: 'turn/start', data: { turn: 2 } });
     run.options.onEvent({ type: 'step/start', data: { turn: 2, step: 1 } });
@@ -350,6 +351,15 @@ void test('team token budget pauses autonomous work and records actionable atten
     await tick();
     const paused = await request(`teams/${team.id}`);
     assert.equal(paused.body.status, 'paused');
+    assert.match(app.store.task(message.body.taskId).error, /团队预算已用尽/);
+    assert.equal(
+      app.store.task(message.body.taskId).result,
+      '已保存的团队提案和部分结论。',
+    );
+    assert.doesNotMatch(
+      app.store.task(message.body.taskId).error,
+      /用户已停止/,
+    );
     assert.equal(paused.body.autonomyUsage.exceeded, true);
     const taskMeta = app.store.records.get('task-meta', message.body.taskId);
     assert.equal(

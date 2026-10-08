@@ -63,7 +63,7 @@ const tools = [
   {
     name: 'list_capability_catalog',
     description:
-      '查看当前工作台已启用的 Skill、MCP 和 Plugin 目录及稳定 ID；只读，用于设计 Team Charter，不会自动授予权限。',
+      '查看当前工作台已启用的 Skill、MCP、Plugin 和模型供应商目录及精确模型 ID（providers[].models[].id）；只读，用于设计 Team Charter，不会自动授予权限。',
     inputSchema: objectSchema(),
   },
   {
@@ -200,7 +200,11 @@ const tools = [
                 web: { type: 'boolean' },
                 terminal: { type: 'boolean' },
               }),
-              modelHint: string,
+              modelHint: {
+                type: 'string',
+                description:
+                  '从 list_capability_catalog 选择的精确 model.id；留空继承模板模型。禁止填写显示名称或“沿用当前模型”等说明文字。需要工具的成员必须选择 tools=true 的模型。',
+              },
               dependencies: { type: 'array', items: string },
             },
             ['roleId', 'responsibility'],
@@ -471,7 +475,11 @@ export function createOrchestrationServer({ control, token, capabilities }) {
             })),
             providers: control.records
               .list('providers')
-              .filter((provider) => provider.enabled !== false)
+              .filter(
+                (provider) =>
+                  provider.enabled !== false &&
+                  provider.protocol !== 'typesafe-system-one',
+              )
               .map((provider) => ({
                 id: provider.id,
                 name: provider.name,
