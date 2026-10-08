@@ -252,6 +252,24 @@ export async function handleJobs(
       throw fail('当前任务不能恢复。', 409);
     const previous = plane.store.task(job.taskId);
     const previousMeta = plane.records.get('task-meta', job.taskId) || {};
+    if (job.budgetExceeded) throw fail('请先调整任务组预算后再恢复。', 409);
+    // A completed delegation should resume waiting/summarizing, not dispatch again.
+    if (
+      action === 'resume' &&
+      previous?.status === 'completed' &&
+      !job.summaryTaskId &&
+      (previousMeta.requirementVersion || 1) ===
+        (job.requirementVersion || 1) &&
+      plane.records.list('jobs').some((item) => item.parentJobId === job.id)
+    ) {
+      const waiting = plane.records.save(
+        'jobs',
+        { ...job, status: 'waiting_children', blockedReason: null },
+        job.id,
+      );
+      plane.summarizeWhenReady(waiting);
+      return { status: 200, body: plane.records.get('jobs', job.id) };
+    }
     const providerIds =
       body.providerIds ??
       previousMeta.allowedProviderIds ??
@@ -274,6 +292,10 @@ export async function handleJobs(
       workspaceMode: 'isolated',
       jobId: job.id,
       sourceTaskId: previous?.id,
+      resumeFromTaskId: previous?.id,
+      parentTaskId: previousMeta.parentTaskId || undefined,
+      ownerInitiated: true,
+      model: previousMeta.modelOverride || undefined,
       spaceId: job.spaceId || undefined,
       teamId: job.teamId || job.spaceId || undefined,
       sourceMessageId: job.sourceMessageId || undefined,

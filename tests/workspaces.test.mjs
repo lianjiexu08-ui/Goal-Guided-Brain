@@ -253,3 +253,119 @@ void test('port reservations are exclusive and restart rejects a conflicting por
     await f.close();
   }
 });
+
+for (const git of [false, true]) {
+  void test(`recovery preserves ${git ? 'worktree' : 'snapshot'} changes and deletions without changing source or prior evidence`, async () => {
+    const f = fixture();
+    try {
+      if (git) await initializeGit(f.source);
+      else fs.writeFileSync(path.join(f.source, 'base.txt'), 'base\n');
+      fs.writeFileSync(path.join(f.source, 'remove.txt'), 'remove me');
+      if (git) {
+        await command('git', ['add', '--', 'remove.txt'], { cwd: f.source });
+        await command('git', ['commit', '-m', 'tracked deletion fixture'], {
+          cwd: f.source,
+        });
+      }
+      const first = await f.manager.prepare(
+        { id: 'first', workspace: f.source },
+        'isolated',
+      );
+      fs.rmSync(path.join(first.path, 'remove.txt'));
+      fs.writeFileSync(path.join(first.path, 'base.txt'), 'modified\n');
+      fs.writeFileSync(path.join(first.path, 'new.txt'), 'new\n');
+      if (git) {
+        await command('git', ['add', '--', 'new.txt'], { cwd: first.path });
+        await command('git', ['commit', '-m', 'retained partial commit'], {
+          cwd: first.path,
+        });
+      }
+      fs.writeFileSync(path.join(first.path, '.env'), 'do not restore secret');
+      f.manager.finish('first');
+      // A retry must use the retained output, even if the original project changed.
+      fs.writeFileSync(path.join(f.source, 'base.txt'), 'changed original\n');
+      const retry = await f.manager.prepare(
+        { id: 'second', workspace: f.source },
+        'isolated',
+        { resumeFromTaskId: 'first' },
+      );
+      assert.equal(retry.restoredFromTaskId, 'first');
+      assert.equal(retry.kind, first.kind);
+      assert.equal(retry.baseCommit, first.baseCommit);
+      assert.equal(retry.source, f.source);
+      assert.equal(
+        fs.readFileSync(path.join(retry.path, 'base.txt'), 'utf8'),
+        'modified\n',
+      );
+      assert.equal(
+        fs.readFileSync(path.join(retry.path, 'new.txt'), 'utf8'),
+        'new\n',
+      );
+      assert.equal(fs.existsSync(path.join(retry.path, 'remove.txt')), false);
+      assert.equal(fs.existsSync(path.join(retry.path, '.env')), false);
+      fs.writeFileSync(path.join(retry.path, 'new.txt'), 'next revision');
+      assert.equal(
+        fs.readFileSync(path.join(first.path, 'new.txt'), 'utf8'),
+        'new\n',
+      );
+      assert.equal(
+        fs.readFileSync(path.join(f.source, 'base.txt'), 'utf8'),
+        'changed original\n',
+      );
+      if (git) {
+        assert.match((await f.manager.diff('second')).diff, /base.txt/);
+        assert.match(
+          await command('git', ['diff', retry.baseCommit], { cwd: retry.path }),
+          /modified/,
+        );
+      }
+    } finally {
+      await f.close();
+    }
+  });
+}
+
+void test('recovery refuses missing, active, quarantined, cross-project and redirected execution directories', async () => {
+  const f = fixture();
+  try {
+    const task = { id: 'next', workspace: f.source };
+    await assert.rejects(
+      f.manager.prepare(task, 'isolated', { resumeFromTaskId: 'missing' }),
+      /找不到/,
+    );
+    const previous = await f.manager.prepare(
+      { id: 'old', workspace: f.source },
+      'isolated',
+    );
+    await assert.rejects(
+      f.manager.prepare(task, 'isolated', { resumeFromTaskId: 'old' }),
+      /尚未确认停止/,
+    );
+    f.manager.finish('old', 'quarantined');
+    await assert.rejects(
+      f.manager.prepare(task, 'isolated', { resumeFromTaskId: 'old' }),
+      /尚未确认停止/,
+    );
+    f.manager.finish('old');
+    const other = path.join(f.dir, 'other');
+    fs.mkdirSync(other);
+    await assert.rejects(
+      f.manager.prepare({ ...task, workspace: other }, 'isolated', {
+        resumeFromTaskId: 'old',
+      }),
+      /不属于/,
+    );
+    f.store.records.save(
+      'workspaces',
+      { ...previous, state: 'retained', path: other },
+      'old',
+    );
+    await assert.rejects(
+      f.manager.prepare(task, 'isolated', { resumeFromTaskId: 'old' }),
+      /路径已变化/,
+    );
+    assert.equal(f.store.records.get('workspaces', 'next'), null);
+  } finally {
+    await f.close();
+  }
+});

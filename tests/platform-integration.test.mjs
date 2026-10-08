@@ -480,3 +480,66 @@ void test('isolated local context names the actual runtime workspace while prese
   assert.equal(app.store.task(result.body.id).context, run.prompt);
   run.complete();
 });
+
+void test('remote retry restores prior node files into a distinct directory and reports recovery context', async (t) => {
+  const { app, request, url, directory, workspace, clients } = await fixture(t);
+  const remote = [];
+  const node = new NodeClient({
+    controlUrl: url,
+    dataDir: path.join(directory, 'resume-node'),
+    workspaces: { project: workspace },
+    runtimeFactory: (options) => ({
+      options,
+      start(prompt) {
+        this.prompt = prompt;
+        remote.push(this);
+      },
+      cancel() {
+        options.onDone('cancelled', '');
+      },
+    }),
+  });
+  clients.push(node);
+  const code = await request('nodes/pairing', {});
+  const paired = await node.pair({
+    code: code.body.code,
+    name: 'Recovery node',
+  });
+  const original = await request('tasks', {
+    role: 'developer',
+    prompt: 'Resume partial work',
+    nodeId: paired.id,
+    workspaceKey: 'project',
+    workspaceMode: 'isolated',
+  });
+  await node.tick();
+  await until(() => remote.length === 1);
+  const oldPath = remote[0].options.task.workspace;
+  fs.writeFileSync(path.join(oldPath, 'partial.txt'), 'retained progress');
+  remote[0].options.onResult('partial output');
+  remote[0].options.onDone('failed', 'temporary model failure');
+  await node.tick();
+  await until(() => app.store.task(original.body.id).status === 'failed');
+  const retried = await request(`tasks/${original.body.id}/retry`, {});
+  assert.equal(retried.status, 201);
+  await node.tick();
+  await until(() => remote.length === 2);
+  const newPath = remote[1].options.task.workspace;
+  assert.notEqual(newPath, oldPath);
+  assert.equal(
+    fs.readFileSync(path.join(newPath, 'partial.txt'), 'utf8'),
+    'retained progress',
+  );
+  assert.ok(
+    remote[1].prompt.includes(`已从执行 ${original.body.id} 的保留目录恢复`),
+  );
+  assert.ok(remote[1].prompt.includes(`本次执行工作目录：${newPath}`));
+  fs.writeFileSync(path.join(newPath, 'partial.txt'), 'continued progress');
+  assert.equal(
+    fs.readFileSync(path.join(oldPath, 'partial.txt'), 'utf8'),
+    'retained progress',
+  );
+  assert.equal(fs.existsSync(path.join(workspace, 'partial.txt')), false);
+  remote[1].options.onDone('completed', '');
+  await node.tick();
+});

@@ -70,7 +70,25 @@ export class WorkspaceManager {
     this.dir = path.join(dataDir, 'executions');
     this.ports = new Map();
   }
-  async prepare(task, mode = 'shared') {
+  resumeSource(task, id) {
+    if (!/^[A-Za-z0-9_-]{1,160}$/.test(id) || id === task.id)
+      throw new Error('恢复来源执行实例无效。');
+    const previous = this.store.records.get('workspaces', id);
+    if (!previous) throw new Error('找不到原执行目录，无法恢复已有成果。');
+    if (previous.state !== 'retained')
+      throw new Error('原执行目录仍在运行或尚未确认停止，请先完成执行对账。');
+    if (fs.realpathSync(previous.source) !== fs.realpathSync(task.workspace))
+      throw new Error('恢复来源不属于当前项目。');
+    const source = fs.realpathSync(previous.path);
+    const expected =
+      previous.kind === 'shared'
+        ? fs.realpathSync(task.workspace)
+        : path.join(fs.realpathSync(this.dir), id, 'workspace');
+    if (source !== expected || fs.lstatSync(previous.path).isSymbolicLink())
+      throw new Error('原执行目录路径已变化，拒绝从不明目录恢复。');
+    return previous;
+  }
+  async prepare(task, mode = 'shared', { resumeFromTaskId } = {}) {
     if (
       !/^[A-Za-z0-9_-]{1,160}$/.test(task.id) ||
       !['shared', 'isolated', 'worktree', 'snapshot'].includes(mode)
@@ -82,6 +100,12 @@ export class WorkspaceManager {
         await this.reservePort(task.id, existing.port);
       return existing;
     }
+    const previous = resumeFromTaskId
+      ? this.resumeSource(task, resumeFromTaskId)
+      : null;
+    const copySource = previous?.path || task.workspace;
+    if (previous && mode === 'shared')
+      throw new Error('恢复执行必须使用新的隔离目录。');
     const root = path.join(this.dir, task.id);
     fs.mkdirSync(root, { recursive: true, mode: 0o700 });
     const tempDir = path.join(root, 'tmp');
@@ -94,14 +118,14 @@ export class WorkspaceManager {
     try {
       if (mode !== 'shared') {
         directory = path.join(root, 'workspace');
-        const sourceRoot = fs.realpathSync(task.workspace);
+        const sourceRoot = fs.realpathSync(copySource);
         if (fs.realpathSync(root).startsWith(`${sourceRoot}${path.sep}`))
           throw new Error('执行目录不能位于源项目内，请更换数据目录。');
-        if (mode !== 'snapshot') {
+        if (mode !== 'snapshot' && previous?.kind !== 'snapshot') {
           try {
             baseCommit = (
               await command('git', ['rev-parse', '--verify', 'HEAD'], {
-                cwd: task.workspace,
+                cwd: copySource,
               })
             ).trim();
           } catch {
@@ -115,16 +139,16 @@ export class WorkspaceManager {
           await command(
             'git',
             ['worktree', 'add', '-b', branch, directory, baseCommit],
-            { cwd: task.workspace },
+            { cwd: copySource },
           );
           createdWorktree = true;
           kind = 'worktree';
           const dirty = await command('git', ['status', '--porcelain'], {
-            cwd: task.workspace,
+            cwd: copySource,
           });
           if (dirty) {
             const patch = await command('git', ['diff', '--binary', 'HEAD'], {
-              cwd: task.workspace,
+              cwd: copySource,
             });
             if (patch) {
               const filename = path.join(root, 'working.patch');
@@ -136,11 +160,11 @@ export class WorkspaceManager {
             const untracked = await command(
               'git',
               ['ls-files', '--others', '--exclude-standard', '-z'],
-              { cwd: task.workspace },
+              { cwd: copySource },
             );
             for (const relative of untracked.split('\0').filter(Boolean)) {
               if (excluded(relative)) continue;
-              const source = path.join(task.workspace, relative);
+              const source = path.join(copySource, relative);
               if (!fs.lstatSync(source).isSymbolicLink()) {
                 fs.mkdirSync(path.dirname(path.join(directory, relative)), {
                   recursive: true,
@@ -167,7 +191,8 @@ export class WorkspaceManager {
           source: task.workspace,
           path: directory,
           kind,
-          baseCommit,
+          baseCommit: previous?.baseCommit || baseCommit,
+          restoredFromTaskId: previous ? resumeFromTaskId : null,
           branch,
           tempDir,
           port,
@@ -180,10 +205,10 @@ export class WorkspaceManager {
       this.releasePort(task.id);
       if (createdWorktree) {
         await command('git', ['worktree', 'remove', '--force', directory], {
-          cwd: task.workspace,
+          cwd: copySource,
         }).catch(() => {});
         await command('git', ['branch', '-D', branch], {
-          cwd: task.workspace,
+          cwd: copySource,
         }).catch(() => {});
       }
       throw error;

@@ -25,6 +25,7 @@ import { createPlatformReady } from './platform/ready.mjs';
 import { createContextFor } from './platform/context.mjs';
 import { checkPlanDeadlines } from './platform/plan-deadlines.mjs';
 import { createTaskStopper } from './platform/task-stop.mjs';
+import { resolveResumeSource } from './platform/recovery.mjs';
 import { taskTypeForTask } from './task-types.mjs';
 const nowIso = () => new Date().toISOString();
 
@@ -251,6 +252,13 @@ export function createPlatform({
       throw new Error('任务 Token 预算需要在 1000 至 100000000 之间。');
     if (nodeId !== 'local' && !records.get('nodes', nodeId))
       throw new Error('执行节点不存在。');
+    const resumeFromTaskId = resolveResumeSource(store, runs, workspaces, {
+      id: input.resumeFromTaskId,
+      role: assistant.id,
+      workspace,
+      teamId,
+      nodeId,
+    });
     const task = store.createTask({ ...input, workspace });
     const acceptance =
       typeof input.acceptance === 'string'
@@ -290,6 +298,7 @@ export function createPlatform({
         groupId,
         batchId,
         parentTaskId: input.parentTaskId || null,
+        resumeFromTaskId,
         nodeId,
         workspaceKey: input.workspaceKey || 'default',
         workspaceMode:
@@ -439,6 +448,7 @@ export function createPlatform({
         check: meta.check,
         workspaceKey: meta.workspaceKey,
         workspaceMode: meta.workspaceMode,
+        resumeFromTaskId: meta.resumeFromTaskId,
         maxDurationMinutes:
           records.get('jobs', meta.jobId)?.maxDurationMinutes || 30,
         execution,
@@ -695,7 +705,9 @@ export function createPlatform({
       const { assistant: effectiveAssistant, textOnlyModel } =
         applyTextOnlyModelPolicy(assistant, route, meta.allowModelWithoutTools);
       const cap = capabilities.patch(effectiveAssistant);
-      const workspace = await workspaces.prepare(task, meta.workspaceMode);
+      const workspace = await workspaces.prepare(task, meta.workspaceMode, {
+        resumeFromTaskId: meta.resumeFromTaskId,
+      });
       if (meta.attachmentIds?.length) {
         stagedAttachmentRoot = path.join(
           workspace.path,

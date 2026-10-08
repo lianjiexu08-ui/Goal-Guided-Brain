@@ -24,6 +24,7 @@ for (const date of [
   '2024-00-01',
   '2024-02-00',
   '2024-2-01',
+  '2024-02-29\n',
   'garbage',
 ])
   assert.throws(() => summarizeTransactions([{ date, amount: '1.00' }]));
@@ -34,6 +35,7 @@ for (const amount of [
   'NaN',
   '1e3',
   ' 1.00',
+  '1.00\n',
   '900719925474099.00',
   1.25,
 ])

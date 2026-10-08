@@ -315,12 +315,20 @@ export class NodeClient {
   async isolatedWorkspace(task) {
     const source = this.workspaces[task.workspaceKey];
     if (!source) throw new Error('控制端请求的工作目录映射在此节点不存在。');
-    if (this.prepareWorkspace)
-      return await this.prepareWorkspace({
+    if (this.prepareWorkspace) {
+      const prepared = await this.prepareWorkspace({
         task: task.task,
         source,
         nodeDataDir: this.dataDir,
+        resumeFromTaskId: task.resumeFromTaskId || null,
       });
+      if (
+        task.resumeFromTaskId &&
+        prepared.restoredFromTaskId !== task.resumeFromTaskId
+      )
+        throw new Error('自定义执行目录适配器未确认恢复原执行成果。');
+      return prepared;
+    }
     const id = task.task.id;
     if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]{1,150}$/.test(id))
       throw new Error('执行实例 ID 格式无效。');
@@ -329,6 +337,7 @@ export class NodeClient {
     const workspace = await this.workspaceManager.prepare(
       { ...task.task, workspace: source },
       'isolated',
+      { resumeFromTaskId: task.resumeFromTaskId },
     );
     return { ...workspace, workspace: workspace.path, mode: workspace.kind };
   }
@@ -610,6 +619,7 @@ export class NodeClient {
         executionContext(
           assignment.prompt || assignment.context || task.prompt,
           prepared.workspace,
+          prepared.restoredFromTaskId,
         ),
       );
     } catch (error) {

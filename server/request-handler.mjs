@@ -918,6 +918,8 @@ export function createRequestHandler({
             // instance on the replacement so the task detail can show the
             // lineage and old results remain immutable for review.
             sourceTaskId: task.id,
+            resumeFromTaskId: task.id,
+            model: previousMeta.modelOverride || undefined,
             attachmentIds: previousMeta.attachmentIds,
             contextExtra: `继续执行 ${task.id}。先核验已有成果与外部操作，再完成未完成部分。\n失败原因：${task.error || '未提供'}\n已有结果：${task.result || '无'}`,
           });
