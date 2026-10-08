@@ -281,6 +281,25 @@ test('结束跟进保存说明，丢失回执后刷新重试不重复记录，�
   ).toHaveValue('需求已取消，保留交付状态');
   let first = true;
   const requests = [];
+  let holdCleanup = false;
+  let cleanupStarted = false;
+  let releaseCleanup;
+  const cleanupGate = new Promise((resolve) => {
+    releaseCleanup = resolve;
+  });
+  await page.route(
+    (url) =>
+      url.pathname.endsWith('/collaboration-draft') &&
+      url.searchParams.get('messageId') === teams.rows[4].sourceMessageId,
+    async (route) => {
+      if (holdCleanup && route.request().method() === 'GET') {
+        holdCleanup = false;
+        cleanupStarted = true;
+        await cleanupGate;
+      }
+      await route.continue();
+    },
+  );
   await page.route('**/collaboration-review/**', async (route) => {
     if (route.request().method() !== 'POST') return route.continue();
     requests.push(route.request().postDataJSON());
@@ -289,7 +308,10 @@ test('结束跟进保存说明，丢失回执后刷新重试不重复记录，�
     if (first) {
       first = false;
       await route.abort('failed');
-    } else await route.fulfill({ response });
+    } else {
+      holdCleanup = true;
+      await route.fulfill({ response });
+    }
   });
   await review().getByRole('button', { name: '结束跟进', exact: true }).click();
   await expect(
@@ -300,6 +322,18 @@ test('结束跟进保存说明，丢失回执后刷新重试不重复记录，�
     .getByRole('button', { name: '查看收尾记录', exact: true })
     .click();
   await review().getByRole('button', { name: '重试确认处理结果' }).click();
+  try {
+    await expect.poll(() => cleanupStarted).toBe(true);
+    await expect(
+      row().getByRole('button', { name: '查看收尾记录', exact: true }),
+    ).toBeDisabled();
+    await expect(
+      review().getByRole('textbox', { name: '协作处理说明' }),
+    ).toBeDisabled();
+  } finally {
+    releaseCleanup();
+  }
+  await expect(review()).toHaveCount(0);
   expect(requests).toHaveLength(2);
   expect(requests[0].requestId).toBe(requests[1].requestId);
   await expect(

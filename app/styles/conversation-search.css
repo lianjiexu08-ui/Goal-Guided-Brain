@@ -168,6 +168,9 @@
     top: max(12px, env(safe-area-inset-top));
     translate: -50% 0;
     transform: none;
+    /* Preserve top alignment after production CSS lowers translate rules. */
+    --tw-translate-x: -50%;
+    --tw-translate-y: 0px;
     max-height: calc(
       100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)
     );

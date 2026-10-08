@@ -421,6 +421,10 @@
     border-radius: 22px 22px 0 0 !important;
     transform: none !important;
     translate: none !important;
+    /* Production CSS lowering can merge translate into transform while the
+       Tailwind utility still reads these variables. Reset both offsets. */
+    --tw-translate-x: 0px !important;
+    --tw-translate-y: 0px !important;
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;

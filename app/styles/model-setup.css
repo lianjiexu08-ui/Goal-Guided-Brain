@@ -62,4 +62,11 @@
   .model-setup-summary > .secondary-button {
     margin-bottom: 4px;
   }
+  .model-setup-notice.is-compact {
+    padding-block: 0;
+    margin-bottom: 4px;
+  }
+  .model-setup-notice.is-compact .model-setup-summary > .secondary-button {
+    margin-bottom: 0;
+  }
 }

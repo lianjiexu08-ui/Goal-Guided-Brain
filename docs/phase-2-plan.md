@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 264/264, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 268/268, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Cross-platform CI matrix is configured to run formatting, file-size checks, lint, typecheck, backend/CLI tests, `ggb doctor` and production build on Ubuntu, macOS and Windows with Node.js 22/24; Ubuntu also runs the desktop/mobile browser baseline.
@@ -46,6 +46,61 @@ They are not sign-off for the separate real deployment gates below.
 - [ ] Real cloud continues scheduled work while the owner's computer is offline.
 
 ## Local Release Record
+
+Local execution checks on 2026-10-08: workspace and team settings now inspect
+the entered directory on the control-plane host, distinguishing missing paths,
+files, read/traversal failures and write restrictions. DSH discovery now rejects
+directories and broken links; finding an executable is not described as a
+working engine connection. The authenticated read-only API does not save
+configuration, create directories, start tasks or call models. Remote worker
+mappings still require checks on their own host.
+
+Changing the input discards old results and aborts the pending request. Network
+failure, timeout and malformed responses have a retry path; same-directory
+refresh failure retains the last report with its time. Desktop/mobile browser
+scenarios use the real filesystem and verify draft retention, unchanged saved
+configuration, delayed response isolation and 320px controls. New backend/HTTP
+coverage includes access boundaries, invalid requests, file symlinks and injected
+permission errors. The complete backend suite passed 268/268 without skips.
+
+The first focused run found a pre-existing mobile reading-area regression when
+no chat provider was configured: 176.5px against the required greater-than-180px
+area. Existing conversations now use a concise configuration summary and reduced
+outer spacing while retaining 44px controls and expandable details. A follow-up
+run confirmed text shortening alone was insufficient; spacing was corrected
+without relaxing assertions. The 18-case focused suite then passed. The existing
+reading test now explicitly keeps missing-model guidance visible instead of
+depending on providers created by other tests. Visual review also corrected the
+execution panel's secondary text contrast. Evidence is retained in
+`/tmp/ggb-execution-evidence`. The subsequent full desktop/mobile regression
+passed 266/266 in 13.2 minutes without retries or skipped cases. Whole-repository
+formatting, Lint, typecheck and the 325-source line gate passed.
+
+Production smoke checking then exposed a mobile dialog offset absent in the dev
+server: CSS lowering merged the independent translate reset into transform,
+leaving Tailwind translation variables active. Mobile work dialogs now explicitly
+reset both variables. The test runner supports `--production` through
+`npm run test:e2e:production`, reusing isolated data and the existing suite. The
+18-case production-focused run passed in 30.0 seconds. CI now builds and runs the same complete browser suite against production;
+this records configured CI coverage, not a remote CI run. A subsequent CSS audit
+identified the same risk in conversation search. The initial production full run
+was intentionally interrupted; both mobile search scenarios then reproduced the
+problem, including a panel top of -175.265625px. Search now preserves horizontal
+centering while explicitly clearing the vertical utility offset. Existing search
+assertions were not changed. The next full production run also found the same
+offset in management dialogs and a receipt-cleanup race in collaboration review.
+Management dialogs now reset the utility offsets as well. Review actions remain
+busy until receipt handling and draft synchronization both finish; a delayed
+cleanup fixture verifies that reopening and editing cannot race that boundary.
+That full run finished with 261 passing and 5 failing cases (one review race,
+four management dialog actions outside the viewport). After the fixes, all
+24 production review/task-recovery scenarios passed in 33.9 seconds. The final
+complete production browser run passed 266/266 in 11.2 minutes without retries
+or skips. Production build and local mobile settings/search smoke checks passed;
+the original 11 tasks, 10 jobs and 2 unconfirmed spaces retained their IDs, with
+zero active tasks/jobs during restarts and five healthy UI/API endpoints.
+The final changed-flow development-mode regression also passed 34/34 in
+1.1 minutes, covering review cleanup, task recovery, search and execution checks.
 
 Model setup guidance on 2026-10-08: recruitment now distinguishes absent chat
 models, disabled providers, empty model lists, decision-only configurations,
@@ -780,8 +835,8 @@ format checks for changed code, file-size checks and production build passed.
 The subsequent full 126-run browser regression includes this mobile refinement,
 the ordinary attention-resolution workflow and cross-team overview recovery.
 
-Latest full local regression on 2026-10-08: `npm test` 264/264 and Playwright
-desktop/mobile baseline 260/260 passed on macOS. `npm run lint`,
+Latest full local regression on 2026-10-08: `npm test` 268/268 and Playwright
+desktop/mobile baseline 266/266 passed on macOS. `npm run lint`,
 `npm run typecheck`, `npm run quality:lines`, `npm run build` and
 `git diff --check` also passed. The model metrics regression includes task-type
 runtime comparisons, alias filtering, delayed response isolation, retry and
@@ -808,8 +863,8 @@ deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
 
-The current deterministic suite contains 264 passing tests. The latest
-full Playwright baseline passed 260 desktop/mobile runs covering team
+The current deterministic suite contains 268 passing tests. The latest
+full Playwright baseline passed 266 desktop/mobile runs covering team
 recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
 draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
 binary drag-and-drop attachments, conversation scroll recovery, evidence quality summaries, Team Charter confirmation and high-risk

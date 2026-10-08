@@ -472,7 +472,7 @@ export function WorkbenchSidebar({ context }: { context: WorkbenchContext }) {
           <div>
             <strong>工作空间</strong>
             <span>
-              {data?.config.dshReady ? '执行引擎已连接' : '连接执行引擎'} ·{' '}
+              {data?.config.dshReady ? '已发现执行引擎' : '未找到执行引擎'} ·{' '}
               {modelSetupLabel(data?.config)}
             </span>
           </div>

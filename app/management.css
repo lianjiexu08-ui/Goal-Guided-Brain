@@ -783,6 +783,8 @@
     border-radius: 22px 22px 0 0 !important;
     transform: none !important;
     translate: none !important;
+    --tw-translate-x: 0px !important;
+    --tw-translate-y: 0px !important;
     overflow-x: hidden;
     overscroll-behavior: contain;
   }

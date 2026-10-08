@@ -1,4 +1,5 @@
 import { previewChainReview, saveChainReview } from './team-chain-review.mjs';
+import { inspectLocalExecution } from './execution-check.mjs';
 import {
   readChainReviewDraft,
   saveChainReviewDraft,
@@ -130,6 +131,8 @@ export function createRequestHandler({
       const authorization = platform.auth.authorize(req);
       if (!authorization.authorized)
         return send(401, { error: '请先登录工作台。' });
+      if (req.method === 'POST' && parts[1] === 'execution-check' && !parts[2])
+        return send(200, await inspectLocalExecution(body.workspace));
       if (parts[1] === 'attachments') {
         if (req.method === 'POST' && !parts[2]) {
           const teamId =

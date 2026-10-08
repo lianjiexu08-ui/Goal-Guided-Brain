@@ -3,35 +3,43 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
+const args = process.argv.slice(2);
+const production = args.includes('--production');
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ggb-browser-e2e-'));
 const cli = path.resolve('node_modules/@playwright/test/cli.js');
 const vinextLock = path.resolve('.vinext/dev/lock.json');
 let savedVinextLock = null;
 let shouldRemoveVinextLock = false;
-try {
-  const current = JSON.parse(fs.readFileSync(vinextLock, 'utf8'));
-  if (Number.isInteger(current.pid) && current.pid > 1) {
-    try {
-      process.kill(current.pid, 0);
-      savedVinextLock = fs.readFileSync(vinextLock);
-      shouldRemoveVinextLock = true;
-    } catch (error) {
-      if (error.code === 'ESRCH') shouldRemoveVinextLock = true;
-      else throw error;
+if (!production)
+  try {
+    const current = JSON.parse(fs.readFileSync(vinextLock, 'utf8'));
+    if (Number.isInteger(current.pid) && current.pid > 1) {
+      try {
+        process.kill(current.pid, 0);
+        savedVinextLock = fs.readFileSync(vinextLock);
+        shouldRemoveVinextLock = true;
+      } catch (error) {
+        if (error.code === 'ESRCH') shouldRemoveVinextLock = true;
+        else throw error;
+      }
     }
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
   }
-} catch (error) {
-  if (error.code !== 'ENOENT') throw error;
-}
 if (shouldRemoveVinextLock) fs.rmSync(vinextLock, { force: true });
 const environment = {
   ...process.env,
   GGB_E2E_DATA_DIR: dataDir,
+  GGB_E2E_PRODUCTION: production ? '1' : '0',
 };
-const child = spawn(process.execPath, [cli, 'test', ...process.argv.slice(2)], {
-  stdio: 'inherit',
-  env: environment,
-});
+const child = spawn(
+  process.execPath,
+  [cli, 'test', ...args.filter((arg) => arg !== '--production')],
+  {
+    stdio: 'inherit',
+    env: environment,
+  },
+);
 let stopping = false;
 const cleanup = () => {
   if (stopping) return;

@@ -4,6 +4,7 @@
 // Focused presentation modules receive a controller context assembled by Workbench.
 /* oxlint-disable no-explicit-any, no-unused-vars */
 import Markdown from 'react-markdown';
+import { ExecutionCheck } from './execution-check';
 import { api, entityList, entityText } from '../workbench-api';
 import {
   AssistantEditor,
@@ -267,6 +268,7 @@ export function WorkbenchDialogGeneral({
               placeholder="/Users/你的用户名/Projects/项目"
             />
           </label>
+          <ExecutionCheck workspace={settingsForm.workspace} />
           <label>
             模型
             <input

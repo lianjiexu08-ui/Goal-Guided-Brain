@@ -66,6 +66,7 @@ export function findDsh(options = {}) {
     ((filename) => {
       if (!filename) return false;
       try {
+        if (!fs.statSync(filename).isFile()) return false;
         // Windows does not use executable permission bits.  Checking F_OK also
         // lets an npm-generated `.cmd` shim be selected there.
         fs.accessSync(

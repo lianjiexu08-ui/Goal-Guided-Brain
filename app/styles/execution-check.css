@@ -1,0 +1,45 @@
+.execution-check {
+  padding: 12px;
+  margin: 0 0 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #f5f9f8;
+  font-size: 13px;
+  line-height: 1.6;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.execution-check-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.execution-check button {
+  min-height: 44px;
+}
+.execution-check p {
+  margin: 8px 0;
+}
+.execution-check ul {
+  display: grid;
+  gap: 10px;
+  padding: 0;
+  list-style: none;
+}
+.execution-check li {
+  display: grid;
+  gap: 2px;
+}
+.execution-check li[data-status='fail'],
+.execution-check-error {
+  color: #9b3434;
+}
+.execution-check li[data-status='warn'] {
+  color: #805921;
+}
+.execution-check small {
+  color: #526b65;
+  font-size: 12px;
+}

@@ -49,9 +49,15 @@ export function CollaborationReviewControl({
   const [opened, setOpened] = useState(false);
   const [current, setCurrent] = useState<CollaborationReview | null>(null);
   const [busy, setBusy] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const active = useRef<{ sequence: number; controller?: AbortController }>({
+  const active = useRef<{
+    sequence: number;
+    submitting: boolean;
+    controller?: AbortController;
+  }>({
     sequence: 0,
+    submitting: false,
   });
   const key = `ggb.collaboration-review-draft.v1:${review.messageId}`;
   const endpoint = `teams/${encodeURIComponent(review.sourceTeamId)}/collaboration-review/${encodeURIComponent(review.messageId)}`;
@@ -118,6 +124,7 @@ export function CollaborationReviewControl({
     }
   }
   async function load() {
+    if (active.current.submitting) return;
     setOpened(true);
     const value = await request('GET');
     if (!value) return;
@@ -125,38 +132,52 @@ export function CollaborationReviewControl({
   }
 
   async function submit() {
-    if (active.current.controller || !current || draftStore.conflict) return;
-    const body = draft.pending || {
-      action: current.status === 'open' ? draft.action : 'reopen',
-      note: draft.note.trim(),
-      fingerprint: current.fingerprint,
-      revision: current.revision,
-      requestId: crypto.randomUUID(),
-    };
-    setBusy(true);
-    setError('');
-    let saved;
-    try {
-      saved = await draftStore.commit({
-        action: body.action,
-        note: draft.note,
-        pending: body,
-      });
-    } catch (reason) {
-      setError((reason as Error).message);
-      setBusy(false);
+    if (
+      active.current.submitting ||
+      active.current.controller ||
+      !current ||
+      draftStore.conflict
+    )
       return;
+    active.current.submitting = true;
+    setSubmitting(true);
+    try {
+      const body = draft.pending || {
+        action: current.status === 'open' ? draft.action : 'reopen',
+        note: draft.note.trim(),
+        fingerprint: current.fingerprint,
+        revision: current.revision,
+        requestId: crypto.randomUUID(),
+      };
+      setBusy(true);
+      setError('');
+      let saved;
+      try {
+        saved = await draftStore.commit({
+          action: body.action,
+          note: draft.note,
+          pending: body,
+        });
+      } catch (reason) {
+        setError((reason as Error).message);
+        setBusy(false);
+        return;
+      }
+      const value = await request('POST', {
+        ...body,
+        draftRevision: saved.revision,
+      });
+      if (!value) return;
+      setCurrent(value);
+      await draftStore.completed(body.requestId);
+      setOpened(false);
+      onChanged();
+    } finally {
+      active.current.submitting = false;
+      setSubmitting(false);
     }
-    const value = await request('POST', {
-      ...body,
-      draftRevision: saved.revision,
-    });
-    if (!value) return;
-    setCurrent(value);
-    await draftStore.completed(body.requestId);
-    setOpened(false);
-    onChanged();
   }
+  const working = busy || submitting;
   const selectedAction = current?.status === 'open' ? draft.action : 'reopen';
   const canSubmit =
     draft.pending ||
@@ -167,7 +188,7 @@ export function CollaborationReviewControl({
           (selectedAction === 'reopen' || current.canEnd)));
   return (
     <div className="collaboration-review-control">
-      <button type="button" onClick={() => void load()} disabled={busy}>
+      <button type="button" onClick={() => void load()} disabled={working}>
         {review.status === 'closed'
           ? '查看收尾记录'
           : review.status === 'stale'
@@ -178,7 +199,7 @@ export function CollaborationReviewControl({
         <section
           className="collaboration-review-panel"
           aria-label="协作收尾处理"
-          aria-busy={busy}
+          aria-busy={working}
         >
           <strong>
             {current?.status === 'open' ? '处理这次协作' : '协作收尾记录'}
@@ -203,7 +224,7 @@ export function CollaborationReviewControl({
                   <select
                     aria-label="协作处理方式"
                     value={draft.action}
-                    disabled={busy || Boolean(draft.pending)}
+                    disabled={working || Boolean(draft.pending)}
                     onChange={(event) =>
                       saveDraft({
                         action: event.target.value as Decision,
@@ -229,7 +250,7 @@ export function CollaborationReviewControl({
                   rows={3}
                   maxLength={2000}
                   value={draft.note}
-                  disabled={busy || Boolean(draft.pending)}
+                  disabled={working || Boolean(draft.pending)}
                   onChange={(event) =>
                     saveDraft({
                       action: draft.action,
@@ -258,7 +279,7 @@ export function CollaborationReviewControl({
                 <button
                   type="button"
                   className="secondary-button"
-                  disabled={busy || Boolean(draft.pending)}
+                  disabled={working || Boolean(draft.pending)}
                   onClick={() => void load()}
                 >
                   刷新处理状态
@@ -267,14 +288,14 @@ export function CollaborationReviewControl({
                   type="button"
                   className="primary-button"
                   disabled={
-                    busy ||
+                    working ||
                     !canSubmit ||
                     Boolean(draftStore.conflict) ||
                     !draftStore.ready
                   }
                   onClick={() => void submit()}
                 >
-                  {busy
+                  {working
                     ? '处理中…'
                     : draft.pending
                       ? '重试确认处理结果'
@@ -283,7 +304,7 @@ export function CollaborationReviewControl({
                 <button
                   type="button"
                   className="secondary-button"
-                  disabled={busy || Boolean(draft.pending)}
+                  disabled={working || Boolean(draft.pending)}
                   onClick={() => setOpened(false)}
                 >
                   收起
@@ -311,7 +332,7 @@ export function CollaborationReviewControl({
               {!draft.pending && (
                 <button
                   type="button"
-                  disabled={busy}
+                  disabled={working}
                   onClick={() => void load()}
                 >
                   重新读取状态

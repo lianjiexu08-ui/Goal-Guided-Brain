@@ -4,6 +4,7 @@
 // Focused presentation modules receive a controller context assembled by Workbench.
 /* oxlint-disable no-explicit-any, no-unused-vars */
 import Markdown from 'react-markdown';
+import { ExecutionCheck } from './execution-check';
 import { api, entityList, entityText } from '../workbench-api';
 import {
   AssistantEditor,
@@ -456,6 +457,7 @@ export function WorkbenchDialogTeam({
                 隔离执行时会从此项目创建副本，实际执行位置可在任务详情查看。
               </small>
             </label>
+            <ExecutionCheck workspace={teamForm.workspace} />
             <div className="field-label">
               默认执行目录
               <Choice

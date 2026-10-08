@@ -38,7 +38,10 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'node scripts/dev.mjs',
+    command:
+      process.env.GGB_E2E_PRODUCTION === '1'
+        ? 'node scripts/start.mjs'
+        : 'node scripts/dev.mjs',
     url: 'http://127.0.0.1:3288/',
     timeout: 120_000,
     reuseExistingServer: false,

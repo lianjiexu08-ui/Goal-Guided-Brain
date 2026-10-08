@@ -19,6 +19,16 @@ const setupMessages = {
   legacy: '已识别旧版默认模型配置，可以继续描述需求。',
   configured: '模型配置已具备，可以开始描述需求。',
 };
+const shortMessages = {
+  missing: '未配置聊天模型',
+  'decision-only': '需配置聊天模型',
+  unsupported: '模型协议待调整',
+  disabled: '聊天模型已停用',
+  'empty-models': '模型列表为空',
+  credentials: '模型凭据待处理',
+  legacy: '默认模型已配置',
+  configured: '模型配置已具备',
+};
 export function modelSetupLabel(
   config?: Pick<Config, 'modelSetup' | 'hasApiKey'>,
 ) {
@@ -58,9 +68,23 @@ export function ModelSetupNotice({
   if (!needsSetup && !firstRecruitment) return null;
   const credentialAction = !!problem || state === 'credentials';
   const model = provider?.models.find((item) => item.id === modelId);
+  const message = disconnected
+    ? '配置状态暂未更新，请恢复连接后核对。'
+    : problem
+      ? `${provider!.name}：${problem}`
+      : setupMessages[state];
+  const summary = firstRecruitment
+    ? message
+    : disconnected
+      ? '配置状态待更新'
+      : problem
+        ? provider?.credentialState === 'locked'
+          ? '模型凭据库已锁定'
+          : '当前模型凭据待处理'
+        : shortMessages[state];
   return (
     <section
-      className={`model-setup-notice${needsSetup ? ' needs-setup' : ''}`}
+      className={`model-setup-notice${needsSetup ? ' needs-setup' : ''}${firstRecruitment ? '' : ' is-compact'}`}
       aria-label="模型启动检查"
     >
       <div className="model-setup-summary">
@@ -71,13 +95,7 @@ export function ModelSetupNotice({
           onClick={() => setExpanded((value) => !value)}
         >
           {credentialAction ? <KeyRound size={16} /> : <Settings2 size={16} />}
-          <span>
-            {disconnected
-              ? '配置状态暂未更新，请恢复连接后核对。'
-              : problem
-                ? `${provider!.name}：${problem}`
-                : setupMessages[state]}
-          </span>
+          <span>{summary}</span>
           <ChevronDown size={15} />
         </button>
         {needsSetup && (
@@ -96,6 +114,7 @@ export function ModelSetupNotice({
       </div>
       {expanded && (
         <div className="model-setup-details">
+          {!firstRecruitment && <p>{message}</p>}
           <p>
             先连接模型，再和项目经理澄清目标，确认团队方案后开始执行。Skill、MCP、Plugin
             可以按任务需要添加，TypeSafe 也是可选能力。

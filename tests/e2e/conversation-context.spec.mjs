@@ -131,6 +131,24 @@ test('已有招募对话收起说明并保留阅读区域，展开和实时更�
   await page.setViewportSize(
     mobile ? { width: 393, height: 851 } : { width: 1280, height: 720 },
   );
+  // Keep the configuration warning present even when earlier tests registered
+  // providers. Existing conversations must still have enough reading space.
+  await page.route('**/api/state', async (route) => {
+    const response = await route.fetch({
+      headers: { ...route.request().headers(), 'if-none-match': '' },
+    });
+    const state = await response.json();
+    state.providers = [];
+    state.config.hasApiKey = false;
+    state.config.modelSetup = {
+      state: 'missing',
+      configuredProviders: 0,
+      readyProviders: 0,
+      readyModels: 0,
+    };
+    const { etag: _etag, ...headers } = response.headers();
+    await route.fulfill({ response, headers, json: state });
+  });
   await openTeam(page, team.id);
   const area = page.getByTestId('message-area');
   const toggle = page.getByRole('button', {
