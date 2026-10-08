@@ -586,7 +586,7 @@ p {
 .attachment-picker {
   display: none;
 }
-.mobile-attachment-button {
+.composer .mobile-attachment-button {
   display: none;
 }
 .mobile-bottom-nav {

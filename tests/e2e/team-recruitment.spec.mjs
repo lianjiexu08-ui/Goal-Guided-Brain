@@ -431,6 +431,8 @@ test.describe('团队招募核心流程', () => {
     await page.goto('/');
     const mobile = (page.viewportSize()?.width || 1024) < 768;
     const context = page.getByTestId('mobile-context-bar');
+    await expect(page.locator('.composer textarea')).toBeVisible();
+    await expect(page.locator('.mobile-attachment-button')).toHaveCount(1);
     if (!mobile) {
       await expect(context).toBeHidden();
       await expect(
