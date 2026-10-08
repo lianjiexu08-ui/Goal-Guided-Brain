@@ -28,6 +28,7 @@ export function proposeTeam(plane, body, principal) {
   )
     throw fail('团队成员需要在 1 至 8 个之间。');
   const seen = new Set();
+  const memberAliases = new Map();
   const capabilityRows = plane.records.list('capabilities');
   const providerRows = plane.records.list('providers');
   const members = body.members.map((member, index) => {
@@ -37,17 +38,21 @@ export function proposeTeam(plane, body, principal) {
     const role = plane.store.role(roleId);
     if (!role || role.archived)
       throw fail(`成员助手 ${roleId} 不存在或已归档。`);
-    const memberId =
-      roleId === team.pmRoleId
-        ? 'manager'
-        : String(member.memberId || `member-${index + 1}`);
+    const suppliedId = String(
+      member.memberId ||
+        (roleId === team.pmRoleId ? 'manager' : `member-${index + 1}`),
+    );
+    const memberId = roleId === team.pmRoleId ? 'manager' : suppliedId;
     if (
-      !/^[a-zA-Z0-9_-]{1,64}$/.test(memberId) ||
-      (memberId === 'manager' && roleId !== team.pmRoleId)
+      !/^[a-zA-Z0-9_-]{1,64}$/.test(suppliedId) ||
+      (suppliedId === 'manager' && roleId !== team.pmRoleId)
     )
       throw fail(
         '成员标识需要为 1 至 64 位字母、数字、下划线或连字符，manager 保留给项目经理。',
       );
+    if (memberAliases.has(suppliedId))
+      throw fail(`成员标识 ${suppliedId} 重复。`);
+    memberAliases.set(suppliedId, memberId);
     if (seen.has(memberId)) throw fail(`成员标识 ${memberId} 重复。`);
     seen.add(memberId);
     const responsibility = required(
@@ -165,6 +170,10 @@ export function proposeTeam(plane, body, principal) {
   }
   if (members.length > 8) throw fail('团队成员（含项目经理）不能超过 8 个。');
   validateRecruitmentModels(plane, members);
+  for (const member of members)
+    member.dependencies = [
+      ...new Set(member.dependencies.map((id) => memberAliases.get(id) || id)),
+    ];
   const memberIds = new Set(members.map((member) => member.memberId));
   for (const member of members) {
     if (
@@ -172,7 +181,9 @@ export function proposeTeam(plane, body, principal) {
         (id) => !memberIds.has(id) || id === member.memberId,
       )
     )
-      throw fail('成员依赖必须使用方案内其他成员的 memberId。');
+      throw fail(
+        `成员 ${member.memberId} 的依赖必须使用方案内其他成员的 memberId（${[...memberIds].join('、')}），不能依赖自己。项目经理规范标识为 manager。`,
+      );
   }
   const visiting = new Set(),
     visited = new Set();

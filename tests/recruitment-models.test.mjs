@@ -108,6 +108,47 @@ void test('recruitment rejects descriptive model names without overwriting draft
         saved,
       );
     }
+    const withManager = (alias) => ({
+      ...draft,
+      members: [
+        {
+          roleId: 'project_manager',
+          memberId: alias,
+          responsibility: '协调交付',
+        },
+        { ...draft.members[0], dependencies: [alias] },
+      ],
+    });
+    for (const alias of ['project_manager', 'pm_lead']) {
+      app.platform.control.proposeTeam(withManager(alias), principal);
+      const normalized = app.store.teamSpace(team.id).recruitment.proposal;
+      assert.equal(normalized.members[0].memberId, 'manager');
+      assert.deepEqual(normalized.members[1].dependencies, ['manager']);
+      for (const members of [
+        [
+          { ...withManager(alias).members[0], dependencies: [alias] },
+          draft.members[0],
+        ],
+        [
+          { ...withManager(alias).members[0], memberId: 'dev' },
+          draft.members[0],
+        ],
+        [
+          { ...withManager(alias).members[0], dependencies: ['dev'] },
+          withManager(alias).members[1],
+        ],
+      ]) {
+        assert.throws(
+          () =>
+            app.platform.control.proposeTeam({ ...draft, members }, principal),
+          /不能依赖自己|重复|循环/,
+        );
+        assert.deepEqual(
+          app.store.teamSpace(team.id).recruitment.proposal,
+          normalized,
+        );
+      }
+    }
     app.platform.control.proposeTeam(
       { ...draft, members: [{ ...draft.members[0], modelHint: '' }] },
       principal,
@@ -116,7 +157,7 @@ void test('recruitment rejects descriptive model names without overwriting draft
       app.store.teamSpace(team.id).recruitment.proposal.members[1].modelHint,
       '',
     );
-    app.platform.control.proposeTeam(draft, principal);
+    app.platform.control.proposeTeam(withManager('pm_lead'), principal);
     app.store.records.save(
       'providers',
       { ...provider, models: [{ id: 'replacement', tools: true }] },
@@ -133,6 +174,7 @@ void test('recruitment rejects descriptive model names without overwriting draft
       (member) => member.memberId === 'dev',
     );
     assert.equal(app.store.role(dev.agentId).model, 'exact-model');
+    assert.deepEqual(dev.dependencies, ['manager']);
   } finally {
     await app.close();
     fs.rmSync(dir, { recursive: true, force: true });

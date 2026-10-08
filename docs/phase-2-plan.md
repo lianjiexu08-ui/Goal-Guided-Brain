@@ -47,6 +47,32 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Local Release Record
 
+Recruitment context follow-up on 2026-10-08: inspection of the preceding real
+trace found 17 tool calls, including loading the execution skill during discovery,
+routine checkpoint/plan reads and repeated proposal attempts. Project-manager
+IDs were normalized to `manager` while dependencies retained the submitted alias.
+Normalization now updates dependent references in the same proposal, rejects
+ambiguous duplicates/self-dependencies/cycles, and preserves the previous draft
+on failure. The MCP schema documents the canonical ID. Integration tests exercise
+both aliases observed in the trace and confirm persisted dependencies.
+
+Recruitment now advertises 9 relevant orchestration tools instead of all 24.
+Execution-phase tools return when the team is confirmed; existing server-side
+permissions remain authoritative for every call. Discovery guidance asks for
+direct clarification without routine plan/checkpoint reads, while retaining
+conversation history, knowledge, attachments and optional decision support.
+Authenticated MCP tests verify both phases on the same connection.
+
+The unchanged three-turn `gpt-5.6` scenario passed again: 36,660 reported tokens
+(6,401 / 7,437 / 22,822), 6 tool calls and one successful proposal submission,
+followed by owner confirmation of a three-member team. Elapsed time was about
+82 seconds. Compared with the previous 99,514-token run this observation is
+63.2% lower; it is not a repeated-trial estimate or a billing guarantee. The
+proposal retains CSV validation, monthly aggregation, mobile 44px controls,
+automated tests and local-only scope. No development task was dispatched.
+Backend/CLI 279/279 and production desktop/mobile recruitment regression 34/34
+passed, along with formatting, lint, types, build and the 337-source line gate.
+
 Recruitment contract verification on 2026-10-08: a real GPT · Autofish /
 `gpt-5.6` run in an isolated workspace completed three turns, saved a two-member
 family-ledger proposal, and passed owner confirmation without premature member

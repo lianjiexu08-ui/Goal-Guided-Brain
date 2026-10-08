@@ -236,6 +236,23 @@ void test('project manager proposes a Team Charter and owner confirmation materi
         requestInit: { headers: patch.config.headers },
       }),
     );
+    const discoveryTools = (await client.listTools()).tools.map(
+      (tool) => tool.name,
+    );
+    for (const name of [
+      'propose_team',
+      'list_capability_catalog',
+      'evaluate_decision',
+      'save_checkpoint',
+    ])
+      assert.ok(discoveryTools.includes(name));
+    for (const name of [
+      'delegate_task',
+      'delegate_to_team',
+      'begin_operation',
+      'submit_artifact',
+    ])
+      assert.ok(!discoveryTools.includes(name));
     const catalog = JSON.parse(
       (
         await client.callTool({
@@ -415,6 +432,17 @@ void test('project manager proposes a Team Charter and owner confirmation materi
     );
     assert.equal(confirmed.status, 200);
     assert.equal(confirmed.body.recruitment.phase, 'confirmed');
+    const executionTools = (await client.listTools()).tools.map(
+      (tool) => tool.name,
+    );
+    for (const name of [
+      'delegate_task',
+      'delegate_to_team',
+      'begin_operation',
+      'submit_artifact',
+    ])
+      assert.ok(executionTools.includes(name));
+    assert.ok(executionTools.length > discoveryTools.length);
     assert.equal(confirmed.body.memberRoleIds.length, 4);
     const capabilityAudits = app.platform.control.records
       .list('capability-audits')

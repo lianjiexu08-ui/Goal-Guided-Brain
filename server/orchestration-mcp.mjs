@@ -185,7 +185,11 @@ const tools = [
           maxItems: 8,
           items: objectSchema(
             {
-              memberId: string,
+              memberId: {
+                type: 'string',
+                description:
+                  '方案内唯一标识。项目经理使用 manager；其他成员的 dependencies 引用这里的标识。',
+              },
               roleId: string,
               name: string,
               responsibility: string,
@@ -363,6 +367,18 @@ const tools = [
   },
 ];
 
+const recruitmentToolNames = new Set([
+  'list_capabilities',
+  'list_capability_catalog',
+  'evaluate_decision',
+  'run_capability_command',
+  'read_team_roster',
+  'read_team_plan',
+  'propose_team',
+  'save_checkpoint',
+  'request_attention',
+]);
+
 export function createOrchestrationServer({ control, token, capabilities }) {
   // eslint-disable-next-line typescript/no-deprecated -- The low-level server accepts the shared JSON tool schemas directly.
   const server = new Server(
@@ -370,8 +386,16 @@ export function createOrchestrationServer({ control, token, capabilities }) {
     { capabilities: { tools: {} } },
   );
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    control.validateInstanceToken(token);
-    return { tools };
+    const principal = control.validateInstanceToken(token);
+    const meta = control.records.get('task-meta', principal.taskId);
+    const team = meta && control.store.teamSpace(meta.teamId || meta.spaceId);
+    const recruiting =
+      team && ['discovery', 'proposed'].includes(team.recruitment?.phase);
+    return {
+      tools: recruiting
+        ? tools.filter((tool) => recruitmentToolNames.has(tool.name))
+        : tools,
+    };
   });
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
