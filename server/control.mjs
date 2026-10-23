@@ -1110,12 +1110,27 @@ export class ControlPlane {
             checkpoints: this.records.list('checkpoints').filter(item => item.groupId === record.groupId).slice(0, 50),
             artifacts: this.records.list('artifacts').filter(item => item.groupId === record.groupId).slice(0, 50),
           } };
+          if (collection === 'operations') return { status: 200, body: { ...record, review: this.reviewState(record) } };
           return { status: 200, body: record };
         }
         let records = this.records.list(collection);
         if (principal.type === 'instance') records = records.filter(item => item.groupId === principal.groupId);
         const taskId = query?.get?.('taskId');
         if (taskId) records = records.filter(item => (collection === 'messages' ? item.toTaskId : item.taskId) === taskId);
+        // 按团队过滤：记录通过 taskId -> task-meta 反查所属团队。
+        const teamIdFilter = query?.get?.('teamId');
+        if (teamIdFilter) {
+          const team = findTeam(this.store, teamIdFilter);
+          records = records.filter(item => {
+            const itemTaskId = item.taskId;
+            if (!itemTaskId) return false;
+            const meta = this.records.get('task-meta', itemTaskId) || {};
+            const itemTeam = meta.teamId || meta.spaceId;
+            return team && (itemTeam === team.id || itemTeam === team.teamId || itemTeam === team.chatId);
+          });
+        }
+        // 外部操作附带多轮评审状态，便于前端/CLI 直接展示进度。
+        if (collection === 'operations') records = records.map(item => ({ ...item, review: this.reviewState(item) }));
         return { status: 200, body: bounded(records, query) };
       }
       if (collection === 'jobs') {

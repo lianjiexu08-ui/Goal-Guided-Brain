@@ -189,7 +189,7 @@ const teamUsage = `用法：
   ggb team run <teamId> "要达成的目标" [--watch] [--interval 秒]
   ggb team status <teamId>
   ggb team reviews <teamId>
-  ggb team review <teamId> --approve|--reject <operationId> [--reason 说明]
+  ggb team review --approve|--reject <operationId> [--reason 说明]
 通用：--api 指定工作台地址（默认 http://127.0.0.1:3089），--password 或 GGB_PASSWORD 登录。`;
 
 function teamIdArg(args) { return args.find(value => !value.startsWith('--') && value !== 'team'); }
@@ -254,29 +254,37 @@ async function teamStatus(args) {
 }
 
 async function teamReviews(args) {
-  const id = teamIdArg(args.slice(1));
+  const id = args[1] && !args[1].startsWith('--') ? args[1] : '';
   if (!id) throw new Error('team reviews 需要团队 ID。');
-  const data = await workbenchFetch(args, `operations?teamId=${encodeURIComponent(id)}`);
+  const data = await workbenchFetch(args, `operations?teamId=${encodeURIComponent(id)}&limit=100`);
   const items = (data.items || []).filter(op => op.review?.required);
   if (has(args, '--json')) return console.log(JSON.stringify(items, null, 2));
   if (!items.length) return console.log('当前没有需要评审的高风险操作。');
   for (const op of items) {
     const stages = (op.review.stages || []).map(slot => `${slot.stage}:${slot.record ? slot.record.decision : '待'}`).join(' → ');
-    console.log(`${op.id}  [${op.status}]  ${op.title || op.action}\n    ${stages}  可执行:${op.review.canExecute ? '是' : '否'}`);
+    const pending = (op.review.stages || []).find(slot => !slot.record);
+    console.log(`${op.id}  [${op.status}]  ${op.title || op.action}\n    ${stages}  可执行:${op.review.canExecute ? '是' : '否'}${op.review.rejected ? '  已被拒绝' : ''}${pending && !op.review.rejected ? `  等待:${pending.stage === 'owner' ? '你本人确认' : pending.stage}` : ''}`);
   }
+  console.log('\n用 ggb team review --approve|--reject <operationId> 提交你本人的评审。');
 }
 
 async function teamReview(args) {
-  const operationId = valueAfter(args, '--op', '') || args.find((value, i) => i > 1 && !value.startsWith('--') && args[i - 1] !== '--reason');
   const approve = has(args, '--approve');
   const reject = has(args, '--reject');
-  if (!operationId || (!approve && !reject)) throw new Error('用法：ggb team review <teamId> --approve|--reject <operationId> [--reason 说明]');
+  // 操作 ID：--op 优先，否则取第一个非标志且非 --reason 值的参数。
+  const reasonValue = valueAfter(args, '--reason', null);
+  const positional = args.slice(1).filter(value => !value.startsWith('--') && value !== reasonValue && value !== 'review');
+  const operationId = valueAfter(args, '--op', '') || positional[0] || '';
+  if (!operationId || (!approve && !reject)) throw new Error('用法：ggb team review --approve|--reject <operationId> [--reason 说明]');
   const decision = approve ? 'approve' : 'reject';
-  const rationale = valueAfter(args, '--reason', '');
+  const rationale = reasonValue || '';
   const result = await workbenchFetch(args, `operations/${operationId}/review`, { method: 'POST', body: { decision, rationale } });
   if (has(args, '--json')) return console.log(JSON.stringify(result, null, 2));
   const state = result.review || {};
-  console.log(`已记录评审：${decision === 'approve' ? '通过' : '拒绝'}。当前可执行：${state.canExecute ? '是' : '否'}${state.rejected ? '（已被拒绝，操作终止）' : ''}`);
+  const stages = (state.stages || []).map(slot => `${slot.stage}:${slot.record ? slot.record.decision : '待'}`).join(' → ');
+  console.log(`已记录评审：${decision === 'approve' ? '通过' : '拒绝'}。`);
+  if (stages) console.log(`进度：${stages}`);
+  console.log(`当前可执行：${state.canExecute ? '是' : '否'}${state.rejected ? '（已被拒绝，操作终止）' : ''}${!state.canExecute && !state.rejected ? '（还需后续评审轮）' : ''}`);
 }
 
 async function teamRun(args) {
