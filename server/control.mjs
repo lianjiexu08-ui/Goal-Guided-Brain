@@ -722,6 +722,49 @@ export class ControlPlane {
     const targetId = teamKey(target);
     return allowed.includes(target.id) || allowed.includes(targetId) || allowed.includes(target.chatId);
   }
+  // ---- 跨团队共享上下文（受控的共享记忆层） ----
+  // 只有在两个方向都允许协作（source→target 与 target→source）时，两个团队才共享上下文，避免单向泄露。
+  sharedContextAllowed(a, b) {
+    return a && b && a.id !== b.id && this.collaborationAllowed(a, b) && this.collaborationAllowed(b, a);
+  }
+  // 当前团队可与之共享上下文的团队列表。
+  sharedContextTeams(team) {
+    return this.store.teamSpaces().filter(candidate =>
+      candidate.status === 'active' && candidate.recruitment?.phase === 'confirmed' && this.sharedContextAllowed(team, candidate));
+  }
+  // 当前团队可见的共享上下文条目：本团队 + 双向协作团队的条目。
+  readSharedContext(principal) {
+    const { team } = this.currentTeam(principal);
+    const visible = new Set([team.id, ...this.sharedContextTeams(team).map(candidate => candidate.id)]);
+    const items = this.records.list('shared-context')
+      .filter(entry => visible.has(entry.teamId))
+      .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))
+      .slice(0, 100)
+      .map(entry => ({ ...entry, own: entry.teamId === team.id, teamName: this.store.teamSpace(entry.teamId)?.name || entry.teamId }));
+    return { teamId: team.id, items };
+  }
+  // 发布一条共享上下文。条目按 (teamId, key) 唯一，重复发布同一 key 视为更新（需带 revision 防并发覆盖）。
+  shareContext(body, principal) {
+    this.ensureCurrent(principal);
+    const { team } = this.currentTeam(principal);
+    if (team.recruitment?.phase !== 'confirmed') throw fail('团队尚未完成招募，不能发布共享上下文。', 409);
+    if (!this.sharedContextTeams(team).length) throw fail('当前没有双向协作的团队可共享上下文。', 409);
+    const key = required(body.key, '共享键', 160).trim();
+    if (!/^[a-zA-Z0-9_.:/-]{1,160}$/.test(key)) throw fail('共享键只能包含字母、数字、下划线、点、冒号、斜杠、连字符。');
+    const title = required(body.title, '标题', 200);
+    const content = required(body.content, '共享内容');
+    const id = `shared:${team.id}:${key}`;
+    const existing = this.records.get('shared-context', id);
+    if (existing && body.expectedRevision !== undefined && body.expectedRevision !== existing.revision)
+      throw fail('共享条目已被更新，请重新读取后再改。', 409);
+    const saved = this.records.save('shared-context', {
+      teamId: team.id, key, title, content: String(content).slice(0, 50000),
+      kind: ['decision', 'finding', 'status', 'artifact', 'note'].includes(body.kind) ? body.kind : 'note',
+      taskId: principal.type === 'instance' ? principal.taskId : null,
+      authorRole: principal.agentId || 'owner',
+    }, id, body.expectedRevision);
+    return saved;
+  }
   listTeamSpaces(principal) {
     const { team: source } = this.currentTeam(principal);
     const teams = this.store.teamSpaces()

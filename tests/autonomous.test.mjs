@@ -187,3 +187,52 @@ test('跨团队委派不再受固定任务数上限约束', t => {
     assert.equal(result.duplicate, false);
   }
 });
+
+// 建立一个可与指定团队双向协作的第二团队（含其 PM principal）。
+function collaboratingTeam(t, fixture, sourceTeam) {
+  const { store, control } = fixture;
+  const other = store.saveTeamSpace({ name: '协作团队', goal: '共享上下文。', purpose: '验证共享。', workspace: fixture.workspace, pmRoleId: 'project_manager' });
+  store.saveTeamSpace({ ...store.teamSpace(other.id), collaboration: { enabled: true, autoHandoff: true, sharedBoard: true, allowedTeamIds: [] } }, other.id);
+  store.saveTeamSpace({ ...store.teamSpace(sourceTeam.id), collaboration: { enabled: true, autoHandoff: true, sharedBoard: true, allowedTeamIds: [] } }, sourceTeam.id);
+  const job = control.createJob({ role: other.pmRoleId, prompt: '协作', teamId: other.id, spaceId: other.id });
+  const claim = control.claimLocal(store.task(job.taskId));
+  const principal = control.validateInstanceToken(claim.token);
+  return { team: store.teamSpace(other.id), principal };
+}
+
+test('跨团队共享上下文：双向协作团队可读，未授权团队不可见', t => {
+  const fixture = confirmedTeam(t);
+  const { store, control, team, principal } = fixture;
+  const other = collaboratingTeam(t, fixture, team);
+
+  // 无共享条目时，未发布前不能读取对方上下文（但双方都允许协作，读取为空数组）。
+  const before = control.readSharedContext(principal);
+  assert.equal(before.items.length, 0);
+
+  // 本团队发布一条关键决定。
+  const saved = control.shareContext({ key: 'decision/api', title: '接口约定', content: 'REST 使用 v2 路径，认证走 Bearer。', kind: 'decision' }, principal);
+  assert.equal(saved.teamId, team.id);
+  assert.equal(saved.key, 'decision/api');
+
+  // 双向协作的另一团队能读到这条共享。
+  const visible = control.readSharedContext(other.principal);
+  assert.ok(visible.items.some(entry => entry.key === 'decision/api' && entry.teamName === store.teamSpace(team.id).name));
+
+  // 同一 key 重复发布视为更新，revision 防并发覆盖。
+  const updated = control.shareContext({ key: 'decision/api', title: '接口约定', content: '改为 v3。', kind: 'decision', expectedRevision: saved.revision }, principal);
+  assert.equal(updated.revision, saved.revision + 1);
+  assert.throws(() => control.shareContext({ key: 'decision/api', title: 'x', content: 'y', expectedRevision: saved.revision }, principal), /更新|revision|刷新/);
+
+  // 单向协作（对方不允许回协）不共享。
+  const isolated = store.saveTeamSpace({ name: '孤立团队', goal: 'g', purpose: 'p', workspace: fixture.workspace, pmRoleId: 'project_manager', collaboration: { enabled: false, autoHandoff: false, sharedBoard: false, allowedTeamIds: [] } });
+  const isoJob = control.createJob({ role: isolated.pmRoleId, prompt: 'x', teamId: isolated.id, spaceId: isolated.id });
+  const isoPrincipal = control.validateInstanceToken(control.claimLocal(store.task(isoJob.taskId)).token);
+  const isolatedView = control.readSharedContext(isoPrincipal);
+  assert.ok(!isolatedView.items.some(entry => entry.teamId === team.id));
+});
+
+test('共享上下文：未确认团队不能发布，无可协作团队时拒绝', t => {
+  const fixture = confirmedTeam(t, {}, 'discovery');
+  const { control, principal } = fixture;
+  assert.throws(() => control.shareContext({ key: 'a/b', title: 't', content: 'c' }, principal), /尚未完成招募|双向协作/);
+});

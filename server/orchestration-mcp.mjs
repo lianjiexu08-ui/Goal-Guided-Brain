@@ -86,6 +86,8 @@ const tools = [
   }, ['title', 'content']) },
   { name: 'submit_artifact', description: '提交产物位置、版本和验证证据；不会自动合并代码或发布。', inputSchema: objectSchema({ title: string, location: string, content: string, commit: string, evidence: string }, ['title', 'location', 'evidence']) },
   { name: 'read_board', description: '读取当前任务组的共享任务板和版本。', inputSchema: objectSchema() },
+  { name: 'read_shared_context', description: '读取当前团队及双向协作团队共享的跨团队上下文（决定、发现、状态、产物索引）。只读，只返回已建立双向协作关系团队的内容。', inputSchema: objectSchema() },
+  { name: 'share_context', description: '发布一条跨团队共享上下文（如关键决定、可复用结论、产物位置），供与本团队双向协作的其他团队阅读。同一 key 重复发布视为更新。', inputSchema: objectSchema({ key: string, title: string, content: string, kind: { type: 'string', enum: ['decision', 'finding', 'status', 'artifact', 'note'] }, expectedRevision: { type: 'integer', minimum: 1 } }, ['key', 'title', 'content']) },
   { name: 'update_board', description: '保存共享结论；更新已有记录必须使用读取到的 revision，避免覆盖并发修改。', inputSchema: objectSchema({ id: string, title: string, content: string, expectedRevision: { type: 'integer', minimum: 1 } }, ['title', 'content']) },
   { name: 'request_attention', description: '向所有者报告需要决定、凭据或人工核验的阻塞事项。', inputSchema: objectSchema({ title: string, content: string, kind: string }, ['title', 'content']) },
   { name: 'begin_operation', description: '登记已被明确授权的外部操作。高风险操作（部署/发布/删除/发送/外部写入等）会自动进入多轮评审，canExecute=true 才能首次执行；已有记录必须先核验结果。', inputSchema: objectSchema({ action: string, title: string, intent: string, rationale: string, idempotencyKey: string }, ['action', 'intent', 'idempotencyKey']) },
@@ -262,6 +264,8 @@ export function createOrchestrationServer({ control, token, capabilities }) {
         case 'save_checkpoint': response = control.saveScoped('checkpoints', input, principal); break;
         case 'submit_artifact': response = control.saveScoped('artifacts', input, principal); break;
         case 'read_board': response = { items: control.records.list('board').filter(record => record.groupId === principal.groupId).slice(0, 100) }; break;
+        case 'read_shared_context': response = control.readSharedContext(principal); break;
+        case 'share_context': response = control.shareContext(input, principal); break;
         case 'update_board': response = control.saveScoped('board', input, principal, input.id); break;
         case 'request_attention': response = control.saveScoped('attention', input, principal); break;
         case 'begin_operation': response = control.operation(input, principal); break;
