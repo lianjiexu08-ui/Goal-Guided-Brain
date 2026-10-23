@@ -42,6 +42,7 @@ const usage = `用法：
   ggb run --session refactor --continue "继续重构"
   ggb chat --provider claude --session personal
   ggb decide --state '{"goal":"..."}' --questions '{"urgent":{"type":"noul","instructions":"Is this urgent?"}}'
+  ggb team list | create | run <id> "目标" [--watch] | status <id> | reviews <id> | review <id> --approve <opId>
 
 支持预设：${Object.keys(PRESETS).join('、')}（gpt/openai 是 Codex/OpenAI 别名）；TypeSafe 通过 decide 命令作为可选结构化决策后端。
 密钥从对应环境变量读取，也可用 --api-key 临时传入（不会写入磁盘）。
@@ -69,6 +70,39 @@ function versionAtLeast(version, minimum) {
 function doctorCheck(id, label, status, detail) {
   return { id, label, status, detail };
 }
+
+// ---- 工作台 API 客户端（团队自治流程） ----
+// 本地 loopback 且未开启 WORKBENCH_REQUIRE_AUTH 时无需登录；否则用 --password 或 GGB_PASSWORD 登录后缓存 cookie。
+const workbenchBase = args => String(valueAfter(args, '--api', process.env.GGB_API_URL || 'http://127.0.0.1:3089')).replace(/\/$/, '');
+const cookieFile = () => path.join(sessionDir(), '.workbench-session');
+async function workbenchFetch(args, route, { method = 'GET', body } = {}) {
+  const base = workbenchBase(args);
+  const url = `${base}/api/${String(route).replace(/^\//, '')}`;
+  const cookie = fs.existsSync(cookieFile()) ? fs.readFileSync(cookieFile(), 'utf8').trim() : '';
+  const attempt = async authCookie => fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json', ...(authCookie ? { Cookie: authCookie } : {}) },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  let response = await attempt(cookie);
+  if (response.status === 401) {
+    const password = valueAfter(args, '--password', process.env.GGB_PASSWORD || '');
+    if (!password) throw new Error('工作台需要登录。请用 --password 或环境变量 GGB_PASSWORD 提供密码。');
+    const login = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
+    if (!login.ok) throw new Error(`工作台登录失败（HTTP ${login.status}）。`);
+    const setCookie = login.headers.get('set-cookie') || '';
+    const sessionCookie = setCookie.split(';')[0];
+    fs.mkdirSync(sessionDir(), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(cookieFile(), sessionCookie, { mode: 0o600 });
+    response = await attempt(sessionCookie);
+  }
+  const text = await response.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  if (!response.ok) throw new Error((data && data.error) || `HTTP ${response.status}`);
+  return data;
+}
+function fmtTime(value) { if (!value) return ''; const d = new Date(value); return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('zh-CN', { hour12: false }); }
 
 async function checkReachable(id, label, target) {
   try {
@@ -146,6 +180,154 @@ async function doctor(args) {
   }
   console.log(result.ok ? '\n环境检查通过；带 ! 的项目是可选提醒。' : '\n环境检查未通过，请先修复 ✗ 项目。');
   return result;
+}
+
+// ---- ggb team：终端版自治团队 ----
+const teamUsage = `用法：
+  ggb team list
+  ggb team create --name 团队名 --goal 目标 [--no-review] [--type development|product|operations|project|custom]
+  ggb team run <teamId> "要达成的目标" [--watch] [--interval 秒]
+  ggb team status <teamId>
+  ggb team reviews <teamId>
+  ggb team review <teamId> --approve|--reject <operationId> [--reason 说明]
+通用：--api 指定工作台地址（默认 http://127.0.0.1:3089），--password 或 GGB_PASSWORD 登录。`;
+
+function teamIdArg(args) { return args.find(value => !value.startsWith('--') && value !== 'team'); }
+
+async function teamList(args) {
+  const teams = await workbenchFetch(args, 'teams');
+  if (has(args, '--json')) return console.log(JSON.stringify(teams, null, 2));
+  if (!teams.length) return console.log('还没有团队。用 ggb team create 创建。');
+  for (const team of teams) {
+    const phase = team.recruitment?.phase || 'unknown';
+    const review = team.requireReview === false ? '自治招募' : '人工审核';
+    const members = team.recruitment?.phase === 'confirmed' ? (team.memberRoleIds || []).length : 1;
+    console.log(`${team.id}  ${team.name}  [${phase}]  ${review}  成员${members}  ${team.status}`);
+  }
+}
+
+async function teamCreate(args) {
+  const name = valueAfter(args, '--name', '');
+  const goal = valueAfter(args, '--goal', '');
+  if (!name || !goal) throw new Error('team create 需要 --name 和 --goal。');
+  const teamType = valueAfter(args, '--type', 'custom');
+  const requireReview = !has(args, '--no-review');
+  const body = {
+    name, goal, purpose: goal, teamType, pmRoleId: 'project_manager', memberRoleIds: ['project_manager'],
+    requireReview,
+    collaboration: { enabled: true, autoHandoff: true, sharedBoard: true, allowedTeamIds: [] },
+  };
+  const saved = await workbenchFetch(args, 'teams', { method: 'POST', body });
+  if (has(args, '--json')) return console.log(JSON.stringify(saved, null, 2));
+  console.log(`已创建团队「${saved.name}」(${saved.id})，招募审核：${requireReview ? '需要人工确认' : '自动确认（自治）'}。`);
+  console.log(`下一步：ggb team run ${saved.id} "你要达成的目标" --watch`);
+}
+
+function renderTeamStatus(team) {
+  console.log(`团队：${team.name} (${team.id})  阶段：${team.recruitment?.phase || 'unknown'}  状态：${team.status}`);
+  if (team.goal) console.log(`目标：${team.goal}`);
+  const messages = team.messages || [];
+  const recent = messages.slice(-8);
+  if (recent.length) {
+    console.log('\n最近消息：');
+    for (const message of recent) {
+      const who = message.senderType === 'owner' ? '你' : message.senderType === 'system' ? '系统' : message.senderType === 'team' ? `团队(${message.senderId || ''})` : 'PM';
+      console.log(`  [${fmtTime(message.createdAt)}] ${who}: ${String(message.content || '').slice(0, 160)}${message.status === 'blocked' ? '（阻塞）' : ''}`);
+    }
+  }
+  const tasks = team.tasks || [];
+  if (tasks.length) {
+    console.log('\n任务：');
+    for (const task of tasks.slice(-10)) {
+      const acceptance = task.verificationStatus ? ` 验收:${task.verificationStatus}` : '';
+      console.log(`  [${task.status}] ${task.title || task.id}${acceptance}`);
+    }
+  }
+}
+
+async function teamStatus(args) {
+  const id = teamIdArg(args.slice(1));
+  if (!id) throw new Error('team status 需要团队 ID。');
+  const team = await workbenchFetch(args, `teams/${id}`);
+  if (has(args, '--json')) return console.log(JSON.stringify(team, null, 2));
+  renderTeamStatus(team);
+}
+
+async function teamReviews(args) {
+  const id = teamIdArg(args.slice(1));
+  if (!id) throw new Error('team reviews 需要团队 ID。');
+  const data = await workbenchFetch(args, `operations?teamId=${encodeURIComponent(id)}`);
+  const items = (data.items || []).filter(op => op.review?.required);
+  if (has(args, '--json')) return console.log(JSON.stringify(items, null, 2));
+  if (!items.length) return console.log('当前没有需要评审的高风险操作。');
+  for (const op of items) {
+    const stages = (op.review.stages || []).map(slot => `${slot.stage}:${slot.record ? slot.record.decision : '待'}`).join(' → ');
+    console.log(`${op.id}  [${op.status}]  ${op.title || op.action}\n    ${stages}  可执行:${op.review.canExecute ? '是' : '否'}`);
+  }
+}
+
+async function teamReview(args) {
+  const operationId = valueAfter(args, '--op', '') || args.find((value, i) => i > 1 && !value.startsWith('--') && args[i - 1] !== '--reason');
+  const approve = has(args, '--approve');
+  const reject = has(args, '--reject');
+  if (!operationId || (!approve && !reject)) throw new Error('用法：ggb team review <teamId> --approve|--reject <operationId> [--reason 说明]');
+  const decision = approve ? 'approve' : 'reject';
+  const rationale = valueAfter(args, '--reason', '');
+  const result = await workbenchFetch(args, `operations/${operationId}/review`, { method: 'POST', body: { decision, rationale } });
+  if (has(args, '--json')) return console.log(JSON.stringify(result, null, 2));
+  const state = result.review || {};
+  console.log(`已记录评审：${decision === 'approve' ? '通过' : '拒绝'}。当前可执行：${state.canExecute ? '是' : '否'}${state.rejected ? '（已被拒绝，操作终止）' : ''}`);
+}
+
+async function teamRun(args) {
+  const rest = args.slice(1);
+  const id = rest[0] && !rest[0].startsWith('--') ? rest[0] : '';
+  const prompt = rest.slice(1).filter(value => !value.startsWith('--') && value !== valueAfter(args, '--interval', '__none__')).join(' ').trim() || (await readStdin());
+  if (!id) throw new Error('team run 需要团队 ID。');
+  if (!prompt) throw new Error('请提供要达成的目标（参数或 stdin）。');
+  const result = await workbenchFetch(args, `teams/${id}/messages`, { method: 'POST', body: { clientMessageId: `cli-${randomUUID()}`, content: prompt } });
+  console.log(`已把目标交给团队项目经理（消息 ${result.id || ''}，会话 ${result.sessionId || ''}）。`);
+  if (!has(args, '--watch')) {
+    console.log(`查看进展：ggb team status ${id}`);
+    return;
+  }
+  const intervalMs = Math.max(1, Number(valueAfter(args, '--interval', '4')) || 4) * 1000;
+  console.log('持续跟踪中（Ctrl-C 退出）…');
+  let lastMessageCount = -1;
+  let lastTaskSignature = '';
+  for (;;) {
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
+    let team;
+    try { team = await workbenchFetch(args, `teams/${id}`); } catch { continue; }
+    const messages = team.messages || [];
+    if (messages.length !== lastMessageCount) {
+      for (const message of messages.slice(Math.max(0, lastMessageCount))) {
+        if (message.senderType === 'owner') continue;
+        const who = message.senderType === 'system' ? '[系统]' : message.senderType === 'team' ? '[协作]' : '[PM]';
+        console.log(`${who} ${String(message.content || '').slice(0, 300)}`);
+      }
+      lastMessageCount = messages.length;
+    }
+    const tasks = team.tasks || [];
+    const signature = tasks.map(task => `${task.id}:${task.status}`).join(',');
+    if (signature !== lastTaskSignature) {
+      const done = tasks.filter(task => ['completed', 'failed', 'cancelled'].includes(task.status)).length;
+      console.log(`[任务] 共 ${tasks.length} 个，完成 ${done} 个；阶段 ${team.recruitment?.phase || ''}`);
+      lastTaskSignature = signature;
+    }
+  }
+}
+
+async function team(args) {
+  const sub = args[0];
+  if (!sub || sub === 'help' || sub === '--help' || sub === '-h') return console.log(teamUsage);
+  if (sub === 'list') return teamList(args);
+  if (sub === 'create') return teamCreate(args);
+  if (sub === 'run') return teamRun(args);
+  if (sub === 'status') return teamStatus(args);
+  if (sub === 'reviews') return teamReviews(args);
+  if (sub === 'review') return teamReview(args);
+  throw new Error(`未知 team 子命令“${sub}”。\n\n${teamUsage}`);
 }
 
 function presetFor(name) {
@@ -544,6 +726,7 @@ async function main() {
   }
   if (command === 'doctor') return doctor(args);
   if (command === 'decide') return decide(args);
+  if (command === 'team') return team(args);
   if (command !== 'run' && command !== 'chat') throw new Error(`未知命令“${command}”。\n\n${usage}`);
   const input = parseInput(args);
   if (command === 'chat') return interactiveChat(input);

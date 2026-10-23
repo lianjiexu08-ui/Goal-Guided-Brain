@@ -135,6 +135,13 @@ CLI 支持：
 - `ggb providers`：查看普通模型预设和可选 TypeSafe 后端。
 - `ggb doctor`：检查 Node.js、平台、会话目录、Git、模型凭据和本地工作台服务；服务未启动只会给出提醒，不影响直接调用模型。`--json` 输出适合脚本和 CI 读取的报告，绝不会打印密钥。
 - `ggb decide`：向 TypeSafe 发送结构化 `state` 和 `questions`，只返回 JSON 判断结果。
+- `ggb team`：**终端版自治团队**，直接驱动本地或可达的工作台 API：
+  - `ggb team list`：列出团队、招募阶段与审核方式。
+  - `ggb team create --name X --goal Y [--no-review]`：创建团队；`--no-review` 关闭招募审核，项目经理生成无疑问方案后自动确认并组建成员干活。
+  - `ggb team run <id> "目标" [--watch]`：把目标交给团队项目经理，`--watch` 持续输出 PM 消息与任务进度。
+  - `ggb team status <id>`：查看团队消息、任务与验收状态。
+  - `ggb team reviews <id>` / `ggb team review <id> --approve|--reject <opId>`：查看并确认高风险操作的多轮评审。
+  - 通用：`--api` 指定工作台地址（默认 `http://127.0.0.1:3089`），开启认证时用 `--password` 或环境变量 `GGB_PASSWORD` 登录。
 
 网页中的普通模型选择器不会把 TypeSafe 当作聊天模型；TypeSafe 只通过 `ggb decide`、管理页探测和编排 MCP 的 `evaluate_decision` 使用。
 
