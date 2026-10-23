@@ -1775,6 +1775,15 @@ h1 {
   border-radius: 18px;
   background: linear-gradient(135deg, #f6fcf8, #eef8f4);
   box-shadow: 0 10px 24px #244c3b0d;
+  max-height: min(65vh, 600px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.recruitment-proposal-body {
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
 }
 .recruitment-proposal-card.is-confirmed {
   border-color: #d8e9e2;

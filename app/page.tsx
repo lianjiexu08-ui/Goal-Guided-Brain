@@ -1436,73 +1436,87 @@ function Workbench() {
                       <ChevronDown size={16} className={charterExpanded ? 'charter-chevron expanded' : 'charter-chevron'} />
                     </span>
                   </button>
-                  {charterExpanded && <>
-                    <p className="recruitment-proposal-goal">{recruitmentProposal.goal}</p>
-                    <div className="recruitment-proposal-meta">
-                      <span><Users size={14} />建议 {recruitmentProposal.size || recruitmentProposal.members.length} 位智能体</span>
-                      {recruitmentProposal.purpose && <span>{recruitmentProposal.purpose}</span>}
-                    </div>
-                    <div className="recruitment-member-list">
-                      {recruitmentProposal.members.map((member) => (
-                        (() => {
-                          const skillNames = (member.skillIds || []).map((id) =>
-                            data?.skillCatalog.find((skill) => skill.id === id)?.name || id,
-                          );
-                          const capabilityNames = (member.capabilityIds || []).map((id) =>
-                            data?.capabilities.find((capability) => capability.id === id)?.name || id,
-                          );
-                          const toolLabels = member.toolAccess
-                            ? ([
-                                ['files', '文件'],
-                                ['web', '网页'],
-                                ['terminal', '终端'],
-                              ] as const)
-                                .filter(([key]) => member.toolAccess?.[key] !== undefined)
-                                .map(([key, label]) => `${label}${member.toolAccess?.[key] ? '已启用' : '未启用'}`)
-                            : [];
-                          return (
-                            <div className="recruitment-member" key={member.memberId || `${member.roleId}-${member.name}`}>
-                              <div className="recruitment-member-index">{(member.name || member.roleId || '成').slice(0, 1)}</div>
-                              <div className="recruitment-member-copy">
-                                <strong>{member.name || member.roleId || '未命名成员'}</strong>
-                                <p>{member.responsibility}</p>
-                                {member.modelHint && <small>模型：{member.modelHint}</small>}
-                                {!!member.deliverables?.length && <small>交付：{member.deliverables.slice(0, 2).join(' · ')}</small>}
-                                {!!member.skills?.length && <small>技能说明：{member.skills.slice(0, 3).join(' · ')}</small>}
-                                {!!skillNames.length && <small>绑定 Skill：{skillNames.slice(0, 3).join(' · ')}</small>}
-                                {!!member.tools?.length && <small>工具说明：{member.tools.slice(0, 3).join(' · ')}</small>}
-                                {!!capabilityNames.length && <small>绑定能力：{capabilityNames.slice(0, 3).join(' · ')}</small>}
-                                {member.toolAccess ? (
-                                  !!toolLabels.length && <small>工具权限：{toolLabels.join(' · ')}</small>
-                                ) : (
-                                  <small>工具权限：沿用角色模板</small>
-                                )}
-                                {!!member.dependencies?.length && <small>依赖：{member.dependencies.slice(0, 2).join(' · ')}</small>}
-                              </div>
-                            </div>
-                          );
-                        })()
-                      ))}
-                    </div>
-                    {!!recruitmentProposal.openQuestions?.length && (
-                      <div className="recruitment-open-questions">
-                        <strong>还需要你确认</strong>
-                        <ul>{recruitmentProposal.openQuestions.map((question) => <li key={question}>{question}</li>)}</ul>
+                  {charterExpanded && (
+                    <div className="recruitment-proposal-body">
+                      <p className="recruitment-proposal-goal">{recruitmentProposal.goal}</p>
+                      <div className="recruitment-proposal-meta">
+                        <span><Users size={14} />建议 {recruitmentProposal.size || recruitmentProposal.members.length} 位智能体</span>
+                        {recruitmentProposal.purpose && <span>{recruitmentProposal.purpose}</span>}
                       </div>
-                    )}
-                    <div className="recruitment-proposal-actions">
-                      {recruitment?.phase === 'confirmed' ? (
-                        <span className="recruitment-confirmed"><Check size={15} />团队已创建，下一轮可以直接安排任务</span>
-                      ) : (
-                        <button className="primary-button" type="button" disabled={busy || !!recruitmentProposal.openQuestions?.length} onClick={() => void confirmTeamRecruitment()}>
-                          <Check size={16} />{recruitmentProposal.openQuestions?.length ? '先补充信息' : '确认创建团队'}
-                        </button>
+                      <div className="recruitment-member-list">
+                        {recruitmentProposal.members.map((member) => (
+                          (() => {
+                            const skillNames = (member.skillIds || []).map((id) =>
+                              data?.skillCatalog.find((skill) => skill.id === id)?.name || id,
+                            );
+                            const capabilityNames = (member.capabilityIds || []).map((id) =>
+                              data?.capabilities.find((capability) => capability.id === id)?.name || id,
+                            );
+                            const toolLabels = member.toolAccess
+                              ? ([
+                                  ['files', '文件'],
+                                  ['web', '网页'],
+                                  ['terminal', '终端'],
+                                ] as const)
+                                  .filter(([key]) => member.toolAccess?.[key] !== undefined)
+                                  .map(([key, label]) => `${label}${member.toolAccess?.[key] ? '已启用' : '未启用'}`)
+                              : [];
+                            return (
+                              <div className="recruitment-member" key={member.memberId || `${member.roleId}-${member.name}`}>
+                                <div className="recruitment-member-index">{(member.name || member.roleId || '成').slice(0, 1)}</div>
+                                <div className="recruitment-member-copy">
+                                  <strong>{member.name || member.roleId || '未命名成员'}</strong>
+                                  <p>{member.responsibility}</p>
+                                  {member.modelHint && <small>模型：{member.modelHint}</small>}
+                                  {!!member.deliverables?.length && <small>交付：{member.deliverables.slice(0, 2).join(' · ')}</small>}
+                                  {!!member.skills?.length && <small>技能说明：{member.skills.slice(0, 3).join(' · ')}</small>}
+                                  {!!skillNames.length && <small>绑定 Skill：{skillNames.slice(0, 3).join(' · ')}</small>}
+                                  {!!member.tools?.length && <small>工具说明：{member.tools.slice(0, 3).join(' · ')}</small>}
+                                  {!!capabilityNames.length && <small>绑定能力：{capabilityNames.slice(0, 3).join(' · ')}</small>}
+                                  {member.toolAccess ? (
+                                    !!toolLabels.length && <small>工具权限：{toolLabels.join(' · ')}</small>
+                                  ) : (
+                                    <small>工具权限：沿用角色模板</small>
+                                  )}
+                                  {!!member.dependencies?.length && <small>依赖：{member.dependencies.slice(0, 2).join(' · ')}</small>}
+                                </div>
+                              </div>
+                            );
+                          })()
+                        ))}
+                      </div>
+                      {!!recruitmentProposal.openQuestions?.length && (
+                        <div className="recruitment-open-questions">
+                          <strong>还需要你确认</strong>
+                          <ul>{recruitmentProposal.openQuestions.map((question) => <li key={question}>{question}</li>)}</ul>
+                        </div>
                       )}
-                      <button className="text-button" type="button" onClick={() => composerRef.current?.focus()}>
-                        继续补充需求 <ArrowRight size={13} />
-                      </button>
+                      <div className="recruitment-proposal-actions">
+                        {recruitment?.phase === 'confirmed' ? (
+                          <span className="recruitment-confirmed"><Check size={15} />团队已创建，下一轮可以直接安排任务</span>
+                        ) : (
+                          <button
+                            className="primary-button"
+                            type="button"
+                            disabled={busy}
+                            onClick={() => {
+                              if (recruitmentProposal.openQuestions?.length) {
+                                composerRef.current?.focus();
+                                setNotice('请在下方输入框中补充或确认上述问题，或直接回复“按方案创建”');
+                              } else {
+                                void confirmTeamRecruitment();
+                              }
+                            }}
+                          >
+                            <Check size={16} />{recruitmentProposal.openQuestions?.length ? '先补充信息' : '确认创建团队'}
+                          </button>
+                        )}
+                        <button className="text-button" type="button" onClick={() => composerRef.current?.focus()}>
+                          继续补充需求 <ArrowRight size={13} />
+                        </button>
+                      </div>
                     </div>
-                  </>}
+                  )}
                 </section>
               )}
               <div className="message-area">
