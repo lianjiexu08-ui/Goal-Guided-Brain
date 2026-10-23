@@ -145,6 +145,36 @@ test('高风险评审：复核与所有者全部通过后才可执行，任一�
   assert.throws(() => control.submitReview(rejected.id, { decision: 'approve' }, { type: 'owner' }), /拒绝/);
 });
 
+test('高风险复核自动路由到与发起方不同的供应商', t => {
+  const { control, store, team, principal } = confirmedTeam(t);
+  store.saveTeamSpace({ ...store.teamSpace(team.id), requireReview: false }, team.id);
+  // 两个启用的普通供应商。
+  const providerA = store.records.save('providers', { name: '供应商A', protocol: 'openai-completions', baseUrl: 'https://a.example.test/v1', enabled: true, models: [{ id: 'model-a', tools: true }] }, 'provider-a');
+  const providerB = store.records.save('providers', { name: '供应商B', protocol: 'openai-completions', baseUrl: 'https://b.example.test/v1', enabled: true, models: [{ id: 'model-b', tools: true }] }, 'provider-b');
+  // 发起实例固定使用供应商 A。
+  const originTaskId = principal.taskId;
+  const originMeta = store.records.get('task-meta', originTaskId) || {};
+  store.records.save('task-meta', { ...originMeta, providerIds: [providerA.id], allowedProviderIds: [providerA.id] }, originTaskId);
+  store.records.save('runtime-snapshots', { route: { providerId: providerA.id, model: 'model-a' } }, originTaskId);
+
+  const op = control.operation({ action: 'deploy', idempotencyKey: 'route1', intent: '部署到生产' }, { ...principal, permissions: ['deploy'] });
+  const route = op.review.reviewerRoute;
+  assert.equal(route.distinct, true);
+  assert.equal(route.providerId, providerB.id); // 自动选与发起方 A 不同的 B
+  assert.equal(route.model, 'model-b');
+  // 自动派发了一个复核任务，且路由到供应商 B。
+  assert.ok(op.review.reviewTaskId);
+  const reviewTaskMeta = store.records.get('task-meta', op.review.reviewTaskId);
+  assert.deepEqual(reviewTaskMeta.providerIds, [providerB.id]);
+  assert.equal(reviewTaskMeta.modelOverride, 'model-b');
+
+  // 只有一个供应商时降级为同供应商（distinct=false），不派复核任务。
+  store.records.save('providers', { ...providerB, enabled: false }, providerB.id);
+  const op2 = control.operation({ action: 'publish', idempotencyKey: 'route2', intent: '发布' }, { ...principal, permissions: ['publish'] });
+  assert.equal(op2.review.reviewerRoute.distinct, false);
+  assert.equal(op2.review.reviewTaskId, null);
+});
+
 test('跨团队委派不再受固定任务数上限约束', t => {
   const { store, control, team, principal } = confirmedTeam(t);
   // 目标团队（已确认、活动、允许协作）。

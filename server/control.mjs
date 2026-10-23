@@ -348,12 +348,16 @@ export class ControlPlane {
         teamId: job.teamId || job.spaceId || undefined,
         sourceMessageId: job.sourceMessageId || undefined,
         nodeId: job.nodeId, workspaceKey: job.workspaceKey, workspaceMode: body.workspaceMode,
-        sourceTaskId: body.sourceTaskId, providerIds: body.providerIds, requirementVersion: job.requirementVersion,
+        sourceTaskId: body.sourceTaskId, providerIds: body.providerIds, model: body.model, requirementVersion: job.requirementVersion,
         assistantSnapshot: body.assistantSnapshot, contextExtra: body.contextExtra,
         capabilityCommand: body.capabilityCommand });
-      this.records.save('task-meta', { ...this.records.get('task-meta', task.id), jobId: job.id, groupId, batchId: job.batchId,
+      const taskMeta = this.records.get('task-meta', task.id) || {};
+      this.records.save('task-meta', { ...taskMeta, jobId: job.id, groupId, batchId: job.batchId,
         nodeId: job.nodeId, workspaceKey: job.workspaceKey, permissions, requirementVersion: job.requirementVersion,
         spaceId: job.spaceId || null, teamId: job.teamId || job.spaceId || null, sourceMessageId: job.sourceMessageId || null,
+        // 保留显式指定的模型路由（如跨供应商复核），不被默认路由覆盖。
+        ...(Array.isArray(body.providerIds) && body.providerIds.length ? { providerIds: body.providerIds, allowedProviderIds: body.providerIds } : {}),
+        ...(typeof body.model === 'string' && body.model.trim() ? { modelOverride: body.model.trim().slice(0, 120) } : {}),
         parentTaskId: principal.type === 'instance' ? principal.taskId : undefined }, task.id);
       return this.records.save('jobs', { ...job, taskId: task.id }, job.id);
     } catch (error) { this.records.save('jobs', { ...job, status: 'failed', error: error.message }, job.id); throw error; }
@@ -970,6 +974,28 @@ export class ControlPlane {
       return p && (normalized === p || normalized.includes(p));
     });
   }
+  // 计算复核轮应路由到的供应商/模型：优先团队 review 配置；否则自动选一个与发起实例不同的启用供应商，实现跨供应商独立复核。
+  reviewerRoute(operation) {
+    const team = this.teamForTask(operation.taskId);
+    const providers = this.records.list('providers').filter(provider => provider.enabled !== false && provider.protocol !== 'typesafe-system-one');
+    if (!providers.length) return null;
+    // 发起实例实际路由到的供应商（执行时记录），其次其候选供应商列表。
+    const snapshot = this.records.get('runtime-snapshots', operation.taskId);
+    const originMeta = this.records.get('task-meta', operation.taskId) || {};
+    const originProviderId = snapshot?.route?.providerId
+      || (Array.isArray(originMeta.providerIds) && originMeta.providerIds.length === 1 ? originMeta.providerIds[0] : null);
+    const configured = team?.review?.reviewerProviderId
+      ? providers.find(provider => provider.id === team.review.reviewerProviderId)
+      : null;
+    const target = configured && configured.id !== originProviderId
+      ? configured
+      : providers.find(provider => provider.id !== originProviderId) || null;
+    if (!target) return { providerId: null, model: null, distinct: false, reason: '只有一个可用供应商，复核将与发起方同供应商。' };
+    const model = team?.review?.reviewerModel && target.models?.some(item => item.id === team.review.reviewerModel)
+      ? team.review.reviewerModel
+      : (target.models?.find(item => item.tools === true)?.id || target.models?.[0]?.id || null);
+    return { providerId: target.id, providerName: target.name, model, distinct: true };
+  }
   // 汇总一个操作的多轮评审状态，决定是否可以执行。
   reviewState(operation) {
     const team = this.teamForTask(operation.taskId);
@@ -985,7 +1011,7 @@ export class ControlPlane {
     ];
     if (stages.some(slot => slot.record?.decision === 'reject')) return { required: true, canExecute: false, rejected: true, stages };
     const allApproved = stages.every(slot => slot.record?.decision === 'approve');
-    return { required: true, canExecute: allApproved, stages, requireOwner };
+    return { required: true, canExecute: allApproved, stages, requireOwner, reviewerRoute: this.reviewerRoute(operation) };
   }
   operation(body, principal) {
     this.ensureCurrent(principal);
@@ -1008,7 +1034,34 @@ export class ControlPlane {
     const state = this.reviewState(operation);
     this.attention({ kind: 'operation-review', taskId, groupId: operation.groupId, operationId: id, action,
       title: `高风险操作待评审：${operation.title}`, detail: String(operation.intent || '').slice(0, 2000) }, `review-pending:${id}`);
-    return { ...operation, canExecute: false, review: state };
+    // 自动派一个复核任务，路由到与发起实例不同的供应商（若有多个可用供应商）。
+    const reviewTask = this.spawnReviewer(operation, principal);
+    return { ...operation, canExecute: false, review: { ...state, reviewTaskId: reviewTask?.taskId || null } };
+  }
+  // 为高风险操作创建一个路由到不同供应商的复核任务。无多个供应商或团队未确认时跳过。
+  spawnReviewer(operation, principal) {
+    try {
+      const route = this.reviewerRoute(operation);
+      if (!route?.distinct || !route.providerId) return null;
+      const team = this.teamForTask(operation.taskId);
+      if (!team || team.recruitment?.phase !== 'confirmed') return null;
+      const originMeta = this.records.get('task-meta', operation.taskId) || {};
+      if (!originMeta.jobId) return null;
+      const reviewerRole = team.memberRoleIds.find(id => id !== team.pmRoleId) || team.pmRoleId;
+      const job = this.createJob({
+        role: reviewerRole,
+        prompt: `请独立复核一个高风险操作，并给出 approve 或 reject 结论与理由。操作：${operation.title}\n类型：${operation.action}\n意图：${operation.intent}\n复核完成后请回报结论（不直接执行该操作）。`,
+        title: `高风险操作复核：${operation.title}`,
+        providerIds: [route.providerId],
+        model: route.model || undefined,
+      }, principal);
+      this.records.save('reviews', { operationId: operation.id, taskId: operation.taskId, groupId: operation.groupId, stage: 'reviewer-dispatch',
+        decision: 'approve', reviewer: 'system', rationale: `复核任务已派发至供应商 ${route.providerName || route.providerId}${route.model ? `（模型 ${route.model}）` : ''}。`,
+        reviewTaskId: job.taskId, createdAt: new Date().toISOString() }, `review:${operation.id}:dispatch`);
+      return job;
+    } catch {
+      return null;
+    }
   }
   // 提交一轮评审决定。复核轮要求与发起实例不同主体；所有者轮必须由 owner 执行。
   submitReview(operationId, { decision, rationale } = {}, principal = { type: 'owner' }) {
