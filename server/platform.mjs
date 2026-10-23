@@ -449,6 +449,7 @@ export function createPlatform({
       const meta = records.get('task-meta', task.id);
       records.save('task-meta', { ...meta, toolActivity: true }, task.id);
     }
+    detectLoop(task, clean);
     const usage = measureUsage(records, task.id, clean, usageMeter);
     if (usage) {
       const jobs = records
@@ -481,6 +482,42 @@ export function createPlatform({
         );
       }
     }
+  }
+  // 死循环熔断：同一执行实例连续多次调用同一工具且参数高度一致时，判定为空转并强制暂停（伯克利失败模式 #3）。
+  const LOOP_WINDOW = 4;
+  function eventSignature(clean) {
+    if (clean.type !== 'tool/call') return null;
+    const data = clean.data || {};
+    const name = data.name || data.tool || data.toolName || '';
+    if (!name) return null;
+    const args = JSON.stringify(data.arguments ?? data.args ?? data.input ?? {});
+    return createHash('sha1').update(`${name}:${args}`).digest('hex');
+  }
+  function detectLoop(task, clean) {
+    const signature = eventSignature(clean);
+    if (!signature) return;
+    if (stopping || stoppingTasks.has(task.id)) return;
+    const meta = records.get('task-meta', task.id) || {};
+    const job = meta.jobId ? records.get('jobs', meta.jobId) : null;
+    if (!job || ['paused', 'cancelled', 'completed', 'failed', 'blocked'].includes(job.status)) return;
+    const execution = records.get('executions', task.id);
+    if (!execution || execution.status !== 'running') return;
+    const recent = records
+      .list('task-events')
+      .filter((item) => item.taskId === task.id && item.type === 'tool/call')
+      .slice(-LOOP_WINDOW);
+    if (recent.length < LOOP_WINDOW) return;
+    const signatures = recent.map((item) => eventSignature({ type: 'tool/call', data: item.data }));
+    if (!signatures.every((value) => value && value === signature)) return;
+    // 触发熔断：暂停任务并撤销执行权限，等待所有者处理，而不是任由空转烧 token。
+    const toolName = (clean.data || {}).name || (clean.data || {}).tool || 'unknown';
+    control.attention({
+      kind: 'loop-detected', taskId: task.id, groupId: meta.groupId || job.groupId, jobId: job.id,
+      title: `检测到执行空转：${task.title || task.id}`,
+      detail: `同一工具「${toolName}」以相同参数被连续调用 ${LOOP_WINDOW} 次，已自动暂停。请检查目标是否陷入死循环，调整指令后恢复。`,
+    }, `loop:${task.id}`);
+    void stopTask(task.id).catch(() => {});
+    records.save('jobs', { ...records.get('jobs', job.id), status: 'paused', blockedReason: 'loop-detected' }, job.id);
   }
   function maybeFallback(task, outcome) {
     if (stopping || outcome.status !== 'failed' || stoppingTasks.has(task.id))

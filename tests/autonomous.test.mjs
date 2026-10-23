@@ -236,3 +236,27 @@ test('共享上下文：未确认团队不能发布，无可协作团队时拒�
   const { control, principal } = fixture;
   assert.throws(() => control.shareContext({ key: 'a/b', title: 't', content: 'c' }, principal), /尚未完成招募|双向协作/);
 });
+
+test('结果收网：交付物覆盖后提醒项目经理汇总，且不重复提醒', t => {
+  const fixture = confirmedTeam(t);
+  const { control, store, team, principal } = fixture;
+  // 给 PM 设定含两个可识别交付物的职责。
+  const roleId = team.pmRoleId;
+  const current = store.teamSpace(team.id);
+  store.saveTeamSpace({
+    ...current,
+    memberSettings: { [roleId]: { label: '项目经理', responsibility: '产出分析报告和测试报告并汇总。' } },
+  }, team.id);
+  const groupId = control.taskGroup(principal.taskId);
+  // 只提交一个交付物：不提醒。
+  control.saveScoped('artifacts', { title: '分析报告', location: 'output/analysis.md', content: '分析报告内容', evidence: 'ev' }, principal);
+  assert.ok(!control.records.get('attention', `wrapup:${groupId}`));
+  // 补齐第二个交付物：触发一次收网提醒。
+  control.saveScoped('artifacts', { title: '测试报告', location: 'output/test.md', content: '测试报告内容', evidence: 'ev' }, principal);
+  const reminder = control.records.get('attention', `wrapup:${groupId}`);
+  assert.ok(reminder, '交付物齐备后应提醒汇总');
+  assert.equal(reminder.kind, 'wrap-up');
+  // 再提交产物不重复提醒。
+  control.saveScoped('artifacts', { title: '补充说明', location: 'output/note.md', content: '补充', evidence: 'ev' }, principal);
+  assert.equal(control.records.list('attention').filter(item => item.kind === 'wrap-up' && item.groupId === groupId).length, 1);
+});

@@ -997,7 +997,41 @@ export class ControlPlane {
     }
     if (collection === 'attention') Object.assign(input, { status: body.status === 'resolved' ? 'resolved' : 'open', kind: String(body.kind || 'decision') });
     if (collection === 'board' && current && body.expectedRevision === undefined) throw fail('修改任务板需要提供 expectedRevision。', 409);
-    return this.records.save(collection, { ...current, ...input }, id, body.expectedRevision);
+    const saved = this.records.save(collection, { ...current, ...input }, id, body.expectedRevision);
+    if (collection === 'artifacts') this.maybeWrapUp(taskId);
+    return saved;
+  }
+  // 结果收网：成员声明的交付物齐备后，在团队动态提醒项目经理汇总结论，避免任务做完还在尬聊（伯克利失败模式 #5）。
+  maybeWrapUp(taskId) {
+    try {
+      const meta = this.records.get('task-meta', taskId) || {};
+      const team = findTeam(this.store, meta.teamId || meta.spaceId);
+      if (!team || team.recruitment?.phase !== 'confirmed') return;
+      const duty = team.memberSettings?.[this.store.task(taskId)?.role]?.responsibility
+        || team.responsibilities?.[this.store.task(taskId)?.role] || '';
+      // 从职责描述中提取可识别的交付物名词：剥离常见动词前缀，取“交付物关键词及其尾词”。
+      const expected = [...new Set(duty
+        .split(/[\n，。、；;,.：:（）()「」[\]]/)
+        .map(part => part.trim())
+        .filter(part => part.length >= 2 && part.length <= 24)
+        .map(part => part.replace(/^(产出|交付|提供|完成|编写|撰写|输出|整理|汇总|实现|开发|设计|制定|生成|准备|给出|提交|提供|produce|deliver|write|create|prepare|provide|generate|draft|build|implement|summarize)+/i, '').trim())
+        .flatMap(part => part.split(/以及|并且|并|和|与|及|然后|再/))
+        .map(part => part.trim())
+        .filter(part => part.length >= 2 && part.length <= 24)
+        .filter(part => /报告|代码|文档|清单|方案|计划|测试|验收|deliverable|report|code|doc|test|plan|review/i.test(part)))].slice(0, 6);
+      if (expected.length < 2) return; // 交付物描述不足以判断，不打扰
+      const groupId = this.taskGroup(taskId);
+      const artifacts = this.records.list('artifacts').filter(item => item.groupId === groupId);
+      if (!artifacts.length) return;
+      const corpus = artifacts.map(item => `${item.title}\n${item.location}\n${item.content}`).join('\n');
+      const covered = expected.filter(word => corpus.includes(word));
+      if (covered.length < expected.length) return; // 还有交付物未覆盖
+      if (this.records.get('attention', `wrapup:${groupId}`)) return; // 已提醒过
+      this.attention({ kind: 'wrap-up', taskId, groupId, teamId: team.id,
+        title: '交付物已齐备，建议汇总结论',
+        detail: `检测到与职责相关的交付物（${covered.join('、')}）均已提交产物。请项目经理核对证据并汇总结论，无需继续空转。`,
+      }, `wrapup:${groupId}`);
+    } catch { /* 收网提示失败不影响产物提交 */ }
   }
   // 判断一个外部操作是否命中高风险评审。来源：团队自定义 review.highRiskActions、autonomy.requireApprovalKinds，以及默认高风险动作。
   defaultHighRiskActions() {

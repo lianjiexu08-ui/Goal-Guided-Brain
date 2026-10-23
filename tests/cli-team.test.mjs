@@ -139,3 +139,22 @@ test('端到端：高风险操作经 CLI reviews 列出并由 owner 批准后可
   const final = control.reviewState(control.records.get('operations', op.id));
   assert.equal(final.canExecute, true);
 });
+
+test('死循环熔断：同一工具以相同参数连续调用后自动暂停并提醒', async t => {
+  const { base, app } = await startWorkbench(t);
+  const control = app.platform.control;
+  const store = control.store;
+  const team = await (await fetch(`${base}/api/teams`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '循环组', goal: 'g', purpose: 'g', pmRoleId: 'project_manager', memberRoleIds: ['project_manager'], requireReview: false }) })).json();
+  const job = control.createJob({ role: 'project_manager', prompt: '执行任务', teamId: team.id, spaceId: team.id });
+  control.claimLocal(store.task(job.taskId));
+  // 模拟同一工具以相同参数连续调用 4 次（经 recordEvent 事件流）。
+  for (let i = 0; i < 4; i += 1) {
+    app.platform.control.onEvent(store.task(job.taskId), { type: 'tool/call', seq: i + 1, data: { name: 'read_file', arguments: { path: '/etc/same' } } });
+  }
+  await tick();
+  const loopAttention = control.records.get('attention', `loop:${job.taskId}`);
+  assert.ok(loopAttention, '连续相同调用应触发熔断提醒');
+  assert.equal(loopAttention.kind, 'loop-detected');
+  assert.equal(control.records.get('jobs', job.id).blockedReason, 'loop-detected');
+  assert.equal(control.records.get('jobs', job.id).status, 'paused');
+});
