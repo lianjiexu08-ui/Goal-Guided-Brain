@@ -217,7 +217,9 @@ type TeamSpace = {
   status: string;
   model?: string | null;
   providerId?: string | null;
-  autonomy: { mode: string; maxDepth: number; maxJobs: number; budgetTokens: number };
+  autonomy: { mode: string; maxDepth: number; maxJobs?: number; budgetTokens?: number | null; requireApprovalKinds?: string[] };
+  requireReview?: boolean;
+  review?: { reviewerProviderId?: string | null; reviewerModel?: string | null; highRiskActions?: string[] | null; requireOwnerApproval?: boolean };
   teamType?: string;
   purpose?: string;
   collaboration?: { enabled?: boolean; autoHandoff?: boolean; sharedBoard?: boolean; allowedTeamIds?: string[] };
@@ -239,6 +241,7 @@ type TeamForm = {
   teamType: 'custom' | 'development' | 'operations' | 'product' | 'project';
   allowCollaboration: boolean;
   autonomyMode: 'auto' | 'assist';
+  requireReview: boolean;
 };
 type Capability = {
   id: string;
@@ -428,6 +431,7 @@ function Workbench() {
     teamType: 'custom',
     allowCollaboration: true,
     autonomyMode: 'auto',
+    requireReview: true,
   });
   const [taskDetail, setTaskDetail] = useState<Task | null>(null);
   const [handoffTask, setHandoffTask] = useState<Task | null>(null);
@@ -925,6 +929,7 @@ function Workbench() {
       teamType: 'custom',
       allowCollaboration: true,
       autonomyMode: 'auto',
+      requireReview: true,
     });
     setModal('team');
   }
@@ -2845,6 +2850,7 @@ function Workbench() {
                     memberRoleIds: teamForm.memberRoleIds,
                     workspace: teamForm.workspace,
                     autonomy: { mode: teamForm.autonomyMode },
+                    requireReview: teamForm.requireReview,
                     collaboration: {
                       enabled: teamForm.allowCollaboration,
                       autoHandoff: true,
@@ -2930,6 +2936,14 @@ function Workbench() {
                   onChange={(e) => setTeamForm((form) => ({ ...form, allowCollaboration: e.target.checked }))}
                 />
                 <span><strong>允许与其他团队协作</strong><small>项目经理可以向其他团队请求支持，并共享任务状态。</small></span>
+              </label>
+              <label className="team-collaboration-toggle" aria-label="招募方案需要我确认">
+                <input
+                  type="checkbox"
+                  checked={teamForm.requireReview}
+                  onChange={(e) => setTeamForm((form) => ({ ...form, requireReview: e.target.checked }))}
+                />
+                <span><strong>招募方案需要我确认</strong><small>关闭后，项目经理生成无疑问的团队方案会自动确认并创建成员，直接开始干活。</small></span>
               </label>
               <fieldset className="team-member-picker">
                 <legend>协作成员</legend>

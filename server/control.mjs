@@ -4,7 +4,7 @@ import { SKILLS } from './roles.mjs';
 
 const terminal = new Set(['completed', 'failed', 'cancelled', 'interrupted', 'state_unknown']);
 const messageKinds = new Set(['task', 'question', 'reply', 'progress', 'blocked', 'handoff', 'notice']);
-const collections = new Set(['jobs', 'messages', 'checkpoints', 'artifacts', 'operations', 'attention', 'board']);
+const collections = new Set(['jobs', 'messages', 'checkpoints', 'artifacts', 'operations', 'attention', 'board', 'reviews']);
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 const required = (value, label, max = 32000) => {
   if (typeof value !== 'string' || !value.trim() || value.length > max) throw fail(`${label}不能为空，且不能超过 ${max} 字符。`);
@@ -318,9 +318,10 @@ export class ControlPlane {
     if (dependencies.length > 32 || dependencies.some(id => this.records.get('jobs', id)?.groupId !== groupId)) throw fail('依赖必须是当前任务组内已有任务。');
     const requestedPermissions = Array.isArray(body.permissions) ? body.permissions.filter(value => typeof value === 'string') : parent?.permissions || [];
     const permissions = parent ? requestedPermissions.filter(value => (parent.permissions || []).includes(value)) : requestedPermissions;
-    const budgetTokens = parent?.budgetTokens ?? body.budgetTokens ?? 200000;
+    // 预算默认不限制（null）；只有显式传入有效预算才生效。
+    const budgetTokens = parent?.budgetTokens ?? (Number.isSafeInteger(body.budgetTokens) ? body.budgetTokens : null);
     const maxDurationMinutes = parent?.maxDurationMinutes ?? body.maxDurationMinutes ?? 30;
-    if (!Number.isSafeInteger(budgetTokens) || budgetTokens < 1000 || budgetTokens > 100000000) throw fail('任务 Token 预算需要在 1000 至 100000000 之间。');
+    if (budgetTokens !== null && (!Number.isSafeInteger(budgetTokens) || budgetTokens < 1000 || budgetTokens > 100000000)) throw fail('任务 Token 预算需要在 1000 至 100000000 之间。');
     if (!Number.isFinite(maxDurationMinutes) || maxDurationMinutes < 1 || maxDurationMinutes > 1440) throw fail('任务时限需要在 1 至 1440 分钟之间。');
     const job = this.records.save('jobs', { title: String(body.title || prompt.slice(0, 65)), goal: prompt, role,
       parentJobId: parent?.id || null, groupId, batchId: parent?.batchId || randomUUID(),
@@ -466,6 +467,32 @@ export class ControlPlane {
       name: team.name,
       recruitment: { ...team.recruitment, phase: 'proposed', brief: goal, proposal },
     }, team.id);
+    // 自治招募：团队关闭招募审核且方案已就绪时，直接确认并创建成员，开始干活。
+    if (saved.recruitment.phase === 'proposed' && proposal.ready && saved.requireReview === false) {
+      try {
+        const confirmed = this.applyRecruitmentProposal(saved.id, proposal);
+        this.store.saveTeamMessage({
+          spaceId: confirmed.id,
+          teamId: confirmed.id,
+          kind: 'notice',
+          senderType: 'system',
+          content: `已按自治招募策略自动创建 ${confirmed.memberRoleIds.length} 名成员并开始协作。`,
+          status: 'sent',
+        }, `recruit-auto:${confirmed.id}:${proposal.version}`);
+        return { teamId: confirmed.id, phase: confirmed.recruitment.phase, proposal: confirmed.recruitment.proposal, autoConfirmed: true };
+      } catch (error) {
+        // 自动确认失败（模型/能力/角色不可用等）时回写为待确认问题，交给项目经理修复，不中断招募流程。
+        const fallback = this.store.saveTeamSpace({
+          ...this.store.teamSpace(saved.id),
+          recruitment: {
+            ...saved.recruitment,
+            phase: 'proposed',
+            proposal: { ...proposal, ready: false, openQuestions: [...openQuestions, `自动确认失败：${error.message}`] },
+          },
+        }, saved.id);
+        return { teamId: fallback.id, phase: fallback.recruitment.phase, proposal: fallback.recruitment.proposal, autoConfirmed: false };
+      }
+    }
     return { teamId: saved.id, phase: saved.recruitment.phase, proposal: saved.recruitment.proposal };
   }
   confirmTeamRecruitment(spaceId, { version } = {}, principal = { type: 'owner' }) {
@@ -480,6 +507,10 @@ export class ControlPlane {
       throw fail('团队还没有可确认的招募方案。');
     if (version !== undefined && version !== proposal.version) throw fail('招募方案已更新，请刷新并确认最新版本。', 409);
     if (proposal.openQuestions?.length) throw fail('请先回答 Team Charter 中的待确认问题。');
+    return this.applyRecruitmentProposal(spaceId, proposal);
+  }
+  // 确认招募方案并创建成员。人工确认（confirmTeamRecruitment）与自治自动确认共用此校验与落地逻辑。
+  applyRecruitmentProposal(spaceId, proposal) {
     const capabilityRows = this.records.list('capabilities');
     const providerRows = this.records.list('providers');
     const decisionOnlyProviders = proposal.members.flatMap(member => {
@@ -589,7 +620,7 @@ export class ControlPlane {
       responsibilities,
       memberSettings,
       recruitment: { ...fresh.recruitment, proposal: { ...proposal, members }, phase: 'confirmed', confirmedAt: new Date().toISOString() },
-      }, team.id);
+      }, spaceId);
     });
   }
   readTeamRoster(principal) {
@@ -686,9 +717,7 @@ export class ControlPlane {
         status: existingTask?.status || 'unknown',
       };
     }
-    const targetJobs = this.records.list('jobs').filter(job => (job.teamId || job.spaceId) === target.id);
-    const maxJobs = target.autonomy?.maxJobs || 32;
-    if (targetJobs.length >= maxJobs) throw fail('目标团队已达到任务上限。', 409);
+    // 已移除任务数上限（maxJobs）：跨团队委派不再受固定任务数约束，仅靠租约、深度与预算（若设置）保护。
     const content = `${prompt}${body.acceptance ? `\n\n验收标准：\n${required(body.acceptance, '验收标准', 20000)}` : ''}`;
     const message = this.store.saveTeamMessage({
       spaceId: target.id,
@@ -850,6 +879,41 @@ export class ControlPlane {
     if (collection === 'board' && current && body.expectedRevision === undefined) throw fail('修改任务板需要提供 expectedRevision。', 409);
     return this.records.save(collection, { ...current, ...input }, id, body.expectedRevision);
   }
+  // 判断一个外部操作是否命中高风险评审。来源：团队自定义 review.highRiskActions、autonomy.requireApprovalKinds，以及默认高风险动作。
+  defaultHighRiskActions() {
+    return ['deploy', 'release', 'publish', 'delete', 'send', 'payment', 'external-write', 'production'];
+  }
+  teamForTask(taskId) {
+    const meta = this.records.get('task-meta', taskId) || {};
+    return findTeam(this.store, meta.teamId || meta.spaceId);
+  }
+  isHighRiskAction(action, team) {
+    const custom = team?.review?.highRiskActions;
+    const approvalKinds = team?.autonomy?.requireApprovalKinds || [];
+    const patterns = [...(Array.isArray(custom) && custom.length ? custom : this.defaultHighRiskActions()), ...approvalKinds];
+    const normalized = String(action || '').toLowerCase();
+    return patterns.some(pattern => {
+      const p = String(pattern || '').toLowerCase().trim();
+      return p && (normalized === p || normalized.includes(p));
+    });
+  }
+  // 汇总一个操作的多轮评审状态，决定是否可以执行。
+  reviewState(operation) {
+    const team = this.teamForTask(operation.taskId);
+    if (!this.isHighRiskAction(operation.action, team)) return { required: false, canExecute: true, stages: [] };
+    const reviews = this.records.list('reviews').filter(review => review.operationId === operation.id);
+    const reviewer = reviews.find(review => review.stage === 'reviewer');
+    const owner = reviews.find(review => review.stage === 'owner');
+    const requireOwner = team?.review?.requireOwnerApproval !== false;
+    const stages = [
+      { stage: 'pm', record: reviews.find(review => review.stage === 'pm') || null },
+      { stage: 'reviewer', record: reviewer || null },
+      ...(requireOwner ? [{ stage: 'owner', record: owner || null }] : []),
+    ];
+    if (stages.some(slot => slot.record?.decision === 'reject')) return { required: true, canExecute: false, rejected: true, stages };
+    const allApproved = stages.every(slot => slot.record?.decision === 'approve');
+    return { required: true, canExecute: allApproved, stages, requireOwner };
+  }
   operation(body, principal) {
     this.ensureCurrent(principal);
     const taskId = principal.type === 'instance' ? principal.taskId : body.taskId;
@@ -859,10 +923,48 @@ export class ControlPlane {
     const key = required(body.idempotencyKey, '操作幂等键', 200);
     const id = hashToken(`${this.taskGroup(taskId)}:${action}:${key}`);
     const existing = this.records.get('operations', id);
-    if (existing) return { ...existing, canExecute: false };
+    if (existing) return { ...existing, canExecute: false, review: this.reviewState(existing) };
     const operation = this.records.save('operations', { taskId, groupId: this.taskGroup(taskId), action,
       title: String(body.title || action).slice(0, 200), status: 'pending', intent: required(body.intent, '操作意图'), key }, id);
-    return { ...operation, canExecute: true };
+    const team = this.teamForTask(taskId);
+    if (!this.isHighRiskAction(action, team)) return { ...operation, canExecute: true, review: { required: false, canExecute: true, stages: [] } };
+    // 高风险操作进入多轮评审：PM 自评 -> 独立复核（不同供应商） -> 必要时所有者确认。全部通过前不能执行。
+    this.records.save('reviews', { operationId: id, taskId, groupId: operation.groupId, stage: 'pm',
+      decision: 'approve', reviewer: principal.type === 'instance' ? `instance:${principal.taskId}` : 'owner',
+      rationale: String(body.rationale || body.intent || '').slice(0, 4000), createdAt: new Date().toISOString() }, `review:${id}:pm`);
+    const state = this.reviewState(operation);
+    this.attention({ kind: 'operation-review', taskId, groupId: operation.groupId, operationId: id, action,
+      title: `高风险操作待评审：${operation.title}`, detail: String(operation.intent || '').slice(0, 2000) }, `review-pending:${id}`);
+    return { ...operation, canExecute: false, review: state };
+  }
+  // 提交一轮评审决定。复核轮要求与发起实例不同主体；所有者轮必须由 owner 执行。
+  submitReview(operationId, { decision, rationale } = {}, principal = { type: 'owner' }) {
+    const operation = this.records.get('operations', operationId);
+    if (!operation) throw fail('操作不存在。', 404);
+    if (!['approve', 'reject'].includes(decision)) throw fail('评审决定必须是 approve 或 reject。');
+    const team = this.teamForTask(operation.taskId);
+    if (!this.isHighRiskAction(operation.action, team)) throw fail('该操作不属于高风险评审范围。', 409);
+    const state = this.reviewState(operation);
+    if (state.rejected) throw fail('该操作已有评审拒绝，不能继续评审。', 409);
+    const pending = state.stages.find(slot => !slot.record);
+    if (!pending) throw fail('该操作评审已完成。', 409);
+    const stage = pending.stage;
+    if (stage === 'owner' && principal.type !== 'owner') throw fail('所有者确认必须由用户本人完成。', 403);
+    if (stage === 'reviewer' && principal.type === 'instance' && principal.taskId === operation.taskId)
+      throw fail('复核轮必须由与发起实例不同的主体完成。', 403);
+    const reviewer = principal.type === 'instance' ? `instance:${principal.taskId}` : 'owner';
+    this.records.save('reviews', { operationId, taskId: operation.taskId, groupId: operation.groupId, stage,
+      decision, reviewer, rationale: String(rationale || '').slice(0, 4000), createdAt: new Date().toISOString() }, `review:${operationId}:${stage}`);
+    const next = this.reviewState(operation);
+    if (decision === 'reject') {
+      this.records.save('operations', { ...operation, status: 'failed', evidence: `评审拒绝（${stage}）：${String(rationale || '').slice(0, 1000)}`, reportedAt: this.now() }, operationId);
+      this.attention({ kind: 'operation-rejected', taskId: operation.taskId, groupId: operation.groupId, operationId, action: operation.action,
+        title: `高风险操作被拒绝：${operation.title}`, detail: String(rationale || '').slice(0, 2000) }, `review-rejected:${operationId}`);
+    } else if (next.canExecute) {
+      const pendingAttention = this.records.get('attention', `review-pending:${operationId}`);
+      if (pendingAttention) this.records.save('attention', { ...pendingAttention, status: 'resolved' }, pendingAttention.id);
+    }
+    return { operationId, review: next };
   }
   async handle({ method, parts, body = {}, req, principal = { type: 'owner' }, query }) {
     if (parts[0] === 'api') parts = parts.slice(1);
@@ -901,22 +1003,25 @@ export class ControlPlane {
           const groupJobs = this.records.list('jobs').filter(item => item.groupId === job.groupId);
           const budgetChanged = body.budgetTokens !== undefined || body.maxDurationMinutes !== undefined;
           if (budgetChanged && job.parentJobId) throw fail('请在主任务上调整整个任务组的预算和时限。');
-          const budgetTokens = body.budgetTokens ?? job.budgetTokens ?? 200000;
+          const budgetTokens = body.budgetTokens !== undefined
+            ? (body.budgetTokens === null ? null : body.budgetTokens)
+            : (job.budgetTokens ?? null);
           const maxDurationMinutes = body.maxDurationMinutes ?? job.maxDurationMinutes ?? 30;
-          if (!Number.isSafeInteger(budgetTokens) || budgetTokens < 1000 || budgetTokens > 100000000) throw fail('任务 Token 预算需要在 1000 至 100000000 之间。');
+          if (budgetTokens !== null && (!Number.isSafeInteger(budgetTokens) || budgetTokens < 1000 || budgetTokens > 100000000)) throw fail('任务 Token 预算需要在 1000 至 100000000 之间。');
           if (!Number.isFinite(maxDurationMinutes) || maxDurationMinutes < 1 || maxDurationMinutes > 1440) throw fail('任务时限需要在 1 至 1440 分钟之间。');
           const spent = this.records.list('usage').filter(item => item.groupId === job.groupId ||
             (item.taskId && this.taskGroup(item.taskId) === job.groupId)).reduce((sum, item) => sum +
               (Number(item.totalTokens) || (Number(item.inputTokens) || 0) + (Number(item.outputTokens) || 0)), 0);
-          const budgetPatch = member => !budgetChanged ? {} : { budgetTokens, maxDurationMinutes, budgetExceeded: spent >= budgetTokens,
-            status: spent >= budgetTokens ? 'budget-exceeded' : member.budgetExceeded || member.status === 'budget-exceeded' ? 'paused' : member.status };
+          const overBudget = budgetTokens !== null && spent >= budgetTokens;
+          const budgetPatch = member => !budgetChanged ? {} : { budgetTokens, maxDurationMinutes, budgetExceeded: overBudget,
+            status: overBudget ? 'budget-exceeded' : member.budgetExceeded || member.status === 'budget-exceeded' ? 'paused' : member.status };
           const version = changed ? Math.max(...groupJobs.map(item => item.requirementVersion || 1)) + 1 : job.requirementVersion;
           const updated = this.records.save('jobs', { ...job, goal, acceptance: body.acceptance ?? job.acceptance,
             ...budgetPatch(job), requirementVersion: version }, id, body.expectedRevision);
           if (changed || budgetChanged) for (const member of groupJobs) if (member.id !== job.id) {
             this.records.save('jobs', { ...member, ...budgetPatch(member), requirementVersion: version }, member.id);
           }
-          if (budgetChanged && spent >= budgetTokens) {
+          if (budgetChanged && overBudget) {
             for (const member of groupJobs) {
               this.revokeExecution(member.taskId, 'budget-exceeded');
               if (this.store.task(member.taskId)?.status === 'running') await this.stopTask?.(member.taskId);
@@ -980,6 +1085,7 @@ export class ControlPlane {
       }
       if (collection === 'operations') {
         if (method === 'POST' && !id) return { status: 201, body: this.operation(body, principal) };
+        if (method === 'POST' && action === 'review') return { status: 200, body: this.submitReview(id, body, principal) };
         if (method === 'POST' && action === 'result') {
           const record = this.records.get('operations', id);
           if (!record) throw fail('操作不存在。', 404);
@@ -990,6 +1096,7 @@ export class ControlPlane {
             evidence: required(body.evidence, '执行证据'), reportedAt: this.now() }, id) };
         }
       }
+      if (collection === 'reviews' && method === 'POST' && !id) return { status: 201, body: this.submitReview(body.operationId, body, principal) };
       if (['checkpoints', 'artifacts', 'attention', 'board'].includes(collection) && ['POST', 'PUT'].includes(method)) {
         return { status: id ? 200 : 201, body: this.saveScoped(collection, body, principal, id) };
       }

@@ -32,7 +32,7 @@ const tools = [
   { name: 'delegate_to_team', description: '把明确的协作目标委派给另一个长期团队的项目经理；目标团队使用自己的模型、能力、预算和权限。', inputSchema: objectSchema({ teamId: string, prompt: string, acceptance: string, idempotencyKey: string }, ['teamId', 'prompt', 'idempotencyKey']) },
   { name: 'read_team_task', description: '读取已获准协作团队中的一个委派任务状态和结果。', inputSchema: objectSchema({ taskId: string }, ['taskId']) },
   { name: 'read_team_roster', description: '读取当前已确认团队的成员实例、职责和可用角色模板；招募阶段只返回模板和当前方案。', inputSchema: objectSchema() },
-  { name: 'propose_team', description: '在多轮澄清完成后保存待用户确认的 Team Charter。用 skillIds、capabilityIds、providerIds 和 toolAccess 写入实际权限，skills/tools 仅作展示说明。只保存招募草案，不创建成员、不分派任务；最终确认必须由用户在团队招募界面完成。', inputSchema: objectSchema({
+  { name: 'propose_team', description: '在多轮澄清完成后保存 Team Charter。用 skillIds、capabilityIds、providerIds 和 toolAccess 写入实际权限，skills/tools 仅作展示说明。若团队已关闭招募审核且方案无疑问，会自动确认并创建成员开始协作；否则保存为待用户在招募界面确认的草案，确认前不创建成员、不分派任务。', inputSchema: objectSchema({
     teamName: string, goal: string, purpose: string,
     members: { type: 'array', minItems: 1, maxItems: 8, items: objectSchema({
       memberId: string, roleId: string, name: string, responsibility: string,
@@ -63,7 +63,9 @@ const tools = [
   { name: 'read_board', description: '读取当前任务组的共享任务板和版本。', inputSchema: objectSchema() },
   { name: 'update_board', description: '保存共享结论；更新已有记录必须使用读取到的 revision，避免覆盖并发修改。', inputSchema: objectSchema({ id: string, title: string, content: string, expectedRevision: { type: 'integer', minimum: 1 } }, ['title', 'content']) },
   { name: 'request_attention', description: '向所有者报告需要决定、凭据或人工核验的阻塞事项。', inputSchema: objectSchema({ title: string, content: string, kind: string }, ['title', 'content']) },
-  { name: 'begin_operation', description: '登记已被明确授权的外部操作。只有 canExecute=true 才能首次执行；已有记录必须先核验结果。', inputSchema: objectSchema({ action: string, title: string, intent: string, idempotencyKey: string }, ['action', 'intent', 'idempotencyKey']) },
+  { name: 'begin_operation', description: '登记已被明确授权的外部操作。高风险操作（部署/发布/删除/发送/外部写入等）会自动进入多轮评审，canExecute=true 才能首次执行；已有记录必须先核验结果。', inputSchema: objectSchema({ action: string, title: string, intent: string, rationale: string, idempotencyKey: string }, ['action', 'intent', 'idempotencyKey']) },
+  { name: 'list_operation_reviews', description: '查看当前任务组中高风险操作的多轮评审进度；只读。', inputSchema: objectSchema({ operationId: string }) },
+  { name: 'submit_operation_review', description: '对高风险操作提交一轮评审决定（approve/reject）。复核轮必须由与发起实例不同的主体完成；所有者确认轮只能由用户在团队界面执行。', inputSchema: objectSchema({ operationId: string, decision: { type: 'string', enum: ['approve', 'reject'] }, rationale: string }, ['operationId', 'decision']) },
   { name: 'complete_operation', description: '保存外部操作结果和证据。无法确认是否已执行时标为 unknown。', inputSchema: objectSchema({ id: string, status: { type: 'string', enum: ['succeeded', 'failed', 'unknown'] }, evidence: string }, ['id', 'status', 'evidence']) },
 ];
 
@@ -228,6 +230,13 @@ export function createOrchestrationServer({ control, token, capabilities }) {
         case 'update_board': response = control.saveScoped('board', input, principal, input.id); break;
         case 'request_attention': response = control.saveScoped('attention', input, principal); break;
         case 'begin_operation': response = control.operation(input, principal); break;
+        case 'list_operation_reviews': {
+          let ops = control.records.list('operations').filter(item => item.groupId === principal.groupId);
+          if (input.operationId) ops = ops.filter(item => item.id === input.operationId);
+          response = { items: ops.map(item => ({ ...item, review: control.reviewState(item) })).slice(0, 50) };
+          break;
+        }
+        case 'submit_operation_review': response = control.submitReview(input.operationId, input, principal); break;
         case 'complete_operation': {
           const result = await control.handle({ method: 'POST', parts: ['operations', input.id, 'result'], body: input, principal });
           if (result.status >= 400) throw new Error(result.body.error);

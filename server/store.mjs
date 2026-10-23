@@ -166,10 +166,9 @@ export class Store {
         autonomy: {
           mode: 'auto',
           maxDepth: 4,
-          maxJobs: 32,
-          budgetTokens: 200000,
           requireApprovalKinds: ['external-write', 'publish', 'deploy'],
         },
+        requireReview: true,
         responsibilities: {
           project_manager: '理解目标、拆解任务、协调团队并汇总结果。',
           product: '调研需求、整理方案和验收标准。',
@@ -295,6 +294,14 @@ export class Store {
       memberSettings: {},
       ...space,
       collaboration,
+      requireReview: space.requireReview !== false,
+      review: {
+        reviewerProviderId: null,
+        reviewerModel: null,
+        highRiskActions: null,
+        requireOwnerApproval: true,
+        ...(space.review && typeof space.review === 'object' && !Array.isArray(space.review) ? space.review : {}),
+      },
       recruitment: {
         phase: 'discovery',
         sessionId: null,
@@ -393,22 +400,16 @@ export class Store {
     const autonomy = {
       mode: input.autonomy?.mode ?? existing?.autonomy?.mode ?? 'auto',
       maxDepth: input.autonomy?.maxDepth ?? existing?.autonomy?.maxDepth ?? 4,
-      maxJobs: input.autonomy?.maxJobs ?? existing?.autonomy?.maxJobs ?? 32,
-      budgetTokens:
-        input.autonomy?.budgetTokens ?? existing?.autonomy?.budgetTokens ?? 200000,
-      requireApprovalKinds:
-        input.autonomy?.requireApprovalKinds ??
-        existing?.autonomy?.requireApprovalKinds ??
-        [],
+      requireApprovalKinds: (() => {
+        const supplied = input.autonomy?.requireApprovalKinds ?? existing?.autonomy?.requireApprovalKinds;
+        if (!Array.isArray(supplied)) return [];
+        return [...new Set(supplied.filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim().slice(0, 100)).slice(0, 32))];
+      })(),
     };
     if (!['assist', 'auto'].includes(autonomy.mode))
       throw new Error('团队空间自治模式无效。');
     if (!Number.isSafeInteger(autonomy.maxDepth) || autonomy.maxDepth < 1 || autonomy.maxDepth > 4)
       throw new Error('团队空间最大层级需要在 1 至 4 之间。');
-    if (!Number.isSafeInteger(autonomy.maxJobs) || autonomy.maxJobs < 1 || autonomy.maxJobs > 32)
-      throw new Error('团队空间最大任务数需要在 1 至 32 之间。');
-    if (!Number.isSafeInteger(autonomy.budgetTokens) || autonomy.budgetTokens < 1000 || autonomy.budgetTokens > 100000000)
-      throw new Error('团队空间预算需要在 1000 至 100000000 之间。');
     const collaborationInput = input.collaboration ?? existing?.collaboration ?? {};
     const collaboration = {
       enabled: collaborationInput.enabled !== false,
@@ -417,6 +418,16 @@ export class Store {
       allowedTeamIds: Array.isArray(collaborationInput.allowedTeamIds)
         ? [...new Set(collaborationInput.allowedTeamIds.filter((value) => typeof value === 'string' && value !== spaceId).slice(0, 50))]
         : (existing?.collaboration?.allowedTeamIds || []),
+    };
+    const requireReview = input.requireReview !== undefined ? input.requireReview !== false : (existing?.requireReview !== false);
+    const reviewInput = input.review ?? existing?.review ?? {};
+    const review = {
+      reviewerProviderId: typeof reviewInput.reviewerProviderId === 'string' && reviewInput.reviewerProviderId.trim() ? reviewInput.reviewerProviderId.trim().slice(0, 160) : null,
+      reviewerModel: typeof reviewInput.reviewerModel === 'string' && reviewInput.reviewerModel.trim() ? reviewInput.reviewerModel.trim().slice(0, 160) : null,
+      highRiskActions: Array.isArray(reviewInput.highRiskActions)
+        ? [...new Set(reviewInput.highRiskActions.filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim().slice(0, 100)).slice(0, 64))]
+        : null,
+      requireOwnerApproval: reviewInput.requireOwnerApproval !== false,
     };
     const recruitmentInput = input.recruitment ?? existing?.recruitment ?? {};
     const recruitmentPhase = ['discovery', 'proposed', 'confirmed'].includes(recruitmentInput.phase)
@@ -455,6 +466,8 @@ export class Store {
       status,
       autonomy,
       collaboration,
+      requireReview,
+      review,
     }, spaceId);
   }
   teamMessages(spaceId) {

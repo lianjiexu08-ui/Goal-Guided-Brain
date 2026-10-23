@@ -438,8 +438,6 @@ export function createWorkbench({
                 sourceMessageId,
               });
             }
-            const targetJobs = store.records.list('jobs').filter((job) => (job.teamId || job.spaceId) === target.id);
-            if (targetJobs.length >= (target.autonomy?.maxJobs || 32)) throw new Error('目标团队已达到任务上限。');
             const message = store.saveTeamMessage({
               spaceId: target.id,
               teamId: target.id,

@@ -153,6 +153,7 @@ export function createPlatform({
       throw new Error('TypeSafe 只能通过 evaluate_decision 使用，不能作为聊天或执行模型。');
     if (
       input.budgetTokens !== undefined &&
+      input.budgetTokens !== null &&
       (!Number.isSafeInteger(input.budgetTokens) ||
         input.budgetTokens < 1000 ||
         input.budgetTokens > 100000000)
@@ -177,7 +178,7 @@ export function createPlatform({
           workspaceKey: input.workspaceKey || 'default',
           requirementVersion: 1,
           depth: 0,
-          budgetTokens: input.budgetTokens || 200000,
+          budgetTokens: input.budgetTokens || null,
           maxDurationMinutes: 30,
           permissions: input.permissions || [],
           spaceId: teamId,
@@ -441,7 +442,7 @@ export function createPlatform({
         .list('usage')
         .filter((u) => u.groupId === usage.groupId)
         .reduce((sum, u) => sum + u.totalTokens, 0);
-      if (root?.budgetTokens && spent >= root.budgetTokens) {
+      if (Number.isSafeInteger(root?.budgetTokens) && spent >= root.budgetTokens) {
         for (const job of jobs) {
           records.save(
             'jobs',
