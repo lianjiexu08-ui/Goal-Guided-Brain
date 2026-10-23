@@ -7,6 +7,96 @@ import { command } from './workspaces.mjs';
 import { parse as parseArguments } from 'shell-quote';
 
 function bounded(value, max = 2000) { return String(value || '').slice(0, max); }
+
+/**
+ * Summarise the amount of trust an installed capability needs before an
+ * assistant can use it.  The result is deliberately derived from persisted
+ * metadata only: no credentials or command arguments are ever returned.
+ *
+ * A Skill containing instructions only is low risk.  Commands, agents and
+ * hooks can cause work to be executed, while MCP connections can reach a
+ * local process or a remote network service.  A connected MCP whose health
+ * probe explicitly marks every tool read-only is kept at low risk when it
+ * has no credential, so the catalog does not make read-only documentation
+ * connectors look like write-capable integrations.
+ */
+export function assessCapabilityRisk(capability = {}) {
+  const reasons = [];
+  let score = 0;
+  const kind = String(capability.kind || 'unknown');
+  const diagnostics = Array.isArray(capability.diagnostics)
+    ? capability.diagnostics.filter((value) => typeof value === 'string' && value.trim())
+    : [];
+  const commands = Array.isArray(capability.commands) ? capability.commands : [];
+  const agents = Array.isArray(capability.agents) ? capability.agents : [];
+  const pluginMcp = Array.isArray(capability.mcp) ? capability.mcp : [];
+  const healthTools = Array.isArray(capability.health?.tools) ? capability.health.tools : [];
+  const readOnlyMcp = kind === 'mcp' && healthTools.length > 0 && healthTools.every((tool) =>
+    tool?.readOnlyHint === true || tool?.annotations?.readOnlyHint === true,
+  );
+  const hasCredential = Boolean(
+    capability.credentialId ||
+    (capability.envRefs && typeof capability.envRefs === 'object' && Object.keys(capability.envRefs).length) ||
+    (Array.isArray(capability.requiredEnv) && capability.requiredEnv.length) ||
+    (Array.isArray(capability.requiredHeaders) && capability.requiredHeaders.length),
+  );
+
+  if (kind === 'mcp') {
+    if (capability.transport === 'stdio') {
+      score += 4;
+      reasons.push('MCP 会在执行节点启动本地进程。');
+    } else {
+      score += 2;
+      reasons.push('MCP 会访问远程网络服务。');
+    }
+    if (hasCredential) {
+      score += 2;
+      reasons.push('MCP 使用独立凭据访问外部系统。');
+    }
+    if (readOnlyMcp && !hasCredential && capability.transport !== 'stdio') {
+      score = Math.min(score, 1);
+      reasons.push('探测到的工具全部声明为只读。');
+    }
+  }
+
+  if (commands.length || agents.length) {
+    score += 2;
+    reasons.push('能力包含可运行的命令或助手模板。');
+  }
+  if (pluginMcp.length) {
+    score += 2;
+    reasons.push('插件声明了 MCP 连接，需要单独配置并审查外部访问。');
+  }
+  if (capability.hooksPath) {
+    score += capability.allowHooks ? 4 : 2;
+    reasons.push(capability.allowHooks ? '已允许插件 Hook 在任务生命周期执行。' : '插件包含 Hook 配置，启用前仍需审查。');
+  }
+  if (diagnostics.length) {
+    // A compatibility warning means the imported behavior differs from its
+    // source platform. Keep it above low risk even when the bundle contains
+    // no executable component, so an agent cannot silently treat an
+    // unsupported instruction as a normal Skill.
+    score += 2;
+    reasons.push(`存在 ${diagnostics.length} 条兼容性诊断，不能按原平台行为直接假设。`);
+  }
+  const level = score >= 4 ? 'high' : score >= 2 ? 'medium' : 'low';
+  return {
+    level,
+    requiresReview: level !== 'low',
+    reasons: [...new Set(reasons)],
+    signals: {
+      readOnly: readOnlyMcp,
+      hasCredential,
+      hasCommands: commands.length > 0 || agents.length > 0,
+      hasHooks: Boolean(capability.hooksPath),
+      hasNetwork: kind === 'mcp' && capability.transport !== 'stdio',
+    },
+  };
+}
+export const capabilityFingerprint = (capability = {}) =>
+  typeof capability.digest === 'string' && capability.digest
+    ? capability.digest
+    : String(capability.revision || `${capability.kind || 'capability'}:${capability.id || ''}`);
 function inside(root, relative) {
   const destination = path.resolve(root, relative);
   if (destination !== root && !destination.startsWith(`${root}${path.sep}`)) throw new Error('能力文件路径越界。');
@@ -261,13 +351,19 @@ export class CapabilityService {
         (selected.requiredHeaders.length > 0 && !overrides.credentialId),
       diagnostics: selected.diagnostics, enabled: false }, connectionId);
   }
-  save(input, id) {
+  save(input, id, options = {}) {
     const old = id ? this.store.records.get('capabilities', id) : null;
     if (id && !old) throw new Error('能力不存在。');
     const kind = input.kind || old?.kind || 'mcp';
     if (!['mcp', 'skill', 'plugin'].includes(kind)) throw new Error('能力类型无效。');
     const row = { ...old, name: bounded(input.name || old?.name, 120), kind, enabled: input.enabled ?? old?.enabled ?? false, allowHooks: input.allowHooks ?? old?.allowHooks ?? false };
     if (!row.name) throw new Error('请填写能力名称。');
+    if (row.enabled && options.enforceReview === true && assessCapabilityRisk({ ...row, ...input }).requiresReview && options.confirmed !== true) {
+      const error = new Error('保存并启用中/高风险能力前需要逐项确认。');
+      error.status = 409;
+      error.code = 'CAPABILITY_REVIEW_REQUIRED';
+      throw error;
+    }
     if (kind === 'mcp') {
       row.transport = input.transport || old?.transport || 'streamable-http';
       if (!['stdio', 'streamable-http'].includes(row.transport)) throw new Error('不支持此 MCP 传输协议。');
@@ -363,21 +459,62 @@ export class CapabilityService {
       return this.store.records.save('capabilities', value, id);
     } finally { fs.rmSync(staging, { recursive: true, force: true }); }
   }
-  action(id, action) {
+  action(id, action, options = {}) {
     const row = this.store.records.get('capabilities', id);
     if (!row) throw new Error('能力不存在。');
+    const risk = assessCapabilityRisk(row);
+    const fingerprint = capabilityFingerprint(row);
+    const actor = typeof options.actor === 'string' && options.actor.trim()
+      ? options.actor.trim().slice(0, 120)
+      : 'owner';
+    const confirmed = options.confirmed === true;
+    // High-risk capabilities are the one place where an enable operation
+    // changes the trust boundary of every future execution.  Keep the
+    // service usable for internal migrations/tests, while requiring the
+    // external management route to pass an explicit owner confirmation.
+    if (action === 'enable' && risk.requiresReview && options.enforceReview === true && !confirmed) {
+      const error = new Error(`启用高风险能力前需要逐项确认：${risk.reasons.join('；')}`);
+      error.status = 409;
+      error.code = 'CAPABILITY_REVIEW_REQUIRED';
+      throw error;
+    }
     if (action === 'rollback') {
       const previous = row.history?.at(-1); if (!previous) throw new Error('没有可以回退的版本。');
       const inspection = inspectBundle(previous.path);
-      return this.store.records.save('capabilities', { ...row, ...inspection, path: previous.path,
+      const saved = this.store.records.save('capabilities', { ...row, ...inspection, path: previous.path,
         ...(previous.content !== undefined ? { content: previous.content } : {}),
         enabled: false, history: row.history.slice(0, -1) }, id);
+      this.audit(id, 'rollback', { actor, risk, digest: capabilityFingerprint(saved), confirmed });
+      return saved;
     }
     if (!['enable', 'disable'].includes(action)) throw new Error('不支持此操作。');
     if (action === 'enable' && row.kind === 'mcp' && ((row.requiredEnv || []).some(name => !row.envRefs?.[name]) ||
       (row.requiredHeaders || []).some(name => name.toLowerCase() !== 'authorization') ||
       ((row.requiredHeaders || []).length && !row.credentialId))) throw new Error('插件连接的凭据尚未配置完整。');
-    return this.store.records.save('capabilities', { ...row, enabled: action === 'enable' }, id);
+    const saved = this.store.records.save('capabilities', {
+      ...row,
+      enabled: action === 'enable',
+      ...(action === 'enable' && risk.requiresReview
+        ? { review: { status: 'approved', actor, confirmedAt: new Date().toISOString(), riskLevel: risk.level, digest: fingerprint } }
+        : action === 'disable'
+          ? { review: row.review ? { ...row.review, status: 'revoked', revokedAt: new Date().toISOString() } : row.review }
+          : {}),
+    }, id);
+    this.audit(id, action, { actor, risk, digest: capabilityFingerprint(saved), confirmed });
+    return saved;
+  }
+  audit(capabilityId, action, { actor = 'owner', risk, digest = null, confirmed = false } = {}) {
+    return this.store.records.save('capability-audits', {
+      capabilityId,
+      action,
+      actor,
+      confirmed,
+      riskLevel: risk?.level || 'unknown',
+      requiresReview: risk?.requiresReview === true,
+      digest,
+      reasons: Array.isArray(risk?.reasons) ? risk.reasons.slice(0, 12) : [],
+      createdAt: new Date().toISOString(),
+    });
   }
   patch(assistant) {
     const patches = [], selected = [];

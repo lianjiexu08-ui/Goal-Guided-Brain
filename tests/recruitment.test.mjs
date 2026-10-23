@@ -13,7 +13,26 @@ const sandbox = () => {
   fs.mkdirSync(workspace);
   return { dir, workspace, dataDir: path.join(dir, 'data') };
 };
-const tick = () => new Promise(resolve => setTimeout(resolve, 30));
+const waitFor = async (predicate, label) => {
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline) {
+    if (await predicate()) return;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  throw new Error(`Timed out waiting for ${label}`);
+};
+async function createRecruitmentTeam(request, name = '待招募团队') {
+  const response = await request('teams', {
+    name,
+    goal: '通过多轮澄清确定实际工作内容和团队职责。',
+    pmRoleId: 'project_manager',
+    memberRoleIds: ['project_manager'],
+    recruitment: { phase: 'discovery' },
+  }, 'POST');
+  assert.equal(response.status, 201);
+  assert.equal(response.body.recruitment.phase, 'discovery');
+  return response.body;
+}
 
 test('team recruitment keeps one PM session across completed discovery turns', async () => {
   const fixture = sandbox();
@@ -38,11 +57,10 @@ test('team recruitment keeps one PM session across completed discovery turns', a
     return { status: response.status, body: await response.json() };
   };
   try {
-    const team = (await request('teams')).body[0];
+    const team = await createRecruitmentTeam(request);
     const first = await request(`teams/${team.id}/messages`, { clientMessageId: 'recruit-1', content: '我想做一个面向小团队的项目协作工具。' }, 'POST');
     assert.equal(first.status, 201);
-    await tick();
-    assert.equal(runs.length, 1);
+    await waitFor(() => runs.length === 1, 'the first recruitment runtime');
     const recruitmentPatch = runs[0].options.capabilityPatch.find(item => item.id === 'workbench-orchestration');
     const recruitmentToken = recruitmentPatch.config.headers.Authorization.replace(/^Bearer\s+/i, '');
     const recruitmentPrincipal = app.platform.control.validateInstanceToken(recruitmentToken);
@@ -69,13 +87,17 @@ test('team recruitment keeps one PM session across completed discovery turns', a
     assert.match(concurrentRecord.error, /正在处理上一条消息/);
     assert.equal(runs.length, 1);
     runs[0].complete();
-    await tick();
+    await waitFor(async () => {
+      const detail = await request(`teams/${team.id}`);
+      return detail.body.tasks.some(
+        task => task.sessionId === sessionId && task.status === 'completed',
+      );
+    }, 'the first recruitment message to complete');
     const retried = await request(`teams/${team.id}/messages`, { clientMessageId: 'recruit-concurrent', content: concurrentRecord.content }, 'POST');
     assert.equal(retried.status, 201);
     assert.equal(retried.body.status, 'sent');
     assert.equal(retried.body.sessionId, sessionId);
-    await tick();
-    assert.equal(runs.length, 2);
+    await waitFor(() => runs.length === 2, 'the retried recruitment runtime');
     assert.match(runs[1].prompt, /网页端、权限控制/);
     assert.match(runs[1].prompt, /小团队的项目协作工具/);
     const detail = await request(`teams/${team.id}`);
@@ -110,7 +132,7 @@ test('project manager proposes a Team Charter and owner confirmation materialize
   };
   const clients = [];
   try {
-    const team = (await request('teams')).body[0];
+    const team = await createRecruitmentTeam(request, '交付招募团队');
     const provider = app.platform.providers.save({
       name: '招募测试模型',
       protocol: 'openai-completions',
@@ -127,7 +149,7 @@ test('project manager proposes a Team Charter and owner confirmation materialize
       tools: ['read_docs'],
     }, 'recruitment-capability');
     await request(`teams/${team.id}/messages`, { clientMessageId: 'recruit-proposal', content: '请根据这个想法给出团队方案。' }, 'POST');
-    await tick();
+    await waitFor(() => runs.length >= 1, 'the charter recruitment runtime');
     const patch = runs[0].options.capabilityPatch.find(item => item.id === 'workbench-orchestration');
     assert.ok(patch);
     const client = new Client({ name: 'recruitment-test', version: '1' });
@@ -136,7 +158,14 @@ test('project manager proposes a Team Charter and owner confirmation materialize
     const catalog = JSON.parse((await client.callTool({ name: 'list_capability_catalog', arguments: {} })).content[0].text);
     assert.ok(catalog.skills.some(skill => skill.id === 'development-workflow'));
     assert.ok(catalog.providers.some(item => item.id === provider.id && item.models.some(model => model.id === 'recruitment-model')));
-    assert.ok(catalog.capabilities.some(item => item.id === capability.id && item.enabled !== false));
+    const catalogCapability = catalog.capabilities.find(item => item.id === capability.id);
+    assert.ok(catalogCapability && catalogCapability.enabled !== false);
+    assert.equal(catalogCapability.source, null);
+    assert.equal(catalogCapability.compatibility, 'compatible');
+    assert.equal(catalogCapability.risk.level, 'medium');
+    assert.equal(catalogCapability.risk.requiresReview, true);
+    assert.ok(catalogCapability.risk.reasons.some(reason => /远程网络服务/.test(reason)));
+    assert.deepEqual(catalogCapability.components, { commands: [], agents: [], mcp: [] });
     const proposed = JSON.parse((await client.callTool({ name: 'propose_team', arguments: {
       teamName: '交付小队',
       goal: '交付一个可上线的协作工具 MVP。',
@@ -156,15 +185,28 @@ test('project manager proposes a Team Charter and owner confirmation materialize
     assert.throws(() => app.platform.control.createJob({ role: 'developer', prompt: '提前实现功能' }, principal), /尚未确认/);
     const before = await request(`teams/${team.id}`);
     assert.equal(before.body.recruitment.phase, 'proposed');
-    assert.deepEqual(before.body.memberRoleIds, ['project_manager', 'product', 'developer', 'assistant']);
+    assert.deepEqual(before.body.memberRoleIds, ['project_manager']);
     const frontendProposal = before.body.recruitment.proposal.members.find(member => member.memberId === 'frontend');
     assert.deepEqual(frontendProposal.skillIds, ['development-workflow', 'team-recruitment', 'product-planning']);
     assert.deepEqual(frontendProposal.capabilityIds, [capability.id]);
     assert.deepEqual(frontendProposal.toolAccess, { files: true, web: false, terminal: true });
-    const confirmed = await request(`teams/${team.id}/recruitment/confirm`, {}, 'POST');
+    const rejectedConfirmation = await request(`teams/${team.id}/recruitment/confirm`, {
+      capabilityApprovals: {},
+    }, 'POST');
+    assert.equal(rejectedConfirmation.status, 409);
+    const capabilityDigest = capability.digest || String(capability.revision || `${capability.kind}:${capability.id}`);
+    const confirmed = await request(`teams/${team.id}/recruitment/confirm`, {
+      capabilityApprovals: {
+        [`manager:${capability.id}`]: { confirmed: true, digest: capabilityDigest, riskLevel: 'medium', confirmedAt: new Date().toISOString() },
+        [`frontend:${capability.id}`]: { confirmed: true, digest: capabilityDigest, riskLevel: 'medium', confirmedAt: new Date().toISOString() },
+      },
+    }, 'POST');
     assert.equal(confirmed.status, 200);
     assert.equal(confirmed.body.recruitment.phase, 'confirmed');
     assert.equal(confirmed.body.memberRoleIds.length, 4);
+    const capabilityAudits = app.platform.control.records.list('capability-audits').filter((item) => item.teamId === team.id && item.capabilityId === capability.id);
+    assert.equal(capabilityAudits.length, 2);
+    assert.ok(capabilityAudits.every((item) => item.confirmed === true && item.action === 'bind'));
     const developerIds = Object.entries(confirmed.body.responsibilities).filter(([, duty]) => duty.includes('并运行测试')).map(([id]) => id);
     assert.equal(developerIds.length, 2);
     assert.notEqual(developerIds[0], developerIds[1]);
@@ -230,9 +272,9 @@ test('team confirmation rejects disabled capabilities and unavailable model hint
     return { status: response.status, body: await response.json() };
   };
   try {
-    const team = (await request('teams')).body[0];
+    const team = await createRecruitmentTeam(request, '验证招募团队');
     await request(`teams/${team.id}/messages`, { clientMessageId: 'recruit-validation', content: '先准备一个开发团队。' }, 'POST');
-    await tick();
+    await waitFor(() => runs.length >= 1, 'the validation recruitment runtime');
     const patch = runs[0].options.capabilityPatch.find(item => item.id === 'workbench-orchestration');
     const token = patch.config.headers.Authorization.replace(/^Bearer\s+/i, '');
     const principal = app.platform.control.validateInstanceToken(token);
@@ -269,6 +311,70 @@ test('team confirmation rejects disabled capabilities and unavailable model hint
     const confirmed = app.platform.control.confirmTeamRecruitment(team.id);
     const writerId = confirmed.recruitment.proposal.members.find(member => member.memberId === 'writer').agentId;
     assert.deepEqual(app.platform.control.store.role(writerId).tools, { files: false, web: false, terminal: false });
+  } finally {
+    await app.close();
+    fs.rmSync(fixture.dir, { recursive: true, force: true });
+  }
+});
+
+test('publishing a new demand creates an independent recruitment draft beside an existing team', async () => {
+  const fixture = sandbox();
+  const app = createWorkbench({
+    ...fixture,
+    requireCredential: false,
+    runtimeFactory: () => ({ start() {}, cancel() {} }),
+  });
+  await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
+  const request = async (route, body, method = 'GET') => {
+    const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  try {
+    const existing = await request('teams', {
+      name: '发布运维团队',
+      goal: '负责线上发布、监控和故障处理。',
+      purpose: '守住线上稳定性并按流程交付版本。',
+      teamType: 'operations',
+      pmRoleId: 'project_manager',
+      memberRoleIds: ['project_manager', 'assistant'],
+      recruitment: { phase: 'confirmed' },
+    }, 'POST');
+    assert.equal(existing.status, 201);
+    assert.equal(existing.body.recruitment.phase, 'confirmed');
+
+    const draft = await request('spaces', {
+      name: '待命名需求',
+      goal: '通过多轮交流明确新产品的目标、交付物和团队职责。',
+      purpose: '这是一个尚未确认的需求入口。',
+      pmRoleId: 'project_manager',
+      memberRoleIds: ['project_manager'],
+      recruitment: { phase: 'discovery' },
+    }, 'POST');
+    assert.equal(draft.status, 201);
+    assert.notEqual(draft.body.id, existing.body.id);
+    assert.equal(draft.body.recruitment.phase, 'discovery');
+    assert.equal(draft.body.recruitment.sessionId, null);
+    assert.equal(draft.body.recruitment.turns, 0);
+    assert.deepEqual(draft.body.memberRoleIds, ['project_manager']);
+
+    const draftDetail = await request(`spaces/${draft.body.id}`);
+    assert.equal(draftDetail.status, 200);
+    assert.equal(draftDetail.body.messages.length, 0);
+    assert.equal(draftDetail.body.tasks.length, 0);
+
+    const existingDetail = await request(`teams/${existing.body.id}`);
+    assert.equal(existingDetail.body.name, '发布运维团队');
+    assert.equal(existingDetail.body.recruitment.phase, 'confirmed');
+    assert.deepEqual(existingDetail.body.memberRoleIds, ['project_manager', 'assistant']);
+    assert.equal(existingDetail.body.messages.length, 0);
+
+    const listed = await request('teams');
+    assert.ok(listed.body.some(team => team.id === existing.body.id && team.recruitment.phase === 'confirmed'));
+    assert.ok(listed.body.some(team => team.id === draft.body.id && team.recruitment.phase === 'discovery'));
   } finally {
     await app.close();
     fs.rmSync(fixture.dir, { recursive: true, force: true });

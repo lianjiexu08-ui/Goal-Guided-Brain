@@ -6,7 +6,7 @@ import { Vault } from './vault.mjs';
 import { ProviderService } from './providers.mjs';
 import { ControlPlane } from './control.mjs';
 import { AuthService } from './auth.mjs';
-import { CapabilityService, inspectBundle } from './capabilities.mjs';
+import { assessCapabilityRisk, CapabilityService, inspectBundle } from './capabilities.mjs';
 import { AutomationService, scheduleNextTimes, runCheck } from './automation.mjs';
 import { WorkspaceManager } from './workspaces.mjs';
 import { command } from './workspaces.mjs';
@@ -16,6 +16,7 @@ import {
   approveToolRequest,
 } from './capability-gateway.mjs';
 import { loadUsageMeter, measureUsage } from './metering.mjs';
+import { modelMetrics } from './metrics.mjs';
 import { resolveApiKey, redact } from './runtime.mjs';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -52,20 +53,18 @@ export function createPlatform({
     scheduledAgain = false;
   let usageMeter = null;
   const stoppingTasks = new Set();
+  // A task is claimed before its isolated workspace and runtime are ready.
+  // Keep those launch promises visible so shutdown cannot close SQLite while
+  // a launch is still writing its snapshot or attachment metadata.
+  const launches = new Map();
   const ready = (async () => {
     await auth.init();
     usageMeter = await loadUsageMeter();
-    const vaultPassphrase =
-      process.env.WORKBENCH_VAULT_PASSWORD ||
-      (() => {
-        const passFile = path.join(dataDir, '.vault_pass');
-        if (fs.existsSync(passFile)) {
-          try {
-            return fs.readFileSync(passFile, 'utf8').trim();
-          } catch {}
-        }
-        return '';
-      })();
+    // A vault passphrase may be supplied for unattended local startup, but it
+    // must never be persisted as a plaintext companion file. Older builds
+    // created `.vault_pass`; remove that legacy artifact before serving.
+    try { fs.rmSync(path.join(dataDir, '.vault_pass'), { force: true }); } catch {}
+    const vaultPassphrase = process.env.WORKBENCH_VAULT_PASSWORD || '';
     if (vaultPassphrase) {
       if (vault.status().initialized)
         await vault.unlock(vaultPassphrase);
@@ -77,8 +76,8 @@ export function createPlatform({
     let assistant = store.role(input.role);
     if (!assistant || assistant.archived)
       throw new Error('助手不存在或已归档。');
-    const attachmentIds = attachments.validateIds(input.attachmentIds);
     const teamId = input.teamId || input.spaceId || null;
+    const attachmentIds = attachments.validateIds(input.attachmentIds, teamId);
     let teamModelHint = '';
     let teamProviderIds = [];
     if (teamId) {
@@ -118,6 +117,7 @@ export function createPlatform({
     )
       throw new Error('请先配置模型供应商或 DeepSeek API Key。');
     const workspace = input.workspace || store.config.workspace;
+    const teamWorkspaceMode = teamId ? store.teamSpace(teamId)?.workspaceMode : null;
     const jobId = input.jobId || randomUUID();
     const groupId =
       input.groupId ||
@@ -162,12 +162,14 @@ export function createPlatform({
     if (nodeId !== 'local' && !records.get('nodes', nodeId))
       throw new Error('执行节点不存在。');
     const task = store.createTask({ ...input, workspace });
+    const acceptance = typeof input.acceptance === 'string' ? input.acceptance.slice(0, 20000) : '';
     if (!input.jobId)
       records.save(
         'jobs',
         {
           title: task.title,
           goal: task.prompt,
+          acceptance,
           role: task.role,
           groupId,
           batchId,
@@ -197,7 +199,7 @@ export function createPlatform({
         nodeId,
         workspaceKey: input.workspaceKey || 'default',
         workspaceMode:
-          input.workspaceMode || assistant.workspaceMode || 'shared',
+          input.workspaceMode || teamWorkspaceMode || assistant.workspaceMode || 'shared',
         providerIds,
         allowedProviderIds:
           input.allowedProviderIds ??
@@ -210,6 +212,7 @@ export function createPlatform({
         check: input.check || null,
         requirementVersion: input.requirementVersion || 1,
         contextExtra: input.contextExtra || '',
+        acceptance,
         attachmentIds,
         spaceId: teamId,
         teamId,
@@ -482,7 +485,7 @@ export function createPlatform({
     if (
       !route ||
       current?.toolActivity ||
-      !/401|403|429|5\d\d|timeout|超时|network|fetch failed|QUOTA|RATE_LIMIT|CREDENTIAL/i.test(
+      !/401|403|405|408|409|425|429|5\d\d|timeout|超时|network|fetch failed|QUOTA|RATE_LIMIT|CREDENTIAL/i.test(
         error,
       )
     )
@@ -510,9 +513,29 @@ export function createPlatform({
           providerIds: current.allowedProviderIds ?? current.providerIds,
           requiredTools: true,
         },
-        { exclude: excluded },
+        {
+          exclude: excluded,
+          allowWithoutTools: current.allowModelWithoutTools === true,
+        },
       );
       if (next) {
+        recordEvent(task, {
+          type: 'routing/fallback',
+          data: {
+            from: {
+              providerId: route.providerId,
+              providerName: route.providerName,
+              model: route.model,
+            },
+            to: {
+              providerId: next.providerId,
+              providerName: next.providerName,
+              model: next.model,
+            },
+            reason: error.slice(0, 500),
+            excludedProviders: excluded,
+          },
+        }, [route?.secret]);
         const retry = newTask({
           ...current,
           role: task.role,
@@ -539,6 +562,19 @@ export function createPlatform({
         );
       }
     } catch {
+      recordEvent(task, {
+        type: 'routing/fallback-unavailable',
+        data: {
+          from: {
+            providerId: route.providerId,
+            providerName: route.providerName,
+            model: route.model,
+          },
+          reason: error.slice(0, 500),
+          excludedProviders: excluded,
+          message: '没有可用的降级模型。',
+        },
+      }, [route?.secret]);
       control.attention(
         {
           kind: 'model',
@@ -649,7 +685,11 @@ export function createPlatform({
       const workspace = await workspaces.prepare(task, meta.workspaceMode);
       if (meta.attachmentIds?.length) {
         stagedAttachmentRoot = path.join(workspace.path, '.ggb-attachments', task.id);
-        const stagedAttachments = attachments.materialize(meta.attachmentIds, stagedAttachmentRoot);
+        const stagedAttachments = attachments.materialize(
+          meta.attachmentIds,
+          stagedAttachmentRoot,
+          meta.teamId || meta.spaceId || null,
+        );
         records.save('task-meta', { ...meta, stagedAttachments }, task.id);
       }
       if (stopping || stoppingTasks.has(task.id)) {
@@ -769,8 +809,17 @@ export function createPlatform({
           )
         )
           continue;
-        void launch(task).catch((error) =>
+        const pending = launch(task).catch((error) =>
           control.attention({ title: '执行器错误', detail: error.message }),
+        );
+        launches.set(task.id, pending);
+        void pending.then(
+          () => {
+            if (launches.get(task.id) === pending) launches.delete(task.id);
+          },
+          () => {
+            if (launches.get(task.id) === pending) launches.delete(task.id);
+          },
         );
       }
     } finally {
@@ -833,6 +882,9 @@ export function createPlatform({
           ...page.tools.map((t) => ({
             name: t.name,
             description: t.description,
+            ...(typeof t.annotations?.readOnlyHint === 'boolean'
+              ? { readOnlyHint: t.annotations.readOnlyHint }
+              : {}),
           })),
         );
         cursor = page.nextCursor;
@@ -893,6 +945,64 @@ export function createPlatform({
     timer.unref();
   }
   function manage() {
+    const roles = store.roles();
+    const roleNames = new Map(roles.map((role) => [role.id, role.name]));
+    const capabilityBindings = new Map();
+    const ensureBinding = (id) => {
+      if (!capabilityBindings.has(id)) capabilityBindings.set(id, { assistants: [], teams: [] });
+      return capabilityBindings.get(id);
+    };
+    for (const role of roles) {
+      for (const capabilityId of Array.isArray(role.capabilityIds) ? role.capabilityIds : []) {
+        const binding = ensureBinding(capabilityId);
+        if (!binding.assistants.some((item) => item.id === role.id))
+          binding.assistants.push({ id: role.id, name: role.name });
+      }
+    }
+    for (const team of store.teamSpaces()) {
+      for (const [roleId, settings] of Object.entries(team.memberSettings || {})) {
+        for (const capabilityId of Array.isArray(settings?.capabilityIds) ? settings.capabilityIds : []) {
+          const binding = ensureBinding(capabilityId);
+          const entry = { id: `${team.id}:${roleId}`, teamId: team.id, teamName: team.name, roleId, roleName: roleNames.get(roleId) || roleId };
+          if (!binding.teams.some((item) => item.id === entry.id)) binding.teams.push(entry);
+        }
+      }
+    }
+    const capabilitiesWithBindings = capabilities.list().map((capability) => {
+      const binding = capabilityBindings.get(capability.id) || { assistants: [], teams: [] };
+      const audits = records.list('capability-audits')
+        .filter((item) => item.capabilityId === capability.id)
+        .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+        .slice(0, 20);
+      return {
+        ...capability,
+        risk: assessCapabilityRisk(capability),
+        audits,
+        latestAudit: audits[0] || null,
+        bindings: binding,
+        boundAssistantCount: binding.assistants.length,
+        boundTeamCount: binding.teams.length,
+      };
+    });
+    const attention = records.list('attention').slice(0, 100).map((item) => {
+      const task = item.taskId ? store.task(item.taskId) : null;
+      const meta = task ? records.get('task-meta', task.id) || {} : {};
+      const job = item.jobId
+        ? records.get('jobs', item.jobId)
+        : meta.jobId
+          ? records.get('jobs', meta.jobId)
+          : null;
+      const delivery = task ? store.taskDelivery(task) : null;
+      return {
+        ...item,
+        taskTitle: task?.title || null,
+        taskStatus: task?.status || null,
+        jobTitle: job?.title || null,
+        jobStatus: job?.status || null,
+        deliveryStatus: delivery?.deliveryStatus || null,
+        acceptanceDecision: delivery?.acceptanceDecision || null,
+      };
+    });
     const output = Object.fromEntries(
       [
         'resources',
@@ -901,7 +1011,6 @@ export function createPlatform({
         'schedules',
         'monitors',
         'notifications',
-        'attention',
         'workflows',
         'schedule-runs',
         'usage',
@@ -910,12 +1019,13 @@ export function createPlatform({
     );
     return {
       ...output,
+      attention,
       providers: providers.list(),
       nodes: records.list('nodes').map(publicNode),
-      capabilities: capabilities.list(),
+      capabilities: capabilitiesWithBindings,
       vault: vault.status(),
       credentials: vault.list(),
-      roles: store.roles(),
+      roles,
       backups: backups(),
       localNode: {
         id: 'local',
@@ -975,22 +1085,121 @@ export function createPlatform({
       provider: records.get('providers', 'legacy-deepseek'),
     };
   }
+  function validateTaskAcceptance(task, decision, note) {
+    if (!task)
+      throw Object.assign(new Error('任务不存在。'), { status: 404 });
+    if (task.status !== 'completed')
+      throw Object.assign(new Error('只有已完成的任务可以进行交付验收。'), { status: 409 });
+    const delivery = store.taskDelivery(task);
+    if (decision === 'accepted' && !delivery.hasCurrentVerificationEvidence)
+      throw Object.assign(new Error('当前需求版本还没有通过的验收证据，请先运行验证。'), { status: 409 });
+    if (decision === 'rejected' && !note)
+      throw new Error('退回复核时需要说明需要补充或修改的内容。');
+    return delivery;
+  }
+  function recordTaskAcceptance(task, decision, note, delivery = store.taskDelivery(task)) {
+    const meta = records.get('task-meta', task.id) || {};
+    const job = meta.jobId ? records.get('jobs', meta.jobId) : null;
+    const acceptance = records.save('task-acceptance', {
+      taskId: task.id,
+      groupId: meta.groupId || job?.groupId || null,
+      jobId: meta.jobId || null,
+      spaceId: meta.spaceId || job?.spaceId || null,
+      decision,
+      status: 'active',
+      note,
+      requirementVersion: delivery.currentRequirementVersion,
+      verificationId: delivery.latestVerificationId,
+      decidedBy: 'owner',
+      decidedAt: nowIso(),
+    }, task.id);
+    const attentionId = `acceptance:${task.id}:${delivery.currentRequirementVersion}`;
+    const existingAttention = records.get('attention', attentionId);
+    if (decision === 'rejected') {
+      records.save('attention', {
+        taskId: task.id,
+        groupId: meta.groupId || job?.groupId || null,
+        jobId: meta.jobId || null,
+        spaceId: meta.spaceId || job?.spaceId || null,
+        status: 'open',
+        kind: 'acceptance',
+        title: '交付被退回复核',
+        detail: note,
+        requirementVersion: delivery.currentRequirementVersion,
+      }, attentionId);
+    } else if (existingAttention) {
+      records.save('attention', { ...existingAttention, status: 'resolved', resolution: note || '所有者已确认交付。' }, attentionId);
+    }
+    return {
+      ...acceptance,
+      delivery: store.taskDelivery(task),
+    };
+  }
   async function handle({ method, parts, body, req, query, principal }) {
     const [collection, id, action] = parts;
     const ok = (body, status = 200) => ({ status, body });
     if (collection === 'manage' && method === 'GET') return ok(manage());
-    if (collection === 'vault' && method === 'POST') {
-      if (id === 'lock') {
-        const passFile = path.join(dataDir, '.vault_pass');
-        try { fs.rmSync(passFile, { force: true }); } catch {}
-        return ok(vault.lock());
+    if (collection === 'metrics' && id === 'models' && method === 'GET')
+      return ok(modelMetrics(store, query));
+    if (collection === 'drafts') {
+      const spaceId = (method === 'GET' ? query.get('spaceId') : body.spaceId) || null;
+      const roleId = (method === 'GET' ? query.get('role') : body.roleId) || '';
+      if (typeof spaceId !== 'string' && spaceId !== null)
+        throw new Error('草稿团队无效。');
+      if (typeof roleId !== 'string' || !roleId.trim())
+        throw new Error('草稿所属助手不能为空。');
+      const normalizedRoleId = roleId.trim();
+      const role = store.role(normalizedRoleId);
+      if (!role || role.archived) throw new Error('草稿所属助手不存在或已归档。');
+      if (spaceId) {
+        const space = store.teamSpace(spaceId);
+        if (!space) throw new Error('草稿所属团队不存在。');
+        if (space.status !== 'active') throw new Error('草稿所属团队当前不可编辑。');
+        if (!space.memberRoleIds.includes(normalizedRoleId))
+          throw new Error('该助手不属于当前团队。');
       }
+      const publicDraft = (draft) => draft ? {
+        ...draft,
+        attachments: attachments.list(draft.attachmentIds),
+      } : {
+        spaceId,
+        roleId: normalizedRoleId,
+        content: '',
+        attachmentIds: [],
+        attachments: [],
+      };
+      if (method === 'GET') {
+        return ok(publicDraft(store.teamDraft(spaceId, normalizedRoleId)));
+      }
+      if (method === 'DELETE') {
+        const expectedRevision = Number.isSafeInteger(body.revision) ? body.revision : undefined;
+        try {
+          return ok({ ok: store.removeTeamDraft(spaceId, normalizedRoleId, expectedRevision) });
+        } catch (error) {
+          if (error.status !== 409) throw error;
+          return ok({ error: error.message, draft: publicDraft(store.teamDraft(spaceId, normalizedRoleId)) }, 409);
+        }
+      }
+      if (method === 'PUT' || method === 'POST') {
+        const attachmentIds = attachments.validateIds(body.attachmentIds, spaceId);
+        try {
+          const draft = store.saveTeamDraft({
+            spaceId,
+            roleId: normalizedRoleId,
+            content: body.content,
+            attachmentIds,
+          }, Number.isSafeInteger(body.revision) ? body.revision : undefined);
+          return ok(publicDraft(draft));
+        } catch (error) {
+          if (error.status !== 409) throw error;
+          return ok({ error: error.message, draft: publicDraft(store.teamDraft(spaceId, normalizedRoleId)) }, 409);
+        }
+      }
+    }
+    if (collection === 'vault' && method === 'POST') {
+      if (id === 'lock') return ok(vault.lock());
       if (id === 'initialize' || id === 'unlock') {
         const result = await vault[id](body.passphrase);
-        try {
-          const passFile = path.join(dataDir, '.vault_pass');
-          fs.writeFileSync(passFile, String(body.passphrase || '').trim(), { mode: 0o600 });
-        } catch {}
         void schedule();
         return ok(result);
       }
@@ -1273,9 +1482,20 @@ export function createPlatform({
         method === 'POST' &&
         ['enable', 'disable', 'rollback'].includes(action)
       )
-        return ok(capabilities.action(id, action));
+        return ok(capabilities.action(id, action, {
+          confirmed: body.confirmed === true && principal.type === 'owner',
+          enforceReview: true,
+          actor: principal.type === 'owner' ? 'owner' : principal.agentId || principal.type,
+        }));
       if (method === 'GET') {
         const row = id ? records.get(collection, id) : capabilities.list();
+        if (id && row) {
+          const audits = records.list('capability-audits')
+            .filter((item) => item.capabilityId === id)
+            .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+            .slice(0, 20);
+          return ok({ ...row, risk: assessCapabilityRisk(row), audits, latestAudit: audits[0] || null });
+        }
         return row ? ok(row) : ok({ error: '能力不存在。' }, 404);
       }
       if (method === 'DELETE')
@@ -1300,12 +1520,18 @@ export function createPlatform({
           fs.writeFileSync(path.join(directory, 'SKILL.md'), skillText, {
             mode: 0o600,
           });
+          const inspection = inspectBundle(directory);
+          if (body.enabled !== false && assessCapabilityRisk(inspection).requiresReview && !(body.confirmed === true && principal.type === 'owner')) {
+            fs.rmSync(directory, { recursive: true, force: true });
+            const error = new Error('保存并启用中/高风险能力前需要逐项确认。');
+            error.status = 409;
+            throw error;
+          }
           const old = records.get(collection, capabilityId);
-          return ok(
-            records.save(
+          const savedCustom = records.save(
               collection,
               {
-                ...inspectBundle(directory),
+                ...inspection,
                 name: text(body.name, 120),
                 content,
                 path: directory,
@@ -1325,10 +1551,20 @@ export function createPlatform({
                   : [],
               },
               capabilityId,
-            ),
-          );
+            );
+          const customRisk = assessCapabilityRisk(savedCustom);
+          if (savedCustom.enabled && customRisk.requiresReview && body.confirmed === true && principal.type === 'owner')
+            capabilities.audit(savedCustom.id, 'enable', { actor: 'owner', risk: customRisk, digest: savedCustom.digest || String(savedCustom.revision || ''), confirmed: true });
+          return ok(savedCustom);
         }
-        return ok(capabilities.save(body, id));
+        const savedCapability = capabilities.save(body, id, {
+          confirmed: body.confirmed === true && principal.type === 'owner',
+          enforceReview: true,
+        });
+        const savedRisk = assessCapabilityRisk(savedCapability);
+        if (savedCapability.enabled && savedRisk.requiresReview && body.confirmed === true && principal.type === 'owner')
+          capabilities.audit(savedCapability.id, 'enable', { actor: 'owner', risk: savedRisk, digest: savedCapability.digest || String(savedCapability.revision || ''), confirmed: true });
+        return ok(savedCapability);
       }
     }
     if (collection === 'schedules') {
@@ -1445,8 +1681,12 @@ export function createPlatform({
           output = error.message;
           status = 'failed';
         }
+        const meta = records.get('task-meta', id) || {};
+        const job = meta.jobId ? records.get('jobs', meta.jobId) : null;
         const evidence = records.save('artifacts', {
           taskId: id,
+          groupId: meta.groupId || job?.groupId || null,
+          requirementVersion: Number(job?.requirementVersion || meta.requirementVersion || 1),
           kind: 'verification',
           name: `${executable} ${args.join(' ')}`,
           status,
@@ -1464,6 +1704,79 @@ export function createPlatform({
       if (method === 'POST' && id === 'integrate')
         return ok(await workspaces.integrate(body.taskIds));
     }
+    if (collection === 'tasks' && method === 'POST' && id === 'batch-review') {
+      if (principal?.type && principal.type !== 'owner')
+        throw Object.assign(new Error('只有所有者可以做出交付验收决定。'), { status: 403 });
+      const rawDecision = typeof body.decision === 'string' ? body.decision.trim().toLowerCase() : '';
+      const decision = rawDecision === 'accept' || rawDecision === 'accepted'
+        ? 'accepted'
+        : rawDecision === 'reject' || rawDecision === 'rejected'
+          ? 'rejected'
+          : '';
+      if (!decision) throw new Error('批量复核决定必须是 accept 或 reject。');
+      if (!Array.isArray(body.taskIds)) throw new Error('请提供待复核的任务列表。');
+      const taskIds = [...new Set(body.taskIds
+        .filter((taskId) => typeof taskId === 'string')
+        .map((taskId) => taskId.trim())
+        .filter(Boolean))];
+      if (!taskIds.length) throw new Error('至少选择一项待复核任务。');
+      if (taskIds.length > 50) throw new Error('一次最多复核 50 项任务。');
+      const note = text(body.note, 10000);
+      const results = [];
+      const validated = [];
+      for (const taskId of taskIds) {
+        const task = store.task(taskId);
+        try {
+          const delivery = validateTaskAcceptance(task, decision, note);
+          validated.push({ task, delivery });
+          results.push({ taskId, ok: true });
+        } catch (error) {
+          results.push({ taskId, ok: false, error: error.message });
+        }
+      }
+      // Batch review is intentionally all-or-nothing. A stale evidence record
+      // or a task that changed status must never leave a mixed decision that
+      // the owner did not explicitly inspect.
+      if (results.some((result) => !result.ok)) {
+        return ok({
+          ok: false,
+          decision,
+          results,
+          succeeded: 0,
+          failed: results.filter((result) => !result.ok).length,
+          message: '批量复核未执行，请修正失败项后重新选择。',
+        }, 409);
+      }
+      const items = validated.map(({ task, delivery }) =>
+        recordTaskAcceptance(task, decision, note, delivery),
+      );
+      return ok({
+        ok: true,
+        decision,
+        items,
+        results: items.map((item) => ({
+          taskId: item.taskId,
+          ok: true,
+          delivery: item.delivery,
+        })),
+        succeeded: items.length,
+        failed: 0,
+      });
+    }
+    if (
+      collection === 'tasks' &&
+      method === 'POST' &&
+      id &&
+      ['accept', 'reject'].includes(action)
+    ) {
+      if (principal?.type && principal.type !== 'owner')
+        throw Object.assign(new Error('只有所有者可以做出交付验收决定。'), { status: 403 });
+      const task = store.task(id);
+      const decision = action === 'accept' ? 'accepted' : 'rejected';
+      const note = text(body.note, 10000);
+      const delivery = validateTaskAcceptance(task, decision, note);
+      return ok(recordTaskAcceptance(task, decision, note, delivery));
+    }
     if (collection === 'tasks' && method === 'GET') {
       if (id) {
         const task = store.task(id);
@@ -1472,6 +1785,7 @@ export function createPlatform({
         const artifacts = records
           .list('artifacts')
           .filter((item) => item.taskId === id);
+        const delivery = store.taskDelivery(task);
         return ok({
           ...publicTask,
           attachmentIds: records.get('task-meta', id)?.attachmentIds || [],
@@ -1486,8 +1800,9 @@ export function createPlatform({
             .slice(0, 100),
           usage: records.list('usage').filter((e) => e.taskId === id),
           artifacts,
-          latestVerification:
-            artifacts.find((item) => item.kind === 'verification') || null,
+          delivery,
+          latestVerification: delivery.latestVerification,
+          acceptance: delivery.acceptance,
         });
       }
       const offset = Math.max(0, Number(query.get('offset')) || 0),
@@ -1607,6 +1922,18 @@ export function createPlatform({
           return {
             ...task,
             executionWorkspace: records.get('workspaces', taskId),
+            ...(() => {
+              const delivery = task.id ? store.taskDelivery(task) : null;
+              return delivery
+                ? {
+                    artifactCount: delivery.evidenceCount,
+                    verificationStatus: delivery.hasVerificationEvidence ? delivery.acceptanceStatus : null,
+                    deliveryStatus: delivery.deliveryStatus,
+                    acceptanceDecision: delivery.acceptanceDecision,
+                    acceptanceNote: delivery.acceptanceNote,
+                  }
+                : {};
+            })(),
           };
         }),
         board: scoped('board'),
@@ -1643,7 +1970,9 @@ export function createPlatform({
     async close() {
       stopping = true;
       clearInterval(timer);
+      for (const taskId of launches.keys()) stoppingTasks.add(taskId);
       await Promise.allSettled([...runs.keys()].map((id) => stopTask(id)));
+      await Promise.allSettled(launches.values());
       while (automation.busy)
         await new Promise((resolve) => setTimeout(resolve, 20));
       await gateway.close();

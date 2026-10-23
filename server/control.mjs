@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { bearer, hashToken } from './auth.mjs';
 import { SKILLS } from './roles.mjs';
+import { assessCapabilityRisk, capabilityFingerprint } from './capabilities.mjs';
 
 const terminal = new Set(['completed', 'failed', 'cancelled', 'interrupted', 'state_unknown']);
 const messageKinds = new Set(['task', 'question', 'reply', 'progress', 'blocked', 'handoff', 'notice']);
@@ -132,9 +133,10 @@ export class ControlPlane {
       if ((currentJob?.dependencies || []).some(id => this.records.get('jobs', id)?.status !== 'completed')) return null;
       if ((meta.dependencies || []).some(id => !this.dependencyComplete(id))) return null;
       const token = randomBytes(32).toString('hex');
+      const startedAt = this.now();
       const execution = this.records.save('executions', {
         taskId: task.id, nodeId, agentId: task.role, groupId: this.taskGroup(task.id), batchId: meta.batchId || task.id,
-        epoch: 1, status: 'running', tokenHash: hashToken(token), expiresAt: this.now() + this.leaseMs,
+        epoch: 1, status: 'running', tokenHash: hashToken(token), startedAt, expiresAt: startedAt + this.leaseMs,
         requirementVersion: currentJob?.requirementVersion || meta.requirementVersion || 1,
         permissions: Array.isArray(meta.permissions) ? meta.permissions : [],
       }, task.id);
@@ -309,7 +311,12 @@ export class ControlPlane {
     const parentTeam = parent && (parent.teamId || parent.spaceId)
       ? this.store.teamSpace(parent.teamId || parent.spaceId)
       : null;
-    if (parentTeam?.recruitment.proposal && parentTeam.recruitment.phase !== 'confirmed')
+    if (parentTeam && parentTeam.recruitment.phase !== 'confirmed')
+      throw fail('团队招募方案尚未确认，请先完成澄清并等待用户确认创建。', 409);
+    const requestedTeam = !parent && (body.teamId || body.spaceId)
+      ? this.store.teamSpace(body.teamId || body.spaceId)
+      : null;
+    if (requestedTeam && requestedTeam.recruitment.phase !== 'confirmed')
       throw fail('团队招募方案尚未确认，请先完成澄清并等待用户确认创建。', 409);
     if (parentTeam && !parentTeam.memberRoleIds.includes(role))
       throw fail('只能向当前团队已确认的成员分派任务，请使用 read_team_roster 查看成员 ID。', 403);
@@ -397,7 +404,7 @@ export class ControlPlane {
       const skillIds = idList(member.skillIds, 3);
       if (skillIds.some(id => !SKILLS.some(skill => skill.id === id)))
         throw fail(`成员 ${memberId} 包含未知 Skill：${skillIds.filter(id => !SKILLS.some(skill => skill.id === id)).join('、')}`);
-      const capabilityIds = idList(member.capabilityIds);
+      const capabilityIds = idList([...(role.capabilityIds || []), ...(Array.isArray(member.capabilityIds) ? member.capabilityIds : [])]);
       if (capabilityIds.some(id => !capabilityRows.some(capability => capability.id === id)))
         throw fail(`成员 ${memberId} 包含未知能力：${capabilityIds.filter(id => !capabilityRows.some(capability => capability.id === id)).join('、')}`);
       const providerIds = idList(member.providerIds);
@@ -495,7 +502,7 @@ export class ControlPlane {
     }
     return { teamId: saved.id, phase: saved.recruitment.phase, proposal: saved.recruitment.proposal };
   }
-  confirmTeamRecruitment(spaceId, { version } = {}, principal = { type: 'owner' }) {
+  confirmTeamRecruitment(spaceId, { version, capabilityApprovals = {} } = {}, principal = { type: 'owner' }) {
     if (principal.type !== 'owner') throw fail('团队方案需要由用户确认。', 403);
     const team = this.store.teamSpace(spaceId);
     if (!team) throw fail('团队空间不存在。', 404);
@@ -507,11 +514,15 @@ export class ControlPlane {
       throw fail('团队还没有可确认的招募方案。');
     if (version !== undefined && version !== proposal.version) throw fail('招募方案已更新，请刷新并确认最新版本。', 409);
     if (proposal.openQuestions?.length) throw fail('请先回答 Team Charter 中的待确认问题。');
-    return this.applyRecruitmentProposal(spaceId, proposal);
+    if (!capabilityApprovals || typeof capabilityApprovals !== 'object' || Array.isArray(capabilityApprovals))
+      throw fail('能力确认记录格式无效。');
+    return this.applyRecruitmentProposal(spaceId, proposal, { capabilityApprovals, actor: 'owner' });
   }
   // 确认招募方案并创建成员。人工确认（confirmTeamRecruitment）与自治自动确认共用此校验与落地逻辑。
-  applyRecruitmentProposal(spaceId, proposal) {
+  // capabilityApprovals 为人工确认时对高风险能力的逐项确认；自动确认时为空，遇需确认能力会抛错并由调用方回写为待确认问题。
+  applyRecruitmentProposal(spaceId, proposal, { capabilityApprovals = {}, actor = 'owner' } = {}) {
     const capabilityRows = this.records.list('capabilities');
+    const capabilityById = new Map(capabilityRows.map(capability => [capability.id, capability]));
     const providerRows = this.records.list('providers');
     const decisionOnlyProviders = proposal.members.flatMap(member => {
       const ids = member.providerIds?.length
@@ -528,6 +539,34 @@ export class ControlPlane {
       .map(id => `${member.memberId || member.roleId}:${id}`));
     if (unavailableCapabilities.length)
       throw fail(`招募方案包含未启用的能力：${unavailableCapabilities.join('、')}。请先启用能力或移除该绑定。`, 409);
+    const reviewedCapabilities = [];
+    const memberApprovals = new Map();
+    for (const member of proposal.members) {
+      const template = this.store.role(member.roleId);
+      const ids = [...new Set([...(template?.capabilityIds || []), ...(member.capabilityIds || [])])];
+      const approvals = { ...template?.capabilityApprovals };
+      for (const capabilityId of ids) {
+        const capability = capabilityById.get(capabilityId);
+        if (!capability) continue;
+        const risk = assessCapabilityRisk(capability);
+        if (!risk.requiresReview) continue;
+        const key = `${member.memberId || member.roleId}:${capabilityId}`;
+        const approval = capabilityApprovals[key] || capabilityApprovals[capabilityId] || approvals[capabilityId];
+        const digest = capabilityFingerprint(capability);
+        if (!approval || approval.confirmed !== true || approval.digest !== digest) {
+          throw fail(`确认能力「${capability.name || capabilityId}」前需要逐项确认：${risk.reasons.join('；')}`, 409);
+        }
+        const normalizedApproval = {
+          confirmed: true,
+          digest,
+          riskLevel: risk.level,
+          confirmedAt: typeof approval.confirmedAt === 'string' && approval.confirmedAt ? approval.confirmedAt : new Date().toISOString(),
+        };
+        approvals[capabilityId] = normalizedApproval;
+        reviewedCapabilities.push({ capability, risk, memberId: member.memberId || member.roleId, approval: normalizedApproval });
+      }
+      memberApprovals.set(member.memberId || member.roleId, approvals);
+    }
     const unavailableProviders = proposal.members.flatMap(member => (member.providerIds || [])
       .filter(id => !providerRows.some(provider => provider.id === id && provider.enabled !== false))
       .map(id => `${member.memberId || member.roleId}:${id}`));
@@ -588,6 +627,7 @@ export class ControlPlane {
           desc: member.responsibility.slice(0, 240),
           skillIds: [...new Set([...(template.skillIds || []), ...requestedSkillIds])].slice(0, 3),
           capabilityIds: [...new Set([...(template.capabilityIds || []), ...requestedCapabilityIds])],
+          capabilityApprovals: memberApprovals.get(member.memberId || member.roleId) || template.capabilityApprovals,
           providerIds: member.providerIds?.length ? member.providerIds : template.providerIds,
           tools,
           ...(member.modelHint ? { model: member.modelHint } : {}),
@@ -611,7 +651,7 @@ export class ControlPlane {
         toolAccess: member.toolAccess,
         dependencies: member.dependencies,
       }]));
-      return this.store.saveTeamSpace({
+      const savedTeam = this.store.saveTeamSpace({
       ...fresh,
       name: proposal.teamName,
       goal: proposal.goal,
@@ -621,6 +661,25 @@ export class ControlPlane {
       memberSettings,
       recruitment: { ...fresh.recruitment, proposal: { ...proposal, members }, phase: 'confirmed', confirmedAt: new Date().toISOString() },
       }, spaceId);
+      for (const { capability, risk, memberId, approval } of reviewedCapabilities) {
+        const member = members.find(candidate => candidate.memberId === memberId);
+        this.records.save('capability-audits', {
+          capabilityId: capability.id,
+          action: 'bind',
+          roleId: member?.agentId || member?.roleId || null,
+          teamId: savedTeam.id,
+          memberId,
+          actor,
+          confirmed: true,
+          riskLevel: risk.level,
+          requiresReview: true,
+          digest: approval.digest,
+          reasons: risk.reasons.slice(0, 12),
+          confirmedAt: approval.confirmedAt,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      return savedTeam;
     });
   }
   readTeamRoster(principal) {
@@ -662,7 +721,7 @@ export class ControlPlane {
   listTeamSpaces(principal) {
     const { team: source } = this.currentTeam(principal);
     const teams = this.store.teamSpaces()
-      .filter(team => team.status === 'active' && team.id !== source.id && this.collaborationAllowed(source, team));
+      .filter(team => team.status === 'active' && team.recruitment?.phase === 'confirmed' && team.id !== source.id && this.collaborationAllowed(source, team));
     return {
       current: { id: source.id, teamId: teamKey(source), chatId: source.chatId || source.id, name: source.name },
       items: teams.map(team => ({
@@ -682,7 +741,7 @@ export class ControlPlane {
   }
   delegateToTeam(body, principal) {
     const { task: sourceTask, meta: sourceMeta, team: source } = this.currentTeam(principal);
-    if (source.recruitment.proposal && source.recruitment.phase !== 'confirmed') throw fail('团队招募方案尚未确认，不能发起跨团队任务。', 409);
+    if (source.recruitment.phase !== 'confirmed') throw fail('团队招募方案尚未确认，不能发起跨团队任务。', 409);
     const target = findTeam(this.store, body.targetTeamId || body.teamId);
     if (!target || target.status !== 'active') throw fail('目标团队不存在或未启用。', 404);
     if (target.recruitment.phase !== 'confirmed') throw fail('目标团队尚未完成招募。', 409);
@@ -718,7 +777,8 @@ export class ControlPlane {
       };
     }
     // 已移除任务数上限（maxJobs）：跨团队委派不再受固定任务数约束，仅靠租约、深度与预算（若设置）保护。
-    const content = `${prompt}${body.acceptance ? `\n\n验收标准：\n${required(body.acceptance, '验收标准', 20000)}` : ''}`;
+    const acceptance = body.acceptance ? required(body.acceptance, '验收标准', 20000) : '';
+    const content = `${prompt}${acceptance ? `\n\n验收标准：\n${acceptance}` : ''}`;
     const message = this.store.saveTeamMessage({
       spaceId: target.id,
       teamId: target.id,
@@ -745,6 +805,7 @@ export class ControlPlane {
         spaceId: target.id,
         sourceMessageId: message.id,
         contextExtra: JSON.stringify({ sourceTeamId: source.id, sourceTaskId: sourceTask.id, sourceJobId: sourceMeta.jobId || null }),
+        acceptance,
       });
       const linked = this.store.saveTeamMessage({ ...message, taskId: child.id }, message.id);
       const sourceLinked = this.store.saveTeamMessage({
@@ -780,6 +841,7 @@ export class ControlPlane {
     if (!target || target.status !== 'active' || target.id === source.id || !this.collaborationAllowed(source, target))
       throw fail('当前团队无权读取该任务。', 403);
     const job = meta.jobId ? this.records.get('jobs', meta.jobId) : null;
+    const delivery = this.store.taskDelivery(task);
     return {
       taskId: task.id,
       jobId: meta.jobId || null,
@@ -789,6 +851,17 @@ export class ControlPlane {
       result: String(task.result || '').slice(0, 50000),
       error: String(task.error || '').slice(0, 10000),
       jobStatus: job?.status || null,
+      delivery: {
+        deliveryStatus: delivery.deliveryStatus,
+        verificationStatus: delivery.acceptanceStatus,
+        acceptanceDecision: delivery.acceptanceDecision,
+        acceptanceNote: delivery.acceptanceNote,
+        currentRequirementVersion: delivery.currentRequirementVersion,
+        verificationRequirementVersion: delivery.verificationRequirementVersion,
+        hasCurrentVerificationEvidence: delivery.hasCurrentVerificationEvidence,
+        latestVerificationId: delivery.latestVerificationId,
+        latestVerificationAt: delivery.latestVerificationAt,
+      },
       messages: this.store.teamMessages(target.id).filter(message => message.taskId === task.id).slice(-20),
     };
   }
@@ -1037,6 +1110,27 @@ export class ControlPlane {
           if (changed) {
             for (const artifact of this.records.list('artifacts').filter(item => item.groupId === job.groupId)) {
               this.records.save('artifacts', { ...artifact, status: 'needs-review' }, artifact.id);
+            }
+            for (const member of groupJobs) {
+              const acceptance = this.records.get('task-acceptance', member.taskId);
+              if (acceptance && Number(acceptance.requirementVersion || 1) < version) {
+                this.records.save('task-acceptance', {
+                  ...acceptance,
+                  status: 'stale',
+                  invalidatedAt: this.now(),
+                  invalidatedReason: `需求已更新至版本 ${version}。`,
+                }, acceptance.id);
+                const attentionId = `acceptance:${member.taskId}:${acceptance.requirementVersion || 1}`;
+                const attention = this.records.get('attention', attentionId);
+                if (attention && attention.status === 'open') {
+                  this.records.save('attention', {
+                    ...attention,
+                    status: 'resolved',
+                    resolution: `需求已更新至版本 ${version}，旧验收意见已失效。`,
+                    resolvedAt: this.now(),
+                  }, attentionId);
+                }
+              }
             }
             for (const execution of this.records.list('executions').filter(item => item.groupId === job.groupId && item.status === 'running')) {
               this.sendMessage({ toTaskId: execution.taskId, content: `需求已更新至版本 ${updated.requirementVersion}：${goal}`,

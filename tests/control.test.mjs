@@ -266,10 +266,18 @@ test('requirement changes notify the whole group and older artifacts stay marked
   const parent = control.claimLocal(store.task(job.taskId));
   const child = control.createJob({ role: 'developer', prompt: 'Implementation' }, control.validateInstanceToken(parent.token));
   const claimed = control.claimLocal(store.task(child.taskId));
+  store.records.save('task-acceptance', {
+    taskId: child.taskId,
+    groupId: job.groupId,
+    decision: 'accepted',
+    status: 'active',
+    requirementVersion: 1,
+  }, child.taskId);
   await request(`jobs/${job.id}`, { goal: 'Version two' }, undefined, 'PUT');
   let principal = control.validateInstanceToken(claimed.token);
   assert.equal(principal.requirementVersion, 1);
   assert.equal(store.records.get('jobs', child.id).requirementVersion, 2);
+  assert.equal(store.records.get('task-acceptance', child.taskId).status, 'stale');
   const artifact = control.saveScoped('artifacts', { title: 'Old result', location: 'output.md', evidence: 'Tested v1' }, principal);
   assert.equal(artifact.status, 'needs-review');
   const inbox = control.readMessages(child.taskId, principal);
@@ -349,10 +357,23 @@ test('MCP capability listing is scoped to the running assistant and omits secret
     envRefs: { DOCS_TOKEN: 'secret-ref' }, url: 'https://docs.example.test/mcp',
     health: { ok: true, checkedAt: '2026-09-20T00:00:00.000Z', tools: [{ name: 'read_docs', description: 'Read docs' }] },
   }, 'cap-private-docs');
+  store.records.save('capabilities', {
+    name: 'Review plugin', kind: 'plugin', version: '2.0.0', digest: 'sha256-plugin',
+    enabled: true, source: 'fixture', commands: [{ id: 'review', name: 'review', description: 'Review changes' }],
+  }, 'cap-review-plugin');
   store.saveRole({ name: 'Scoped assistant', instructions: 'Inspect docs.', skillIds: ['personal-workflow'], capabilityIds: ['cap-private-docs'] }, 'assistant');
   const job = control.createJob({ role: 'assistant', prompt: 'Inspect docs' });
   const claim = control.claimLocal(store.task(job.taskId));
-  const server = createOrchestrationServer({ control, token: claim.token });
+  const server = createOrchestrationServer({
+    control,
+    token: claim.token,
+    capabilities: {
+      components(id) {
+        assert.equal(id, 'cap-review-plugin');
+        return { commands: [{ id: 'command-review', name: 'review', description: 'Review changes', runnable: true, userInvocable: true }], agents: [], mcp: [] };
+      },
+    },
+  });
   const client = new Client({ name: 'capability-list-test', version: '1' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
@@ -364,9 +385,19 @@ test('MCP capability listing is scoped to the running assistant and omits secret
   assert.deepEqual(result.skills, [{ id: 'personal-workflow', name: '资料与行动计划', role: 'assistant' }]);
   assert.equal(result.capabilities[0].name, 'Private docs');
   assert.deepEqual(result.capabilities[0].tools, ['read_docs']);
+  assert.equal(result.capabilities[0].source, null);
+  assert.equal(result.capabilities[0].compatibility, 'compatible');
+  assert.equal(result.capabilities[0].risk.level, 'high');
+  assert.equal(result.capabilities[0].risk.requiresReview, true);
+  assert.ok(result.capabilities[0].risk.reasons.some((reason) => /凭据/.test(reason)));
   assert.equal(JSON.stringify(result).includes('credentialId'), false);
   assert.equal(JSON.stringify(result).includes('secret-ref'), false);
   assert.equal(JSON.stringify(result).includes('docs.example.test'), false);
+  const catalog = JSON.parse((await client.callTool({ name: 'list_capability_catalog', arguments: {} })).content[0].text);
+  const plugin = catalog.capabilities.find((item) => item.id === 'cap-review-plugin');
+  assert.deepEqual(plugin.components.commands, [{
+    id: 'command-review', name: 'review', description: 'Review changes', runnable: true, userInvocable: true, diagnostics: [],
+  }]);
 });
 
 test('MCP capability commands require a bound plugin and enqueue a controlled child task', async t => {

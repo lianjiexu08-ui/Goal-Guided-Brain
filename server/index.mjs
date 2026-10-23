@@ -10,6 +10,7 @@ import { DshRun, findDsh, redact } from './runtime.mjs';
 import { c as createTar } from 'tar';
 import { lockControl } from './persistence.mjs';
 import { createPlatform } from './platform.mjs';
+import { assessCapabilityRisk, capabilityFingerprint } from './capabilities.mjs';
 import { createOrchestrationHandler } from './orchestration-mcp.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -47,6 +48,162 @@ export function createWorkbench({
     control: platform.control,
     capabilities: platform.capabilities,
   });
+  const publicTeamTimeline = (spaceId, options = {}) => store
+    .teamTimeline(spaceId, options.limit, options.before)
+    .map((item) => item.type === 'message'
+      ? {
+          ...item,
+          attachments: platform.attachments.list(item.attachmentIds),
+        }
+      : item);
+  const publicCrossTeamTimeline = ({ teamId = '', kind = 'all', limit = 60, before = null } = {}) => {
+    const teams = store.teamSpaces()
+      .filter((space) => space.status !== 'archived' && space.recruitment?.phase === 'confirmed')
+      .filter((space) => !teamId || teamId === 'all' || space.id === teamId || space.chatId === teamId);
+    const matchesKind = (item) => {
+      if (kind === 'all') return true;
+      if (kind === 'messages') return item.type === 'message';
+      if (kind === 'execution') return item.type === 'task' || item.type === 'task-event';
+      if (kind === 'evidence') return ['artifact', 'verification', 'acceptance'].includes(item.type);
+      if (kind === 'risk') {
+        if (item.type === 'message') return item.status === 'blocked' || Boolean(item.error);
+        if (item.type === 'task') {
+          return [
+            'blocked',
+            'failed',
+            'interrupted',
+            'state_unknown',
+            'budget-exceeded',
+            'budget_exceeded',
+          ].includes(item.status || '') || item.deliveryStatus === 'rejected' || Boolean(item.error);
+        }
+        if (item.type === 'task-event') return /fail|error|block|interrupt|budget/i.test(item.eventType || '');
+        if (item.type === 'acceptance') return item.acceptanceDecision === 'rejected';
+      }
+      return false;
+    };
+    const pageSize = Math.max(1, Math.min(120, Number(limit) || 60));
+    const items = teams
+      .flatMap((space) => publicTeamTimeline(space.id, { limit: 200, before }).map((item) => ({
+        ...item,
+        teamId: space.id,
+        teamName: space.name,
+        teamType: space.teamType || 'custom',
+      })))
+      .filter(matchesKind)
+      .sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id));
+    // The cross-team endpoint uses newest-first pages. The cursor points at
+    // the oldest item currently rendered, so the next page can append older
+    // records without changing the meaning of `before`.
+    const window = items.slice(0, pageSize + 1);
+    const hasMore = window.length > pageSize;
+    return {
+      items: hasMore ? window.slice(0, pageSize) : window,
+      hasMore,
+      total: items.length,
+    };
+  };
+  const publicTeamRisks = ({ teamId = '', kind = 'all', status = 'all', limit = 50, before = null } = {}) => {
+    const teams = store.teamSpaces()
+      .filter((space) => space.status !== 'archived' && space.recruitment?.phase === 'confirmed');
+    const teamsById = new Map(teams.map((space) => [space.id, space]));
+    const executionRiskStatuses = new Set([
+      'blocked',
+      'failed',
+      'interrupted',
+      'state_unknown',
+      'budget-exceeded',
+      'budget_exceeded',
+    ]);
+    const deliveryRiskStatuses = new Set(['pending-review', 'awaiting-owner', 'rejected', 'failed']);
+    const risks = [];
+    const resolveTaskScope = (task) => {
+      const meta = store.records.get('task-meta', task.id) || {};
+      const job = meta.jobId ? store.records.get('jobs', meta.jobId) : null;
+      const resolvedTeamId = meta.spaceId || meta.teamId || job?.spaceId || job?.teamId || null;
+      return {
+        teamId: resolvedTeamId,
+        team: resolvedTeamId ? teamsById.get(resolvedTeamId) : null,
+        meta,
+        job,
+      };
+    };
+    for (const task of store.tasks()) {
+      const scope = resolveTaskScope(task);
+      if (!scope.team) continue;
+      const delivery = store.taskDelivery(task);
+      const executionRisk = executionRiskStatuses.has(task.status) || (task.status !== 'completed' && Boolean(task.error));
+      const deliveryRisk = deliveryRiskStatuses.has(delivery.deliveryStatus);
+      if (!executionRisk && !deliveryRisk) continue;
+      const riskKind = executionRisk ? 'execution' : 'delivery';
+      const riskStatus = executionRisk ? task.status : delivery.deliveryStatus;
+      risks.push({
+        id: `task:${task.id}`,
+        sourceType: 'task',
+        kind: riskKind,
+        status: riskStatus,
+        title: riskKind === 'delivery' ? `交付待处理：${task.title}` : task.title,
+        detail: task.error || (riskStatus === 'awaiting-owner'
+          ? '等待所有者验收交付。'
+          : riskStatus === 'pending-review'
+            ? '执行已结束，等待验证证据复核。'
+            : riskStatus === 'rejected'
+              ? delivery.acceptanceNote || '交付已退回复核。'
+              : '执行需要检查或恢复。'),
+        updatedAt: task.updatedAt || task.createdAt,
+        teamId: scope.team.id,
+        teamName: scope.team.name,
+        taskId: task.id,
+        jobId: scope.meta.jobId || null,
+        groupId: scope.meta.groupId || scope.job?.groupId || null,
+        deliveryStatus: delivery.deliveryStatus,
+        acceptanceDecision: delivery.acceptanceDecision,
+      });
+    }
+    for (const attention of store.records.list('attention')) {
+      if (['resolved', 'dismissed'].includes(attention.status)) continue;
+      const task = attention.taskId ? store.task(attention.taskId) : null;
+      const scope = task ? resolveTaskScope(task) : {
+        teamId: attention.teamId || attention.spaceId || null,
+        team: teamsById.get(attention.teamId || attention.spaceId || ''),
+        meta: attention.taskId ? store.records.get('task-meta', attention.taskId) || {} : {},
+        job: attention.jobId ? store.records.get('jobs', attention.jobId) : null,
+      };
+      if (!scope.team) continue;
+      risks.push({
+        id: `attention:${attention.id}`,
+        sourceType: 'attention',
+        kind: 'attention',
+        status: attention.status || 'open',
+        title: attention.title || '需要你处理',
+        detail: attention.detail || '团队有一项需要确认的事项。',
+        updatedAt: attention.updatedAt || attention.createdAt,
+        teamId: scope.team.id,
+        teamName: scope.team.name,
+        taskId: attention.taskId || null,
+        jobId: attention.jobId || scope.meta.jobId || null,
+        groupId: attention.groupId || scope.meta.groupId || scope.job?.groupId || null,
+        attentionId: attention.id,
+      });
+    }
+    const cursor = typeof before === 'string' && before.trim() ? before.split('|') : [];
+    const beforeAt = cursor[0] || null;
+    const beforeId = cursor.slice(1).join('|') || null;
+    const filtered = risks
+      .filter((risk) => !teamId || risk.teamId === teamId)
+      .filter((risk) => kind === 'all' || risk.kind === kind)
+      .filter((risk) => status === 'all' || risk.status === status)
+      .filter((risk) => typeof risk.updatedAt === 'string' && risk.updatedAt)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id))
+      .filter((risk) => !beforeAt || risk.updatedAt < beforeAt || (risk.updatedAt === beforeAt && Boolean(beforeId && risk.id < beforeId)));
+    const pageSize = Math.max(1, Math.min(100, Number(limit) || 50));
+    const page = filtered.slice(0, pageSize + 1);
+    return {
+      items: page.slice(0, pageSize),
+      hasMore: page.length > pageSize,
+      total: filtered.length,
+    };
+  };
   const getState = () => ({
     roles: store.roles(),
     skillCatalog: SKILLS.map(({ id, name }) => ({ id, name })),
@@ -55,9 +212,12 @@ export function createWorkbench({
       name: capability.name,
       kind: capability.kind,
       version: capability.version || null,
+      revision: capability.revision || null,
+      digest: capability.digest || null,
       enabled: capability.enabled !== false,
       description: capability.description || '',
       tools: Array.isArray(capability.tools) ? capability.tools : [],
+      risk: assessCapabilityRisk(capability),
       health: capability.health ? {
         ok: capability.health.ok === true,
         checkedAt: capability.health.checkedAt || null,
@@ -78,6 +238,7 @@ export function createWorkbench({
             toolTest: provider.health.toolTest === true,
             structured: provider.health.structured === true,
             latencyMs: provider.health.latencyMs || null,
+            checkedAt: provider.health.checkedAt || null,
             error: provider.health.ok ? null : provider.health.error || null,
           }
         : null,
@@ -90,28 +251,10 @@ export function createWorkbench({
       })),
     })),
     tasks: (() => {
-      const evidence = new Map();
-      for (const artifact of store.records.list('artifacts')) {
-        if (!artifact.taskId) continue;
-        const summary = evidence.get(artifact.taskId) || {
-          artifactCount: 0,
-          verificationStatus: null,
-        };
-        summary.artifactCount += 1;
-        if (artifact.kind === 'verification' && !summary.verificationStatus) {
-          summary.verificationStatus =
-            artifact.status ||
-            (artifact.verified === true ? 'verified' : 'pending-review');
-        }
-        evidence.set(artifact.taskId, summary);
-      }
       return store.tasks().map(({ context: _context, log: _log, ...t }) => {
         const meta = store.records.get('task-meta', t.id) || {};
         const job = meta.jobId ? store.records.get('jobs', meta.jobId) : null;
-        const summary = evidence.get(t.id) || {
-          artifactCount: 0,
-          verificationStatus: null,
-        };
+        const delivery = store.taskDelivery(t);
         return {
           ...t,
           log: '',
@@ -121,8 +264,12 @@ export function createWorkbench({
           spaceId: meta.spaceId || job?.spaceId || null,
           teamId: meta.teamId || job?.teamId || meta.spaceId || job?.spaceId || null,
           parentJobId: job?.parentJobId || null,
-          artifactCount: summary.artifactCount,
-          verificationStatus: summary.verificationStatus,
+          artifactCount: delivery.evidenceCount,
+          verificationStatus: delivery.hasVerificationEvidence ? delivery.acceptanceStatus : null,
+          deliveryStatus: delivery.deliveryStatus,
+          acceptanceDecision: delivery.acceptanceDecision,
+          acceptanceNote: delivery.acceptanceNote,
+          currentRequirementVersion: delivery.currentRequirementVersion,
           attachmentIds: Array.isArray(meta.attachmentIds) ? meta.attachmentIds : [],
           attachments: platform.attachments.list(meta.attachmentIds),
         };
@@ -137,7 +284,9 @@ export function createWorkbench({
         attachmentIds: Array.isArray(message.attachmentIds) ? message.attachmentIds : [],
         attachments: platform.attachments.list(message.attachmentIds),
       })),
+      timeline: publicTeamTimeline(space.id),
     })),
+    teamTemplates: store.teamTemplates(),
     config: {
       ...store.config,
       hasApiKey: platform.hasCredential(),
@@ -257,12 +406,21 @@ export function createWorkbench({
       if (!authorization.authorized)
         return send(401, { error: '请先登录工作台。' });
       if (parts[1] === 'attachments') {
-        if (req.method === 'POST' && !parts[2])
+        if (req.method === 'POST' && !parts[2]) {
+          const teamId = typeof body.teamId === 'string' && body.teamId.trim()
+            ? body.teamId.trim()
+            : null;
+          if (teamId) {
+            const team = store.teamSpace(teamId);
+            if (!team || team.status !== 'active') throw new Error('附件所属团队不存在或已暂停。');
+          }
           return send(201, platform.attachments.create({
             name: body.name,
             mime: body.mime,
             data: body.data,
+            teamId,
           }));
+        }
         if (parts[2] && req.method === 'GET') {
           const attachment = platform.attachments.metadata(parts[2]);
           if (!attachment) return send(404, { error: '附件不存在。' });
@@ -306,6 +464,21 @@ export function createWorkbench({
       if (managed) return send(managed.status, managed.body);
       if (req.method === 'GET' && parts[1] === 'state')
         return send(200, getState());
+      if (req.method === 'GET' && parts[1] === 'risks')
+        return send(200, publicTeamRisks({
+          teamId: options.query.get('teamId') || '',
+          kind: options.query.get('kind') || 'all',
+          status: options.query.get('status') || 'all',
+          limit: options.query.get('limit') || 50,
+          before: options.query.get('before') || null,
+        }));
+      if (req.method === 'GET' && parts[1] === 'timeline')
+        return send(200, publicCrossTeamTimeline({
+          teamId: options.query.get('teamId') || '',
+          kind: options.query.get('kind') || 'all',
+          limit: options.query.get('limit') || 60,
+          before: options.query.get('before') || null,
+        }));
       if (req.method === 'PUT' && parts[1] === 'settings') {
         let folder = required(body.workspace, '工作目录', 2000);
         if (folder.startsWith('~/'))
@@ -330,6 +503,20 @@ export function createWorkbench({
         if (req.method === 'GET') return send(200, store.profile());
         if (req.method === 'PUT') return send(200, store.saveProfile(body));
       }
+      if (parts[1] === 'team-templates') {
+        if (req.method === 'GET' && !parts[2]) return send(200, store.teamTemplates());
+        if (req.method === 'POST' && !parts[2]) return send(201, store.saveTeamTemplate(body));
+        if (parts[2]) {
+          const template = store.teamTemplate(parts[2]);
+          if (!template) return send(404, { error: '团队模板不存在。' });
+          if (req.method === 'GET' && !parts[3]) return send(200, template);
+          if (req.method === 'PUT' && !parts[3]) return send(200, store.saveTeamTemplate(body, template.id));
+          if (req.method === 'DELETE' && !parts[3]) return send(200, { ok: store.removeTeamTemplate(template.id) });
+          if (req.method === 'POST' && parts[3] === 'apply') {
+            return send(201, store.createTeamFromTemplate(template.id, body));
+          }
+        }
+      }
       // `teams` is the public name used by the multi-team Chat UI. Keep
       // `/spaces` as a backwards-compatible alias for existing clients.
       if (['spaces', 'teams', 'chats'].includes(parts[1])) {
@@ -346,7 +533,22 @@ export function createWorkbench({
               .map((task) => {
                 const meta = store.records.get('task-meta', task.id) || {};
                 const job = meta.jobId ? store.records.get('jobs', meta.jobId) : null;
-                return { ...task, jobId: meta.jobId || null, groupId: meta.groupId || job?.groupId || null, parentTaskId: meta.parentTaskId || null, spaceId: meta.spaceId || job?.spaceId || null, teamId: meta.teamId || job?.teamId || meta.spaceId || job?.spaceId || null };
+                const delivery = store.taskDelivery(task);
+                return {
+                  ...task,
+                  jobId: meta.jobId || null,
+                  groupId: meta.groupId || job?.groupId || null,
+                  parentTaskId: meta.parentTaskId || null,
+                  spaceId: meta.spaceId || job?.spaceId || null,
+                  teamId: meta.teamId || job?.teamId || meta.spaceId || job?.spaceId || null,
+                  workspaceMode: meta.workspaceMode || job?.workspaceMode || null,
+                  artifactCount: delivery.evidenceCount,
+                  verificationStatus: delivery.hasVerificationEvidence ? delivery.acceptanceStatus : null,
+                  deliveryStatus: delivery.deliveryStatus,
+                  acceptanceDecision: delivery.acceptanceDecision,
+                  acceptanceNote: delivery.acceptanceNote,
+                  currentRequirementVersion: delivery.currentRequirementVersion,
+                };
               })
               .filter((task) => task.spaceId === space.id)
               .map(({ context: _context, log: _log, ...task }) => {
@@ -365,8 +567,36 @@ export function createWorkbench({
                 attachmentIds: Array.isArray(message.attachmentIds) ? message.attachmentIds : [],
                 attachments: platform.attachments.list(message.attachmentIds),
               })),
+              timeline: publicTeamTimeline(space.id),
               tasks,
               jobs: store.records.list('jobs').filter((job) => job.spaceId === space.id),
+            });
+          }
+          if (req.method === 'GET' && parts[3] === 'timeline') {
+            const requestedLimit = Math.max(1, Math.min(120, Number(options.query.get('limit')) || 60));
+            const page = publicTeamTimeline(space.id, {
+              limit: requestedLimit + 1,
+              before: options.query.get('before') || null,
+            });
+            const hasMore = page.length > requestedLimit;
+            return send(200, {
+              items: hasMore ? page.slice(1) : page,
+              hasMore,
+            });
+          }
+          if (req.method === 'GET' && parts[3] === 'recruitment' && !parts[4]) {
+            const page = store.recruitmentPage(space.id, {
+              after: options.query.get('after') || null,
+              limit: options.query.get('limit') || 100,
+            });
+            const { items: recruitmentItems, ...recruitmentSummary } = page;
+            return send(200, {
+              ...recruitmentSummary,
+              messages: recruitmentItems.map((message) => ({
+                ...message,
+                attachmentIds: Array.isArray(message.attachmentIds) ? message.attachmentIds : [],
+                attachments: platform.attachments.list(message.attachmentIds),
+              })),
             });
           }
           if (req.method === 'PUT' && !parts[3]) {
@@ -382,17 +612,20 @@ export function createWorkbench({
             return send(200, store.saveTeamSpace(body, space.id));
           }
           if (req.method === 'POST' && parts[3] === 'recruitment' && parts[4] === 'confirm') {
-            return send(200, platform.control.confirmTeamRecruitment(space.id, { version: body.version }, authorization.principal));
+            return send(200, platform.control.confirmTeamRecruitment(space.id, {
+              version: body.version,
+              capabilityApprovals: body.capabilityApprovals,
+            }, authorization.principal));
           }
           if (req.method === 'GET' && parts[3] === 'collaborators') {
-            if (space.collaboration?.enabled === false) return send(200, []);
+            if (space.recruitment?.phase !== 'confirmed' || space.collaboration?.enabled === false) return send(200, []);
             const allowed = Array.isArray(space.collaboration?.allowedTeamIds)
               ? space.collaboration.allowedTeamIds
               : [];
             const collaborators = store.teamSpaces()
-              .filter((candidate) => candidate.id !== space.id && candidate.status === 'active')
+              .filter((candidate) => candidate.id !== space.id && candidate.status === 'active' && candidate.recruitment?.phase === 'confirmed')
               .filter((candidate) => !allowed.length || allowed.includes(candidate.id))
-              .map(({ id: candidateId, name: candidateName, teamType: candidateTeamType, purpose: candidatePurpose, pmRoleId: candidatePmRoleId, status: candidateStatus }) => ({
+            .map(({ id: candidateId, name: candidateName, teamType: candidateTeamType, purpose: candidatePurpose, pmRoleId: candidatePmRoleId, status: candidateStatus, memberRoleIds: candidateMemberRoleIds, autonomy: candidateAutonomy, workspaceMode: candidateWorkspaceMode }) => ({
                 id: candidateId,
                 chatId: store.teamSpace(candidateId)?.chatId || candidateId,
                 name: candidateName,
@@ -400,11 +633,17 @@ export function createWorkbench({
                 purpose: candidatePurpose || '',
                 pmRoleId: candidatePmRoleId,
                 status: candidateStatus,
+                memberCount: Array.isArray(candidateMemberRoleIds) ? candidateMemberRoleIds.length : 0,
+                budgetTokens: Number.isSafeInteger(candidateAutonomy?.budgetTokens) ? candidateAutonomy.budgetTokens : null,
+                maxJobs: Number.isSafeInteger(candidateAutonomy?.maxJobs) ? candidateAutonomy.maxJobs : null,
+                workspaceMode: candidateWorkspaceMode || null,
               }));
             return send(200, collaborators);
           }
           if (req.method === 'POST' && parts[3] === 'collaborate') {
             if (space.status !== 'active') throw new Error('团队空间当前不可发起协作。');
+            if (space.recruitment?.phase !== 'confirmed')
+              throw Object.assign(new Error('当前团队尚未完成招募。'), { status: 409 });
             if (space.collaboration?.enabled === false)
               throw Object.assign(new Error('当前团队未启用跨团队协作。'), { status: 409 });
             const targetId = required(body.targetTeamId || body.teamId, '目标团队');
@@ -416,7 +655,11 @@ export function createWorkbench({
               ? space.collaboration.allowedTeamIds
               : [];
             if (allowed.length && !allowed.includes(target.id) && !allowed.includes(target.chatId)) throw new Error('当前团队未允许与目标团队协作。');
-            const content = required(body.content, '协作目标', 32000);
+            const prompt = required(body.content, '协作目标', 32000);
+            const acceptance = typeof body.acceptance === 'string' ? body.acceptance.trim() : '';
+            if (acceptance.length > 20000) throw new Error('验收标准不能超过 20000 个字符。');
+            const content = acceptance ? `${prompt}\n\n验收标准：\n${acceptance}` : prompt;
+            if (content.length > 32000) throw new Error('协作目标和验收标准合计不能超过 32000 个字符。');
             const clientMessageId = required(body.clientMessageId || randomUUID(), '消息 ID', 200);
             const handoffId = `handoff:${space.id}:${target.id}:${clientMessageId}`;
             const previous = store.records.get('space-messages', handoffId);
@@ -457,6 +700,7 @@ export function createWorkbench({
               teamId: target.id,
               spaceId: target.id,
               sourceMessageId: message.id,
+              acceptance,
             });
             const linked = store.saveTeamMessage({ ...message, taskId: task.id }, message.id);
             const sourceLinked = store.saveTeamMessage(
@@ -480,7 +724,7 @@ export function createWorkbench({
           }
           if (req.method === 'POST' && parts[3] === 'messages') {
             if (space.status !== 'active') throw new Error('团队空间当前不可接收新消息。');
-            const attachmentIds = platform.attachments.validateIds(body.attachmentIds);
+            const attachmentIds = platform.attachments.validateIds(body.attachmentIds, space.id);
             const content = typeof body.content === 'string' ? body.content.trim() : '';
             if (!content && !attachmentIds.length) throw new Error('团队消息不能为空，且不能超过 32000 字符。');
             const messageContent = content || '请查看随附文件并处理。';
@@ -551,17 +795,70 @@ export function createWorkbench({
         }
       }
       if (parts[1] === 'roles') {
-        if (req.method === 'POST' && !parts[2])
-          return send(201, store.saveRole(body));
-        if (req.method === 'PUT' && parts[2] && !parts[3])
-          return send(200, store.saveRole(body, parts[2]));
+        if ((req.method === 'POST' && !parts[2]) || (req.method === 'PUT' && parts[2] && !parts[3])) {
+          const existingRole = parts[2] ? store.role(parts[2]) : null;
+          const capabilityIds = Array.isArray(body.capabilityIds)
+            ? body.capabilityIds
+            : existingRole?.capabilityIds || [];
+          const previousIds = new Set(existingRole?.capabilityIds || []);
+          const approvals = body.capabilityApprovals && typeof body.capabilityApprovals === 'object' && !Array.isArray(body.capabilityApprovals)
+            ? body.capabilityApprovals
+            : existingRole?.capabilityApprovals || {};
+          const auditRows = [];
+          for (const capabilityId of capabilityIds) {
+            const capability = platform.capabilities.list().find((item) => item.id === capabilityId);
+            if (!capability) continue;
+            if (capability.enabled === false) throw new Error(`绑定能力「${capability.name || capabilityId}」前请先启用能力。`);
+            const risk = assessCapabilityRisk(capability);
+            if (!risk.requiresReview) continue;
+            const capabilityDigest = capabilityFingerprint(capability);
+            const approval = approvals?.[capabilityId];
+            const validApproval = approval?.confirmed === true &&
+              typeof approval.digest === 'string' && approval.digest === capabilityDigest;
+            if (!validApproval) {
+              const error = new Error(`绑定能力「${capability.name || capabilityId}」前需要逐项确认：${risk.reasons.join('；')}`);
+              error.status = 409;
+              error.code = 'CAPABILITY_BINDING_REVIEW_REQUIRED';
+              throw error;
+            }
+            const previousApproval = existingRole?.capabilityApprovals?.[capabilityId];
+            if (!previousIds.has(capabilityId) || previousApproval?.digest !== capabilityDigest)
+              auditRows.push({ capability, risk, approval, digest: capabilityDigest });
+          }
+          const saved = store.saveRole({ ...body, capabilityApprovals: approvals }, parts[2]);
+          for (const { capability, risk, approval, digest } of auditRows) {
+            store.records.save('capability-audits', {
+              capabilityId: capability.id,
+              action: 'bind',
+              roleId: saved.id,
+              actor: 'owner',
+              confirmed: true,
+              riskLevel: risk.level,
+              requiresReview: true,
+              digest,
+              reasons: risk.reasons.slice(0, 12),
+              confirmedAt: approval.confirmedAt || new Date().toISOString(),
+              createdAt: new Date().toISOString(),
+            });
+          }
+          return send(req.method === 'POST' ? 201 : 200, saved);
+        }
         if (req.method === 'POST' && ['archive', 'restore'].includes(parts[3]))
           return send(200, store.archiveRole(parts[2], parts[3] === 'archive'));
       }
       if (['POST', 'PUT'].includes(req.method) && parts[1] === 'knowledge') {
+        const existingKnowledge = req.method === 'PUT' && parts[2]
+          ? store.knowledge().find((item) => item.id === parts[2])
+          : null;
+        const knowledgeScope = typeof body.scope === 'string'
+          ? body.scope
+          : existingKnowledge?.scope;
+        const knowledgeTeamId = knowledgeScope === 'team'
+          ? (typeof body.teamId === 'string' ? body.teamId : existingKnowledge?.teamId)
+          : undefined;
         if (
-          !['personal', 'project', ...store.roles().map((r) => r.id)].includes(
-            body.scope,
+          !['personal', 'project', 'team', ...store.roles().map((r) => r.id)].includes(
+            knowledgeScope,
           )
         )
           throw new Error('知识范围无效。');
@@ -569,7 +866,7 @@ export function createWorkbench({
           throw new Error('知识状态无效。');
         if (
           req.method === 'PUT' &&
-          !store.knowledge().some((k) => k.id === parts[2])
+          !existingKnowledge
         )
           return send(404, { error: '知识不存在。' });
         const item = store.saveKnowledge(
@@ -582,7 +879,8 @@ export function createWorkbench({
                 store.sessions().some((s) => s.workspace === body.projectPath))
                 ? body.projectPath
                 : undefined,
-            scope: body.scope,
+            scope: knowledgeScope,
+            ...(knowledgeTeamId ? { teamId: knowledgeTeamId } : {}),
             state: body.state,
             source:
               typeof body.source === 'string'
@@ -663,9 +961,12 @@ export function createWorkbench({
             prompt: task.prompt,
             sessionId: task.sessionId,
             workspace: task.workspace,
-            sourceTaskId: task.sourceTaskId,
+            // Every retry is a new execution attempt. Keep the direct source
+            // instance on the replacement so the task detail can show the
+            // lineage and old results remain immutable for review.
+            sourceTaskId: task.id,
             attachmentIds: previousMeta.attachmentIds,
-            contextExtra: `继续执行 ${task.id}。先核验已有成果与外部操作，再完成未完成部分。\n${task.result}`,
+            contextExtra: `继续执行 ${task.id}。先核验已有成果与外部操作，再完成未完成部分。\n失败原因：${task.error || '未提供'}\n已有结果：${task.result || '无'}`,
           });
           const meta = store.records.get('task-meta', retry.id);
           const job = store.records.get('jobs', meta.jobId);
@@ -682,6 +983,11 @@ export function createWorkbench({
             throw new Error('请等待原任务完成并生成成果后再交接。');
           const role = roleValue(body.role);
           if (role === task.role) throw new Error('请选择另一个助手。');
+          const previousMeta = store.records.get('task-meta', task.id) || {};
+          const previousJob = previousMeta.jobId
+            ? store.records.get('jobs', previousMeta.jobId)
+            : null;
+          const teamId = previousMeta.teamId || previousMeta.spaceId || previousJob?.teamId || previousJob?.spaceId || null;
           return send(
             201,
             newTask({
@@ -689,6 +995,7 @@ export function createWorkbench({
               prompt: required(body.note, '交接要求'),
               sourceTaskId: task.id,
               workspace: task.workspace,
+              ...(teamId ? { teamId, spaceId: teamId, ownerInitiated: true } : {}),
             }),
           );
         }

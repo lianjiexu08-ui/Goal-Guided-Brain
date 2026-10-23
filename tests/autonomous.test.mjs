@@ -21,14 +21,17 @@ function setup(t, options = {}) {
 function confirmedTeam(t, options = {}, phase = 'confirmed') {
   const fixture = setup(t, options);
   const { store, control } = fixture;
-  const team = store.saveTeamSpace({
+  const created = store.saveTeamSpace({
     name: '自治团队', goal: '自动招募并交付。', purpose: '验证自治招募。',
     workspace: fixture.workspace, pmRoleId: 'project_manager',
-    recruitment: { phase },
   });
-  const job = control.createJob({ role: team.pmRoleId, prompt: '组建团队', teamId: team.id, spaceId: team.id });
+  // 先以已确认团队创建项目经理实例（createJob 要求团队已确认），再切到目标招募阶段。
+  const job = control.createJob({ role: created.pmRoleId, prompt: '组建团队', teamId: created.id, spaceId: created.id });
   const claim = control.claimLocal(store.task(job.taskId));
   const principal = control.validateInstanceToken(claim.token);
+  const team = phase === 'confirmed'
+    ? store.teamSpace(created.id)
+    : store.saveTeamSpace({ ...store.teamSpace(created.id), recruitment: { ...store.teamSpace(created.id).recruitment, phase } }, created.id);
   return { ...fixture, team, principal };
 }
 

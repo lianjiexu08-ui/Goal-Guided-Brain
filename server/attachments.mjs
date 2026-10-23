@@ -25,15 +25,21 @@ export class AttachmentService {
     if (!Array.isArray(ids)) return [];
     return ids.map((id) => this.metadata(id)).filter(Boolean);
   }
-  validateIds(ids) {
+  validateIds(ids, teamId = null) {
     if (ids === undefined || ids === null) return [];
     if (!Array.isArray(ids) || ids.length > 20 || ids.some((id) => typeof id !== 'string' || !id.trim()))
       throw new Error('附件引用无效，最多关联 20 个文件。');
     const unique = [...new Set(ids.map((id) => id.trim()))];
-    for (const id of unique) if (!this.records.get('attachments', id)) throw new Error(`附件不存在：${id}`);
+    const requestedTeamId = typeof teamId === 'string' && teamId.trim() ? teamId.trim() : null;
+    for (const id of unique) {
+      const row = this.records.get('attachments', id);
+      if (!row) throw new Error(`附件不存在：${id}`);
+      if (row.teamId && row.teamId !== requestedTeamId)
+        throw Object.assign(new Error('附件属于另一个团队，不能跨团队引用。'), { status: 409 });
+    }
     return unique;
   }
-  create({ name, mime = 'application/octet-stream', data }) {
+  create({ name, mime = 'application/octet-stream', data, teamId = null }) {
     if (typeof data !== 'string' || !data || data.length > Math.ceil(MAX_BYTES * 4 / 3) + 8)
       throw new Error('附件内容无效或超过 10 MB。');
     const normalized = data.replace(/^data:[^;]+;base64,/, '');
@@ -48,6 +54,7 @@ export class AttachmentService {
       mime: typeof mime === 'string' && mime.trim() ? mime.trim().slice(0, 180) : 'application/octet-stream',
       size: bytes.length,
       storageName: `${id}.bin`,
+      ...(typeof teamId === 'string' && teamId.trim() ? { teamId: teamId.trim() } : {}),
     }, id);
     try {
       fs.writeFileSync(path.join(this.directory, row.storageName), bytes, { mode: 0o600 });
@@ -64,9 +71,9 @@ export class AttachmentService {
     if (!fs.existsSync(filename)) throw new Error('附件内容已丢失，请重新上传。');
     return { metadata: this.metadata(id), bytes: fs.readFileSync(filename) };
   }
-  materialize(ids, destination) {
+  materialize(ids, destination, teamId = null) {
     const result = [];
-    for (const id of this.validateIds(ids)) {
+    for (const id of this.validateIds(ids, teamId)) {
       const { metadata, bytes } = this.read(id);
       const filename = `${String(result.length + 1).padStart(2, '0')}-${SAFE_NAME(metadata.name)}`;
       const target = path.join(destination, filename);

@@ -3,7 +3,7 @@
 ## Accepted scope
 
 Single-owner cloud control plane, optional local-only mode, macOS/Linux workers,
-Windows workers through WSL2, multi-provider DSH runs, durable agent mailboxes,
+Windows workers (with WSL2 as the recommended deployment), multi-provider DSH runs, durable agent mailboxes,
 isolated development directories, skills/MCP/plugin capabilities, schedules and
 monitoring. Existing roles, sessions, tasks and knowledge remain readable.
 
@@ -32,7 +32,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Validation
 
-- [x] Existing regression suite plus new deterministic integration tests: 97/97, no skips.
+- [x] Existing regression suite plus new deterministic integration tests: 157/157, no skips.
 - [x] Lint, typecheck and production build.
 - [x] Browser workflows at desktop and mobile sizes, including real backend forms.
 - [x] Combined parent/frontend/backend/reviewer scenario using real orchestration MCP,
@@ -46,7 +46,7 @@ They are not sign-off for the separate real deployment gates below.
 
 ## Local Release Record
 
-Validated on 2026-09-10 using macOS, Node.js 26.8.1 and DSH 0.1.2-rc.1.
+Validated on 2026-09-27 using macOS, Node.js 26.8.1 and DSH 0.1.2-rc.1.
 The current production service runs at `http://127.0.0.1:3088/`, with the API at
 `http://127.0.0.1:3089`. The previous service had no active tasks at upgrade time.
 
@@ -60,6 +60,33 @@ No paid provider was called during the test suite. Native adapter tests use a
 deterministic HTTP model; the combined scenario uses a deterministic executor
 and real workbench services. This verifies orchestration behavior, not the
 quality of a production model's reasoning.
+
+The current deterministic suite contains 157 passing tests. The repeatable
+Playwright baseline contains fifty-two passing desktop/mobile runs covering team
+recruitment navigation, the recruitment cursor sync status, the unified team timeline filters and pagination, the cross-team unified timeline, the cross-team risk inbox, batch delivery review, local and server-backed
+draft restoration, team-scoped draft isolation, multi-device draft auto-merge and explicit conflict choice, team template copying with history/task isolation, utility-view route restoration,
+binary drag-and-drop attachments, Team Charter confirmation and high-risk
+capability binding review, team renaming, team
+settings editing, two-team context switching, cross-team model selection,
+provider probe status feedback, sustained 20-switch isolation and failed-task
+recovery against the real API. Team tasks now default to isolated execution
+directories, and task details expose the selected model, routing candidates and
+fallback events when they exist. A local API fixture also alternates between
+two teams for 20 messages and checks task, message, model and route ownership.
+The confirmation fixture exercises the deterministic approval boundary. A live
+loopback probe on
+2026-09-27 used the unlocked encrypted vault and sent minimal `Reply with OK.`
+requests to each configured provider, with one additional configured model
+checked for the two failures. GPT `gpt-5.6` and DeepSeek `deepseek-flash`
+returned valid text responses; Gemini returned upstream HTTP 405 and Kimi
+returned upstream HTTP 503 across their tested models. These results are
+connectivity evidence only, not a model-quality score; the saved health state
+now informs automatic routing while explicit model choices remain available. A
+second real task explicitly selected the Gemini candidate, received the
+upstream 405, recorded a `routing/fallback` event, and completed through
+DeepSeek with the result `OK`; the original failed attempt remains preserved
+for audit. Broader multi-turn model quality and cross-platform environment
+gates remain open.
 
 ## Remaining Compatibility And Release Gates
 

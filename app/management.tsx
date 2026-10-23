@@ -13,6 +13,7 @@ import {
   Cpu,
   Download,
   ExternalLink,
+  FileText,
   FolderGit2,
   GitBranch,
   GitMerge,
@@ -127,7 +128,20 @@ const statuses: Record<string, string> = {
   'pending-review': '待验证',
   'needs-review': '需要复核',
   verified: '验证通过',
+  accepted: '已交付',
+  'awaiting-owner': '待你验收',
+  rejected: '已退回复核',
+  stale: '验收已失效',
   skipped: '已跳过',
+  selected: '已选用',
+  considered: '候选',
+  unavailable: '不可用',
+  ineligible: '能力不满足',
+  'risk-low': '低风险',
+  'risk-medium': '中风险',
+  'risk-high': '高风险',
+  confirmed: '已确认',
+  recorded: '已记录',
 };
 const time = (value: unknown) =>
   typeof value === 'string' && value
@@ -184,7 +198,7 @@ function IconButton({
 }
 function Badge({ value }: { value: string }) {
   if (!value) return null;
-  const tone = ['failed', 'error', 'unhealthy', 'revoked'].includes(value)
+  const tone = ['failed', 'error', 'unhealthy', 'revoked', 'unavailable', 'rejected', 'risk-high'].includes(value)
     ? 'error'
     : [
           'blocked',
@@ -194,9 +208,12 @@ function Badge({ value }: { value: string }) {
           'needs_config',
           'pending-review',
           'needs-review',
+          'awaiting-owner',
+          'stale',
           'state_unknown',
           'budget_exceeded',
           'budget-exceeded',
+          'risk-medium',
         ].includes(value)
       ? 'warning'
       : ['disabled', 'offline', 'cancelled', 'paused', 'dismissed'].includes(
@@ -237,6 +254,159 @@ function ErrorMessage({
       {dismiss && <IconButton icon={X} label="关闭错误" onClick={dismiss} />}
     </div>
   ) : null;
+}
+
+type ModelMetricOption = { id: string; name?: string };
+type ModelMetricItem = {
+  providerId: string | null;
+  providerName: string;
+  model: string | null;
+  teamName: string;
+  roleName: string;
+  attempts: number;
+  logicalTasks: number;
+  completed: number;
+  failed: number;
+  fallbacks: number;
+  fallbackTargets: number;
+  avgLatencyMs: number | null;
+  p50LatencyMs: number | null;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cost: number | null;
+  costKnown: boolean;
+  verificationPassed: number;
+  accepted: number;
+  rejected: number;
+  pending: number;
+  candidateDecisions?: {
+    providerId: string | null;
+    providerName: string | null;
+    model: string | null;
+    status: string;
+    reason: string | null;
+    count: number;
+  }[];
+};
+type ModelMetricsResponse = {
+  generatedAt: string;
+  options?: {
+    teams?: ModelMetricOption[];
+    roles?: ModelMetricOption[];
+    providers?: ModelMetricOption[];
+    models?: ModelMetricOption[];
+  };
+  totals: {
+    attempts: number;
+    logicalTasks: number;
+    completed: number;
+    failed: number;
+    accepted: number;
+    rejected: number;
+    pending: number;
+    verificationPassed: number;
+    fallbacks: number;
+    totalTokens: number;
+    cost: number | null;
+    costKnown: boolean;
+    avgLatencyMs: number | null;
+    p50LatencyMs: number | null;
+  };
+  items: ModelMetricItem[];
+};
+
+const metricNumber = (value: number | null | undefined) =>
+  typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('zh-CN') : '-';
+const metricRouteExplanation = (item: ModelMetricItem) =>
+  (item.candidateDecisions || [])
+    .slice(0, 3)
+    .map((candidate) => {
+      const label = labels[candidate.status] || candidate.status;
+      const reason = candidate.reason ? `：${candidate.reason}` : '';
+      return `${label}${reason}`;
+    })
+    .join(' · ');
+
+function ModelMetricsPanel() {
+  const [metrics, setMetrics] = useState<ModelMetricsResponse | null>(null);
+  const [filters, setFilters] = useState({ teamId: '', roleId: '', providerId: '', model: '' });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries(filters)) if (value) params.set(key, value);
+      const suffix = params.toString();
+      setMetrics(await api<ModelMetricsResponse>(`metrics/models${suffix ? `?${suffix}` : ''}`));
+      setError('');
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, [filters]);
+  useEffect(() => {
+    const initial = setTimeout(() => void refresh(), 0);
+    const timer = setInterval(() => void refresh(), 8000);
+    return () => {
+      clearTimeout(initial);
+      clearInterval(timer);
+    };
+  }, [refresh]);
+  const options = metrics?.options || {};
+  const updateFilter = (key: keyof typeof filters, value: string) =>
+    setFilters((current) => ({ ...current, [key]: value }));
+  const totals = metrics?.totals;
+  return (
+    <section className="model-metrics" aria-label="模型运行指标" data-testid="model-metrics-panel">
+      <div className="model-metrics-heading">
+        <div>
+          <span className="section-kicker">MODEL PERFORMANCE</span>
+          <h2>模型运行指标</h2>
+          <p>按真实执行记录比较模型稳定性、回退、耗时、用量和交付质量。</p>
+        </div>
+        <span className="model-metrics-updated">{metrics?.generatedAt ? `更新于 ${time(metrics.generatedAt)}` : '正在读取运行记录'}</span>
+      </div>
+      <ErrorMessage error={error} />
+      <div className="model-metrics-filters" aria-label="模型指标筛选">
+        <label>团队<select aria-label="指标团队" value={filters.teamId} onChange={(event) => updateFilter('teamId', event.target.value)}><option value="">全部团队</option>{(options.teams || []).map((item) => <option key={item.id} value={item.id}>{item.name || item.id}</option>)}</select></label>
+        <label>助手<select aria-label="指标助手" value={filters.roleId} onChange={(event) => updateFilter('roleId', event.target.value)}><option value="">全部助手</option>{(options.roles || []).map((item) => <option key={item.id} value={item.id}>{item.name || item.id}</option>)}</select></label>
+        <label>供应商<select aria-label="指标供应商" value={filters.providerId} onChange={(event) => updateFilter('providerId', event.target.value)}><option value="">全部供应商</option>{(options.providers || []).map((item) => <option key={item.id} value={item.id}>{item.name || item.id}</option>)}</select></label>
+        <label>模型<select aria-label="指标模型" value={filters.model} onChange={(event) => updateFilter('model', event.target.value)}><option value="">全部模型</option>{(options.models || []).map((item) => <option key={item.id} value={item.id}>{item.name || item.id}</option>)}</select></label>
+      </div>
+      {totals && (
+        <div className="model-metrics-summary">
+          <div><strong>{metricNumber(totals.logicalTasks)}</strong><span>逻辑任务</span></div>
+          <div><strong>{metricNumber(totals.attempts)}</strong><span>执行尝试</span></div>
+          <div><strong>{metricNumber(totals.completed)}</strong><span>已完成</span></div>
+          <div><strong>{metricNumber(totals.accepted)}</strong><span>已验收</span></div>
+          <div><strong>{metricNumber(totals.fallbacks)}</strong><span>触发回退</span></div>
+          <div><strong>{totals.costKnown && totals.cost !== null ? `$${totals.cost.toFixed(4)}` : '未知'}</strong><span>费用</span></div>
+        </div>
+      )}
+      {loading && !metrics ? <Empty busy text="正在载入模型指标" /> : metrics && metrics.items.length ? (
+        <div className="model-metrics-table-wrap">
+          <table className="model-metrics-table">
+            <thead><tr><th>供应商 / 模型</th><th>范围</th><th>尝试</th><th>完成 / 失败</th><th>回退</th><th>平均耗时</th><th>Token</th><th>费用</th><th>路由解释</th><th>交付</th></tr></thead>
+            <tbody>{metrics.items.map((item) => <tr key={`${item.providerId || 'unknown'}:${item.model || 'unknown'}`} data-testid="model-metrics-row">
+              <td><strong>{item.providerName}</strong><small>{item.model || '未识别模型'}</small></td>
+              <td><small>{item.teamName}</small><small>{item.roleName}</small></td>
+              <td>{metricNumber(item.attempts)}<small>{metricNumber(item.logicalTasks)} 个逻辑任务</small></td>
+              <td>{metricNumber(item.completed)} / {metricNumber(item.failed)}<small>验收 {metricNumber(item.accepted)}</small></td>
+              <td>{metricNumber(item.fallbacks)}<small>接收 {metricNumber(item.fallbackTargets)}</small></td>
+              <td>{item.avgLatencyMs === null ? '-' : `${metricNumber(item.avgLatencyMs)} ms`}<small>p50 {item.p50LatencyMs === null ? '-' : `${metricNumber(item.p50LatencyMs)} ms`}</small></td>
+              <td>{metricNumber(item.totalTokens)}<small>输入 {metricNumber(item.inputTokens)} · 输出 {metricNumber(item.outputTokens)}</small></td>
+              <td>{item.costKnown && item.cost !== null ? `$${item.cost.toFixed(4)}` : '未知'}</td>
+              <td><small>{metricRouteExplanation(item) || '未记录候选决策'}</small></td>
+              <td><small>验证 {metricNumber(item.verificationPassed)}</small><small>待处理 {metricNumber(item.pending)}</small></td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+      ) : <Empty text="当前筛选没有模型运行记录" busy={loading} />}
+    </section>
+  );
 }
 
 export function AuthenticationGate({ children }: { children: ReactNode }) {
@@ -1474,6 +1644,8 @@ function description(collection: string, item: Entity, data: ManagementState) {
         txt(item, 'source'),
         txt(item, 'version'),
         txt(item, 'transport'),
+        typeof item.boundAssistantCount === 'number' ? `${item.boundAssistantCount} 个助手` : '',
+        typeof item.boundTeamCount === 'number' ? `${item.boundTeamCount} 个团队成员` : '',
       ]
         .filter(Boolean)
         .join(' · ');
@@ -1494,6 +1666,18 @@ function description(collection: string, item: Entity, data: ManagementState) {
           txt(item, 'providerId') ||
           txt(item, 'capabilityId'),
         `每 ${txt(item, 'intervalSeconds', '300')} 秒`,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+    case 'attention':
+      return [
+        txt(item, 'kind'),
+        txt(item, 'taskTitle') ? `任务 · ${txt(item, 'taskTitle')}` : '',
+        txt(item, 'deliveryStatus')
+          ? `交付 · ${statuses[txt(item, 'deliveryStatus')] || txt(item, 'deliveryStatus')}`
+          : '',
+        txt(item, 'detail') || txt(item, 'message'),
+        time(item.createdAt),
       ]
         .filter(Boolean)
         .join(' · ');
@@ -1526,6 +1710,7 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
   const [mode, setMode] = useState<'diff' | 'commit' | 'verify' | null>(null);
   const [result, setResult] = useState<Entity | null>(null);
   const [message, setMessage] = useState('');
+  const [acceptanceNote, setAcceptanceNote] = useState('');
   const [command, setCommand] = useState('npm');
   const [args, setArgs] = useState('test');
   useEffect(() => {
@@ -1546,37 +1731,68 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
     typeof execution.executionWorkspace === 'object'
       ? (execution.executionWorkspace as Entity)
       : null;
+  const snapshot =
+    execution?.snapshot && typeof execution.snapshot === 'object'
+      ? (execution.snapshot as Entity)
+      : null;
+  const route =
+    snapshot?.route && typeof snapshot.route === 'object'
+      ? (snapshot.route as Entity)
+      : null;
+  const routingCandidates = entityList(route?.routingCandidates);
+  const routingEvents = entityList(execution?.events).filter((event) =>
+    txt(event, 'type').startsWith('routing/'),
+  );
+  const eventData = (event: Entity) =>
+    event.data && typeof event.data === 'object'
+      ? (event.data as Entity)
+      : ({} as Entity);
   const latestVerification =
     execution?.latestVerification || execution?.verification;
+  const recordedVerifications = entityList(execution?.artifacts)
+    .filter((item) => item.kind === 'verification')
+    .sort((a, b) => {
+      const at = txt(a, 'finishedAt') || txt(a, 'updatedAt') || txt(a, 'createdAt');
+      const bt = txt(b, 'finishedAt') || txt(b, 'updatedAt') || txt(b, 'createdAt');
+      return bt.localeCompare(at) || String(b.id).localeCompare(String(a.id));
+    });
   const verification =
     latestVerification && typeof latestVerification === 'object'
       ? (latestVerification as Entity)
-      : entityList(execution?.artifacts).find(
-          (item) => item.kind === 'verification',
-        );
+      : recordedVerifications[0];
   const artifacts = entityList(execution?.artifacts);
+  const delivery =
+    execution?.delivery && typeof execution.delivery === 'object'
+      ? (execution.delivery as Entity)
+      : null;
   const taskStatus = execution ? status(execution) : '';
   const verificationState =
     (verification ? status(verification) : '') ||
     (workspace && txt(workspace, 'verificationStatus')) ||
     (workspace?.verified === true ? 'verified' : '');
   const deliveryState =
-    taskStatus === 'failed' || verificationState === 'failed'
+    (delivery ? txt(delivery, 'deliveryStatus') : '') ||
+    (taskStatus === 'failed' || verificationState === 'failed'
       ? 'failed'
       : ['queued', 'running', 'state_unknown'].includes(taskStatus)
         ? taskStatus
         : verificationState === 'verified'
-          ? 'verified'
+          ? 'awaiting-owner'
           : taskStatus === 'completed'
             ? 'pending-review'
-            : taskStatus || 'pending-review';
+            : taskStatus || 'pending-review');
   let deliveryDetail = '任务仍在执行，完成后会在这里显示交付证据。';
-  if (deliveryState === 'verified') {
+  if (deliveryState === 'accepted') {
+    const note = delivery ? txt(delivery, 'acceptanceNote') : '';
+    deliveryDetail = `所有者已确认交付。${note ? ` ${note}` : ''}`;
+  } else if (deliveryState === 'awaiting-owner') {
     deliveryDetail = verification
       ? `验证命令：${title(verification)} · ${time(
-          verification.finishedAt || verification.createdAt,
-        )}`
-      : '执行目录已标记为验证通过。';
+        verification.finishedAt || verification.createdAt,
+      )}。当前需求版本的验收证据已通过，请由所有者确认是否交付。`
+      : '当前需求版本的验收证据已通过，请由所有者确认是否交付。';
+  } else if (deliveryState === 'rejected') {
+    deliveryDetail = `已退回复核：${(delivery ? txt(delivery, 'acceptanceNote') : '') || '请根据验收意见补充修改后重新提交。'}`;
   } else if (deliveryState === 'failed') {
     deliveryDetail =
       txt(execution || {}, 'error') ||
@@ -1631,6 +1847,42 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
       setBusy(false);
     }
   };
+  const decideAcceptance = async (decision: 'accept' | 'reject') => {
+    const note = acceptanceNote.trim();
+    if (decision === 'reject' && !note) {
+      setError('退回复核时需要写明需要补充或修改的内容。');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await api<Entity>(`tasks/${taskId}/${decision}`, 'POST', { note });
+      setExecution(await api<Entity>(`tasks/${taskId}`));
+      setAcceptanceNote('');
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const acceptanceCriteria = delivery?.acceptanceCriteria;
+  const acceptanceCriteriaText =
+    typeof acceptanceCriteria === 'string'
+      ? acceptanceCriteria
+      : acceptanceCriteria && typeof acceptanceCriteria === 'object'
+        ? JSON.stringify(acceptanceCriteria, null, 2)
+        : '任务中未单独记录验收标准。';
+  const canDecideAcceptance = taskStatus === 'completed' && deliveryState !== 'accepted';
+  const evidenceKind = (artifact: Entity) =>
+    txt(artifact, 'kind') === 'verification'
+      ? '验收证据'
+      : txt(artifact, 'kind') === 'commit'
+        ? '代码提交'
+        : '交付产物';
+  const evidenceDetail = (artifact: Entity) =>
+    txt(artifact, 'output') ||
+    txt(artifact, 'evidence') ||
+    txt(artifact, 'content');
   return (
     <section className="manage-detail">
       <h3>
@@ -1646,9 +1898,9 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
             data-tone={
               deliveryState === 'failed'
                 ? 'error'
-                : deliveryState === 'verified'
+                : deliveryState === 'accepted'
                   ? 'success'
-                  : ['queued', 'running', 'state_unknown'].includes(
+                : ['queued', 'running', 'state_unknown'].includes(
                         deliveryState,
                       )
                     ? 'active'
@@ -1661,6 +1913,190 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
             </div>
             <p>{deliveryDetail}</p>
           </div>
+          <section className="acceptance-decision" aria-label="所有者验收决定">
+            <div className="acceptance-decision-heading">
+              <div>
+                <h3>所有者验收</h3>
+                <p>
+                  验收标准 · {acceptanceCriteriaText}
+                </p>
+              </div>
+              {delivery && <Badge value={txt(delivery, 'acceptanceDecision') || deliveryState} />}
+            </div>
+            <div className="acceptance-decision-meta">
+              <span>需求版本 v{delivery ? txt(delivery, 'currentRequirementVersion', '1') : '1'}</span>
+              {delivery && txt(delivery, 'verificationRequirementVersion') && <span>验证证据 v{txt(delivery, 'verificationRequirementVersion')}</span>}
+              {delivery && txt(delivery, 'acceptanceAt') && <span>决定于 {time(txt(delivery, 'acceptanceAt'))}</span>}
+            </div>
+            {deliveryState === 'accepted' && delivery && txt(delivery, 'acceptanceNote') && (
+              <p className="acceptance-decision-note">验收备注：{txt(delivery, 'acceptanceNote')}</p>
+            )}
+            {canDecideAcceptance && (
+              <>
+                <label className="acceptance-note-field">
+                  验收备注
+                  <textarea
+                    aria-label="验收备注"
+                    rows={3}
+                    value={acceptanceNote}
+                    onChange={(event) => setAcceptanceNote(event.target.value)}
+                    placeholder={deliveryState === 'awaiting-owner' ? '可以补充本次交付的确认说明。' : '请写明需要补充或修改的内容。'}
+                  />
+                </label>
+                <div className="acceptance-decision-actions">
+                  <button
+                    className="primary-button"
+                    type="button"
+                    disabled={busy || deliveryState !== 'awaiting-owner'}
+                    onClick={() => void decideAcceptance('accept')}
+                  >
+                    <Check size={15} /> 通过交付
+                  </button>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void decideAcceptance('reject')}
+                  >
+                    <Undo2 size={15} /> 退回复核
+                  </button>
+                </div>
+                {deliveryState !== 'awaiting-owner' && (
+                  <p className="acceptance-decision-hint">先运行验证并获得当前需求版本的通过证据，才能确认交付。</p>
+                )}
+              </>
+            )}
+          </section>
+          <section className="evidence-center" aria-label="模型路由">
+            <div className="evidence-center-heading">
+              <div>
+                <h3>模型路由</h3>
+                <p>
+                  记录这次执行实际使用的供应商、模型和候选变化，方便解释切换和失败原因。
+                </p>
+              </div>
+              <Badge value={route ? 'selected' : 'pending-review'} />
+            </div>
+            {!route ? (
+              <div className="evidence-empty">
+                <strong>尚未记录实际模型</strong>
+                <span>任务开始后，实际路由和候选模型会显示在这里。</span>
+              </div>
+            ) : (
+              <>
+                <dl>
+                  <dt>供应商</dt>
+                  <dd>{txt(route, 'providerName') || txt(route, 'providerId')}</dd>
+                  <dt>模型</dt>
+                  <dd>{txt(route, 'model')}</dd>
+                  <dt>协议</dt>
+                  <dd>{txt(route, 'protocol')}</dd>
+                </dl>
+                {!!routingCandidates.length && (
+                  <div className="evidence-list">
+                    {routingCandidates.map((candidate, index) => (
+                      (() => {
+                        const health = candidate.health && typeof candidate.health === 'object'
+                          ? (candidate.health as Entity)
+                          : null;
+                        return (
+                          <article className="evidence-item" key={candidate.id || index}>
+                            <div className="evidence-item-heading">
+                              <div>
+                                <strong>{txt(candidate, 'providerName') || txt(candidate, 'providerId')}</strong>
+                                <span>{txt(candidate, 'model') || '未选定模型'}</span>
+                              </div>
+                              <Badge value={txt(candidate, 'status')} />
+                            </div>
+                            {(txt(candidate, 'reason') || candidate.priority !== undefined || health) && (
+                              <div className="evidence-item-meta">
+                                {candidate.priority !== undefined && <span>优先级 {txt(candidate, 'priority')}</span>}
+                                {health && <span>最近探测 · {health.ok === true ? '通过' : '失败'}{txt(health, 'status') ? ` · HTTP ${txt(health, 'status')}` : ''}{txt(health, 'latencyMs') ? ` · ${txt(health, 'latencyMs')} ms` : ''}</span>}
+                                {txt(candidate, 'reason') && <span>{txt(candidate, 'reason')}</span>}
+                              </div>
+                            )}
+                          </article>
+                        );
+                      })()
+                    ))}
+                  </div>
+                )}
+                {!!routingEvents.length && (
+                  <div className="evidence-list">
+                    {routingEvents.map((event, index) => {
+                      const data = eventData(event);
+                      const from = data.from && typeof data.from === 'object' ? (data.from as Entity) : ({} as Entity);
+                      const to = data.to && typeof data.to === 'object' ? (data.to as Entity) : ({} as Entity);
+                      return (
+                        <article className="evidence-item" key={event.id || index}>
+                          <div className="evidence-item-heading">
+                            <div>
+                              <strong>{txt(event, 'type') === 'routing/fallback' ? '已自动切换模型' : '没有可用的降级模型'}</strong>
+                              <span>{txt(from, 'providerName') || txt(from, 'providerId')} · {txt(from, 'model')}</span>
+                            </div>
+                            <Badge value={txt(event, 'type') === 'routing/fallback' ? 'selected' : 'unavailable'} />
+                          </div>
+                          <div className="evidence-item-meta">
+                            {txt(to, 'providerName') && <span>→ {txt(to, 'providerName')} · {txt(to, 'model')}</span>}
+                            {txt(data, 'reason') && <span>原因：{txt(data, 'reason')}</span>}
+                            <time>{time(event.at || event.createdAt)}</time>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+          <section className="evidence-center" aria-label="交付证据">
+            <div className="evidence-center-heading">
+              <div>
+                <h3><FileText size={16} /> 交付证据</h3>
+                <p>
+                  执行完成代表任务结束；验收证据才代表结果可以交付。
+                  {delivery && ` 当前记录 ${txt(delivery, 'evidenceCount', String(artifacts.length))} 项证据。`}
+                </p>
+              </div>
+              <Badge value={verification ? verificationState : taskStatus === 'completed' ? 'pending-review' : '暂无验收'} />
+            </div>
+            {!artifacts.length ? (
+              <div className="evidence-empty">
+                <strong>还没有交付证据</strong>
+                <span>
+                  {taskStatus === 'completed'
+                    ? '任务已经结束，请运行验证或提交产物后再判断是否交付。'
+                    : '完成任务后，代码提交、测试结果和验证输出会显示在这里。'}
+                </span>
+              </div>
+            ) : (
+              <div className="evidence-list">
+                {artifacts.map((artifact, index) => {
+                  const detail = evidenceDetail(artifact);
+                  const location =
+                    txt(artifact, 'path') ||
+                    txt(artifact, 'location') ||
+                    txt(artifact, 'commit');
+                  return (
+                    <article className="evidence-item" key={artifact.id || index}>
+                      <div className="evidence-item-heading">
+                        <div>
+                          <strong>{evidenceKind(artifact)}</strong>
+                          <span>{title(artifact)}</span>
+                        </div>
+                        <Badge value={status(artifact) || 'submitted'} />
+                      </div>
+                      <div className="evidence-item-meta">
+                        {location && <span>{location}</span>}
+                        <time>{time(artifact.finishedAt || artifact.updatedAt || artifact.createdAt)}</time>
+                      </div>
+                      {detail && <pre>{detail}</pre>}
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
           {!workspace ? (
             <p>尚未分配执行目录；当前判断以任务结果和验证记录为准。</p>
           ) : (
@@ -1888,6 +2324,10 @@ function JobDetail({
   const artifacts = entityList(detail.artifacts);
   const checkpoints = entityList(detail.checkpoints);
   const board = entityList(detail.board || detail.boardItems);
+  const executionError = txt(
+    executions.find((item) => Boolean(item.error)) || {},
+    'error',
+  );
   const [requirements, setRequirements] = useState(
     txt(job, 'goal') || txt(job, 'requirements') || txt(job, 'prompt'),
   );
@@ -1905,6 +2345,13 @@ function JobDetail({
     'budget-exceeded',
     'budget_exceeded',
   ].includes(status(job));
+  const recoveryReason =
+    status(job) === 'blocked' && txt(job, 'blockedReason') === 'child-failed'
+      ? '子任务执行失败，先重试失败的执行实例；成功后系统会重新排队汇总。'
+      : status(job) === 'budget-exceeded' || status(job) === 'budget_exceeded'
+        ? '任务组已达到 Token 预算。请先修改预算，再创建新的执行实例。'
+        : txt(job, 'error') || executionError || txt(job, 'blockedReason') ||
+          '上一轮没有完成。恢复会创建新的隔离执行实例，并保留原实例的结果和证据。';
   const [selectedExecutions, setSelectedExecutions] = useState<string[]>([]);
   const [inspecting, setInspecting] = useState<string | null>(null);
   const [integration, setIntegration] = useState<Entity | null>(null);
@@ -1964,6 +2411,22 @@ function JobDetail({
           </>
         )}
       </div>
+      {resumable && (
+        <section
+          className="delivery-summary"
+          data-tone={
+            status(job) === 'failed' || status(job) === 'state_unknown'
+              ? 'error'
+              : 'warning'
+          }
+        >
+          <div className="delivery-summary-heading">
+            <strong>恢复说明</strong>
+            <Badge value={status(job)} />
+          </div>
+          <p>{recoveryReason}</p>
+        </section>
+      )}
       <h3>目标与完成条件</h3>
       <p>
         {txt(job, 'goal') || txt(job, 'requirements') || txt(job, 'prompt')}
@@ -2073,9 +2536,27 @@ function JobDetail({
                   {txt(item, 'workspaceMode')} · {txt(item, 'workspace')}
                 </small>
               )}
+              {Boolean(item.sourceTaskId) && (
+                <small>恢复自执行实例 · {txt(item, 'sourceTaskId')}</small>
+              )}
               {Boolean(item.error) && <small>{txt(item, 'error')}</small>}
             </div>
-            <Badge value={status(item)} />
+            <div className="execution-status-stack">
+              <Badge value={status(item)} />
+              {txt(item, 'deliveryStatus') && txt(item, 'deliveryStatus') !== status(item) && (
+                <small>交付 · {statuses[txt(item, 'deliveryStatus')] || txt(item, 'deliveryStatus')}</small>
+              )}
+            </div>
+            {['failed', 'interrupted', 'cancelled', 'state_unknown'].includes(
+              status(item),
+            ) && (
+              <IconButton
+                icon={RefreshCw}
+                label="重试此执行实例"
+                disabled={busy}
+                onClick={() => void onAction(`tasks/${item.id}/retry`)}
+              />
+            )}
           </div>
         ))
       ) : (
@@ -2784,6 +3265,7 @@ export function Management({
     collection: string;
     item: Entity;
   } | null>(null);
+  const [attentionTaskId, setAttentionTaskId] = useState<string | null>(null);
   const [removing, setRemoving] = useState<{
     collection: string;
     item: Entity;
@@ -2935,6 +3417,24 @@ export function Management({
       }
     }
   };
+  const openRelatedJob = async (item: Entity) => {
+    const jobId = txt(item, 'jobId');
+    if (!jobId) return;
+    setAttentionTaskId(null);
+    setDetail({
+      collection: 'jobs',
+      item: {
+        id: jobId,
+        title: txt(item, 'jobTitle') || txt(item, 'taskTitle') || jobId,
+      },
+    });
+    try {
+      const full = await api<Entity>(`jobs/${jobId}`);
+      setDetail({ collection: 'jobs', item: { ...full, id: jobId } });
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
   const rowActions = (item: Entity) => (
     <div className="manage-actions">
       {collection === 'providers' && (
@@ -3075,11 +3575,16 @@ export function Management({
             icon={Power}
             label={item.enabled === false ? '启用能力' : '停用能力'}
             disabled={busy}
-            onClick={() =>
-              void act(
-                `capabilities/${item.id}/${item.enabled === false ? 'enable' : 'disable'}`,
-              )
-            }
+            onClick={() => {
+              const risk = item.risk && typeof item.risk === 'object' && !Array.isArray(item.risk)
+                ? item.risk as Entity
+                : null;
+              if (item.enabled === false && risk?.requiresReview === true) {
+                void openDetail(item);
+                return;
+              }
+              void act(`capabilities/${item.id}/${item.enabled === false ? 'enable' : 'disable'}`);
+            }}
           />
           <IconButton
             icon={Undo2}
@@ -3089,6 +3594,30 @@ export function Management({
           />
         </>
       )}
+      {collection === 'attention' &&
+        Boolean(item.jobId) &&
+        !['resolved', 'dismissed'].includes(status(item)) && (
+          <IconButton
+            icon={GitBranch}
+            label="打开关联任务组"
+            disabled={busy}
+            onClick={() => void openRelatedJob(item)}
+          />
+        )}
+      {collection === 'attention' &&
+        Boolean(item.taskId) &&
+        !item.jobId &&
+        !['resolved', 'dismissed'].includes(status(item)) && (
+          <IconButton
+            icon={FolderGit2}
+            label="查看关联执行"
+            disabled={busy}
+            onClick={() => {
+              setAttentionTaskId(txt(item, 'taskId'));
+              void openDetail(item);
+            }}
+          />
+        )}
       {collection === 'attention' &&
         item.kind !== 'tool-approval' &&
         !['resolved', 'dismissed', 'completed'].includes(status(item)) && (
@@ -3330,6 +3859,7 @@ export function Management({
           setLoadError('');
         }}
       />
+      {view === 'models' && <ModelMetricsPanel />}
       {collection === 'market' ? (
         <>
           <form
@@ -3673,6 +4203,95 @@ export function Management({
                   detail.item.diagnostics.map((value, index) => (
                     <p key={index}>{String(value)}</p>
                   ))}
+                {detail.collection === 'capabilities' && (() => {
+                  const rawRisk = detail.item.risk;
+                  if (!rawRisk || typeof rawRisk !== 'object' || Array.isArray(rawRisk)) return null;
+                  const risk = rawRisk as Entity;
+                  const signals = risk.signals && typeof risk.signals === 'object' && !Array.isArray(risk.signals)
+                    ? risk.signals as Record<string, unknown>
+                    : {};
+                  const signalLabels: [string, string][] = [
+                    ['readOnly', '只读'],
+                    ['hasCredential', '凭据'],
+                    ['hasCommands', '命令/助手'],
+                    ['hasHooks', 'Hook'],
+                    ['hasNetwork', '网络'],
+                  ];
+                  return (
+                    <section className="capability-risk" aria-label="能力风险评估">
+                      <h3>风险评估</h3>
+                      <Badge value={`risk-${txt(risk, 'level') || 'unknown'}`} />
+                      <p>
+                        {risk.requiresReview === true
+                          ? '绑定前需要人工复核。'
+                          : '当前元数据未发现需要额外复核的执行信号。'}
+                      </p>
+                      {Array.isArray(risk.reasons) && (risk.reasons as unknown[]).map((reason, index) => (
+                        <p key={index}>{String(reason)}</p>
+                      ))}
+                      <div className="manage-muted">
+                        信号：{signalLabels.filter(([key]) => signals[key] === true).map(([, label]) => label).join(' · ') || '无'}
+                      </div>
+                      {detail.item.enabled === false && risk.requiresReview === true && (
+                        <button
+                          type="button"
+                          className="primary-button"
+                          disabled={busy}
+                          onClick={async () => {
+                            const ok = await act(`capabilities/${detail.item.id}/enable`, { confirmed: true });
+                            if (ok) setDetail(null);
+                          }}
+                        >
+                          确认风险并启用能力
+                        </button>
+                      )}
+                    </section>
+                  );
+                })()}
+                {detail.collection === 'capabilities' && (
+                  <section className="capability-audit" aria-label="能力确认审计">
+                    <h3>确认与审计</h3>
+                    {entityList(detail.item.audits).length ? entityList(detail.item.audits).map((audit, index) => (
+                      <div className="manage-row" key={audit.id || index}>
+                        <div className="manage-main">
+                          <strong>{txt(audit, 'action') === 'bind' ? '绑定能力' : txt(audit, 'action') === 'enable' ? '启用能力' : txt(audit, 'action') === 'disable' ? '停用能力' : '回退版本'}</strong>
+                          <small>{txt(audit, 'actor') || 'owner'} · {txt(audit, 'riskLevel') || 'unknown'} · {txt(audit, 'digest') || '无摘要'}</small>
+                          {Array.isArray(audit.reasons) && <small>{(audit.reasons as unknown[]).join('；')}</small>}
+                        </div>
+                        <Badge value={audit.confirmed === true ? 'confirmed' : 'recorded'} />
+                      </div>
+                    )) : <p>尚无确认记录。高风险能力在绑定或启用前会要求逐项确认。</p>}
+                  </section>
+                )}
+                {detail.collection === 'capabilities' &&
+                  Boolean(detail.item.bindings) &&
+                  typeof detail.item.bindings === 'object' && (
+                    <section className="capability-bindings" aria-label="能力绑定范围">
+                      <h3>绑定范围</h3>
+                      {entityList((detail.item.bindings as Entity).assistants).map((binding) => (
+                        <div className="manage-row" key={`assistant:${binding.id}`}>
+                          <div className="manage-main">
+                            <strong>助手 · {title(binding)}</strong>
+                            <small>{txt(binding, 'id')}</small>
+                          </div>
+                          <Badge value="enabled" />
+                        </div>
+                      ))}
+                      {entityList((detail.item.bindings as Entity).teams).map((binding) => (
+                        <div className="manage-row" key={`team:${binding.id}`}>
+                          <div className="manage-main">
+                            <strong>团队 · {txt(binding, 'teamName')}</strong>
+                            <small>{txt(binding, 'roleName')} · {txt(binding, 'roleId')}</small>
+                          </div>
+                          <Badge value="enabled" />
+                        </div>
+                      ))}
+                      {!entityList((detail.item.bindings as Entity).assistants).length &&
+                        !entityList((detail.item.bindings as Entity).teams).length && (
+                          <p>还没有助手或团队成员绑定此能力。</p>
+                        )}
+                    </section>
+                  )}
                 {['schedules', 'monitors'].includes(detail.collection) && (
                   <>
                     <h3>运行历史</h3>
@@ -3763,7 +4382,35 @@ export function Management({
                         );
                       }}
                     />
-                  )}
+                    )}
+                {detail.collection === 'attention' && Boolean(detail.item.taskId) && (
+                  <section className="attention-linked-task" aria-label="关联执行">
+                    <div className="attention-linked-task-heading">
+                      <div>
+                        <h3>关联执行</h3>
+                        <p>{txt(detail.item, 'taskTitle') || txt(detail.item, 'taskId')}</p>
+                      </div>
+                      <Badge value={txt(detail.item, 'deliveryStatus') || txt(detail.item, 'taskStatus')} />
+                    </div>
+                    <div className="attention-linked-task-meta">
+                      {txt(detail.item, 'jobTitle') && <span>任务组 · {txt(detail.item, 'jobTitle')}</span>}
+                      {txt(detail.item, 'taskStatus') && <span>执行 · {statuses[txt(detail.item, 'taskStatus')] || txt(detail.item, 'taskStatus')}</span>}
+                    </div>
+                    <div className="manage-toolbar">
+                      {Boolean(detail.item.jobId) && (
+                        <button className="secondary-button" type="button" disabled={busy} onClick={() => void openRelatedJob(detail.item)}>
+                          <GitBranch size={15} /> 打开任务组
+                        </button>
+                      )}
+                      <button className="secondary-button" type="button" disabled={busy} onClick={() => setAttentionTaskId(txt(detail.item, 'taskId'))}>
+                        <FolderGit2 size={15} /> 查看执行与交付
+                      </button>
+                    </div>
+                    {attentionTaskId === txt(detail.item, 'taskId') && (
+                      <ExecutionInspector taskId={txt(detail.item, 'taskId')} />
+                    )}
+                  </section>
+                )}
                 {detail.collection === 'attention' &&
                   detail.item.kind !== 'tool-approval' &&
                   !['resolved', 'dismissed'].includes(status(detail.item)) && (

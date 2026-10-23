@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { terminateProcessTree } from '../server/runtime.mjs';
 process.chdir(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'));
 process.env.PATH = [
   path.dirname(process.execPath),
@@ -45,7 +46,7 @@ let stopping = false;
 function stop(code = 0) {
   if (stopping) return;
   stopping = true;
-  for (const child of children) child.kill('SIGTERM');
+  for (const child of children) terminateProcessTree(child.pid);
   setTimeout(() => process.exit(code), 2500);
 }
 process.on('exit', () => {

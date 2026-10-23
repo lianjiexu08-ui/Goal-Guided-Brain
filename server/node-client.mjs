@@ -8,6 +8,14 @@ import { Records, RECORDS_SCHEMA } from './records.mjs';
 import { WorkspaceManager } from './workspaces.mjs';
 
 const loopback = host => ['localhost', '127.0.0.1', '[::1]', '::1'].includes(host);
+const isPortableAbsolutePath = value => {
+  if (typeof value !== 'string' || !value) return false;
+  // A control plane and worker can run on different operating systems. A
+  // Windows source path must be accepted even when validation runs on Unix,
+  // and vice versa.
+  return path.isAbsolute(value) || path.posix.isAbsolute(value) || path.win32.isAbsolute(value);
+};
+const portablePath = value => String(value).replaceAll('\\', '/').replace(/\/{2,}/g, '/');
 export function validateControlUrl(value) {
   const url = new URL(value);
   if (url.username || url.password || url.search || url.hash || (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback(url.hostname)))) {
@@ -142,7 +150,7 @@ export class NodeClient {
     const mappings = [];
     let totalBytes = 0;
     for (const bundle of bundles) {
-      if (!/^[a-f0-9]{64}$/.test(bundle.digest) || typeof bundle.sourceRoot !== 'string' || !path.posix.isAbsolute(bundle.sourceRoot) ||
+      if (!/^[a-f0-9]{64}$/.test(bundle.digest) || typeof bundle.sourceRoot !== 'string' || !isPortableAbsolutePath(bundle.sourceRoot) ||
         !Array.isArray(bundle.files) || bundle.files.length > 1000) throw new Error('远程能力包格式无效。');
       const files = [], names = new Set(), hash = createHash('sha256');
       let bundleBytes = 0;
@@ -180,12 +188,28 @@ export class NodeClient {
           fs.renameSync(temporary, destination);
         } catch (error) { fs.rmSync(temporary, { recursive: true, force: true }); throw error; }
       }
-      mappings.push({ source: bundle.sourceRoot.replace(/\/$/, ''), destination });
+      const source = portablePath(bundle.sourceRoot);
+      mappings.push({
+        // Preserve filesystem roots while trimming ordinary trailing
+        // separators; an empty source would otherwise match every path.
+        source: source === '/' || /^[A-Za-z]:\/$/.test(source)
+          ? source
+          : source.replace(/\/+$/, ''),
+        destination,
+      });
     }
     const remap = value => {
       if (typeof value === 'string') {
-        const mapping = mappings.find(item => value === item.source || value.startsWith(`${item.source}/`));
-        return mapping ? path.join(mapping.destination, value.slice(mapping.source.length)) : value;
+        const normalized = portablePath(value);
+        const mapping = mappings.find(item => {
+          const prefix = item.source.endsWith('/') ? item.source : `${item.source}/`;
+          return normalized === item.source || normalized.startsWith(prefix);
+        });
+        if (!mapping) return value;
+        const suffix = normalized.slice(mapping.source.length).replace(/^\/+/, '');
+        if (suffix && suffix.split('/').some(segment => !segment || segment === '.' || segment === '..'))
+          throw new Error('能力包映射路径无效。');
+        return suffix ? path.join(mapping.destination, ...suffix.split('/')) : mapping.destination;
       }
       if (Array.isArray(value)) return value.map(remap);
       if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, remap(item)]));
@@ -199,7 +223,7 @@ export class NodeClient {
       }
       if (config.transport === 'stdio') {
         for (const value of [config.command, ...(config.args || [])]) {
-          if (typeof value === 'string' && path.isAbsolute(value) && !fs.existsSync(value)) throw new Error('MCP 本地命令或文件在执行节点不存在。');
+          if (typeof value === 'string' && isPortableAbsolutePath(value) && !fs.existsSync(value)) throw new Error('MCP 本地命令或文件在执行节点不存在。');
         }
       }
     }

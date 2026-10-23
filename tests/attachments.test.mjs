@@ -147,3 +147,134 @@ test('HTTP attachment upload keeps binary content and task references it', async
   assert.deepEqual(stateSpace.messages[0].attachmentIds, [uploaded.body.id]);
   assert.equal(stateSpace.messages[0].content, '请查看随附文件并处理。');
 });
+
+test('team-scoped attachments cannot be referenced by another team', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-attachment-scope-'));
+  const workspace = path.join(dir, 'workspace');
+  fs.mkdirSync(workspace);
+  const app = createWorkbench({
+    workspace,
+    dataDir: path.join(dir, 'data'),
+    requireCredential: false,
+    runtimeFactory: () => ({ start() {}, cancel() {} }),
+  });
+  await app.platform.ready;
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  const request = async (route, body, method = 'GET') => {
+    const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  try {
+    const source = (await request('teams')).body[0];
+    const target = (await request('teams', {
+      name: '附件引用目标团队',
+      goal: '验证团队附件引用边界。',
+      memberRoleIds: ['project_manager'],
+    }, 'POST')).body;
+    const uploaded = await request('attachments', {
+      teamId: source.id,
+      name: 'source.txt',
+      mime: 'text/plain',
+      data: Buffer.from('source-only').toString('base64'),
+    }, 'POST');
+    assert.equal(uploaded.status, 201);
+
+    const sourceMessage = await request(`teams/${source.id}/messages`, {
+      clientMessageId: 'scoped-source-message',
+      content: '源团队可以引用自己的附件。',
+      attachmentIds: [uploaded.body.id],
+    }, 'POST');
+    assert.equal(sourceMessage.status, 201);
+
+    const targetMessage = await request(`teams/${target.id}/messages`, {
+      clientMessageId: 'scoped-target-message',
+      content: '目标团队不应读取源附件。',
+      attachmentIds: [uploaded.body.id],
+    }, 'POST');
+    assert.equal(targetMessage.status, 409);
+    assert.match(targetMessage.body.error, /另一个团队/);
+
+    const targetTask = await request('tasks', {
+      role: 'project_manager',
+      teamId: target.id,
+      spaceId: target.id,
+      prompt: '目标团队不应接收源附件。',
+      attachmentIds: [uploaded.body.id],
+    }, 'POST');
+    assert.equal(targetTask.status, 409);
+    assert.equal((await request(`teams/${target.id}`)).body.tasks.length, 0);
+  } finally {
+    await app.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('retrying a stopped task rematerializes the original attachment bytes', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-attachment-retry-'));
+  const workspace = path.join(dir, 'workspace');
+  fs.mkdirSync(workspace);
+  const runs = [];
+  const app = createWorkbench({
+    workspace,
+    dataDir: path.join(dir, 'data'),
+    requireCredential: false,
+    runtimeFactory: (options) => {
+      const run = {
+        options,
+        start() { runs.push(run); },
+        cancel() { options.onDone('cancelled', ''); },
+      };
+      return run;
+    },
+  });
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  const request = async (route, body, method = 'GET') => {
+    const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/${route}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  const waitFor = async (predicate) => {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (predicate()) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.fail('重试任务未启动。');
+  };
+  try {
+    const bytes = Buffer.from([0, 1, 2, 250, 251, 252, 10]);
+    const uploaded = await request('attachments', {
+      name: '需要重试的截图.png',
+      mime: 'image/png',
+      data: bytes.toString('base64'),
+    }, 'POST');
+    assert.equal(uploaded.status, 201);
+    const created = await request('tasks', {
+      role: 'assistant',
+      prompt: '先读取附件，随后验证停止后可重试。',
+      attachmentIds: [uploaded.body.id],
+    }, 'POST');
+    assert.equal(created.status, 201);
+    await waitFor(() => runs.length === 1);
+    assert.deepEqual(fs.readFileSync(runs[0].options.attachments[0].path), bytes);
+
+    const cancelled = await request(`tasks/${created.body.id}/cancel`, {}, 'POST');
+    assert.equal(cancelled.status, 200);
+    await waitFor(() => app.store.task(created.body.id).status === 'cancelled');
+
+    const retried = await request(`tasks/${created.body.id}/retry`, {}, 'POST');
+    assert.equal(retried.status, 201);
+    assert.equal(app.platform.control.records.get('task-meta', retried.body.id).attachmentIds[0], uploaded.body.id);
+    await waitFor(() => runs.length === 2);
+    assert.deepEqual(fs.readFileSync(runs[1].options.attachments[0].path), bytes);
+  } finally {
+    await app.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { terminateProcessTree } from '../server/runtime.mjs';
 const file = path.join(
   process.env.WORKBENCH_DATA_DIR || path.join(os.homedir(), '.dsh-workbench'),
   'service.pid',
@@ -54,5 +55,5 @@ if (
   !normalizedCommand.endsWith(startScript)
 )
   throw new Error('PID 已被其他进程使用，未终止该进程。');
-process.kill(pid, 'SIGTERM');
+terminateProcessTree(pid);
 console.log('正在停止工作台；本机任务将停止，远程任务等待节点对账。');

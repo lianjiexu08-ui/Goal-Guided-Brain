@@ -97,8 +97,16 @@ export class Store {
       CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, sessionId TEXT NOT NULL REFERENCES sessions(id), role TEXT NOT NULL, workspace TEXT NOT NULL, title TEXT NOT NULL, prompt TEXT NOT NULL, status TEXT NOT NULL, result TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', log TEXT NOT NULL DEFAULT '', sourceTaskId TEXT, knowledgeIds TEXT NOT NULL DEFAULT '[]', context TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS idx_tasks_status_created ON tasks(status,createdAt);
       CREATE INDEX IF NOT EXISTS idx_tasks_session_created ON tasks(sessionId,createdAt);
-      CREATE TABLE IF NOT EXISTS knowledge (id TEXT PRIMARY KEY,title TEXT NOT NULL,content TEXT NOT NULL,scope TEXT NOT NULL,state TEXT NOT NULL,source TEXT NOT NULL,projectPath TEXT NOT NULL,updatedAt TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS knowledge (id TEXT PRIMARY KEY,title TEXT NOT NULL,content TEXT NOT NULL,scope TEXT NOT NULL,state TEXT NOT NULL,source TEXT NOT NULL,projectPath TEXT NOT NULL,teamId TEXT NOT NULL DEFAULT '',updatedAt TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS idx_knowledge_scope_project ON knowledge(scope,projectPath);`);
+    const knowledgeColumns = new Set(
+      this.db.prepare('PRAGMA table_info(knowledge)').all().map((column) => column.name),
+    );
+    // Databases created before team-scoped knowledge used an eight-column
+    // table. Keep those records readable and add the nullable-by-convention
+    // empty team ID without rewriting user content.
+    if (!knowledgeColumns.has('teamId')) this.db.exec("ALTER TABLE knowledge ADD COLUMN teamId TEXT NOT NULL DEFAULT ''");
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_knowledge_team ON knowledge(teamId)');
     fs.chmodSync(path.join(dir, 'workspace.sqlite'), 0o600);
     const config = {
       workspace,
@@ -177,6 +185,14 @@ export class Store {
         },
         memberSettings: {},
         collaboration: { enabled: true, autoHandoff: true, sharedBoard: true, allowedTeamIds: [] },
+        recruitment: {
+          phase: 'confirmed',
+          sessionId: null,
+          turns: 0,
+          brief: '',
+          proposal: null,
+          confirmedAt: new Date().toISOString(),
+        },
       });
     }
     this.db
@@ -275,8 +291,150 @@ export class Store {
     const space = this.records.get('spaces', id);
     return space ? this.normalizeTeamSpace(space) : null;
   }
+  teamTemplates() {
+    return this.records.list('team-templates').map((template) => this.normalizeTeamTemplate(template));
+  }
+  teamTemplate(id) {
+    const template = this.records.get('team-templates', id);
+    return template ? this.normalizeTeamTemplate(template) : null;
+  }
+  normalizeTeamTemplate(template) {
+    if (!template) return template;
+    return {
+      description: '',
+      sourceTeamId: null,
+      sourceTeamName: null,
+      teamType: 'custom',
+      purpose: '',
+      goal: '',
+      model: null,
+      providerId: null,
+      workspaceMode: 'isolated',
+      pmRoleId: 'project_manager',
+      memberRoleIds: ['project_manager'],
+      responsibilities: {},
+      memberSettings: {},
+      autonomy: { mode: 'auto', maxDepth: 4, maxJobs: 32, budgetTokens: 200000, requireApprovalKinds: [] },
+      collaboration: { enabled: true, autoHandoff: true, sharedBoard: true, allowedTeamIds: [] },
+      ...template,
+    };
+  }
+  saveTeamTemplate(input, id) {
+    const existing = id ? this.teamTemplate(id) : undefined;
+    if (id && !existing) throw new Error('团队模板不存在。');
+    const sourceTeamId = typeof input.sourceTeamId === 'string' && input.sourceTeamId.trim()
+      ? input.sourceTeamId.trim()
+      : (existing?.sourceTeamId || null);
+    const source = sourceTeamId ? this.teamSpace(sourceTeamId) : null;
+    if (sourceTeamId && !source) throw new Error('模板来源团队不存在。');
+    if (source && source.status === 'archived') throw new Error('归档团队不能保存为模板。');
+    if (source && source.recruitment?.phase !== 'confirmed') throw new Error('只有已确认的团队才能保存为模板。');
+    const name = String(input.name ?? existing?.name ?? source?.name ?? '').trim();
+    if (!name || name.length > 80) throw new Error('团队模板名称无效。');
+    const description = String(input.description ?? existing?.description ?? source?.purpose ?? source?.goal ?? '').trim();
+    if (description.length > 2000) throw new Error('团队模板说明不能超过 2000 字符。');
+    const config = source || existing;
+    if (!config) throw new Error('请提供模板来源团队。');
+    const memberRoleIds = [...new Set(
+      (Array.isArray(config.memberRoleIds) ? config.memberRoleIds : [config.pmRoleId || 'project_manager'])
+        .filter((value) => typeof value === 'string' && this.role(value) && !this.role(value).archived),
+    )];
+    const pmRoleId = String(config.pmRoleId || memberRoleIds[0] || 'project_manager').trim();
+    if (!memberRoleIds.includes(pmRoleId)) memberRoleIds.unshift(pmRoleId);
+    return this.records.save('team-templates', {
+      ...existing,
+      name,
+      description,
+      sourceTeamId: source?.id || sourceTeamId || existing?.sourceTeamId || null,
+      sourceTeamName: source?.name || existing?.sourceTeamName || null,
+      teamType: config.teamType || 'custom',
+      goal: String(config.goal || '').trim().slice(0, 2000),
+      purpose: String(config.purpose || config.goal || '').trim().slice(0, 2000),
+      model: config.model || null,
+      providerId: config.providerId || null,
+      workspaceMode: config.workspaceMode || 'isolated',
+      pmRoleId,
+      memberRoleIds,
+      responsibilities: config.responsibilities && typeof config.responsibilities === 'object' && !Array.isArray(config.responsibilities)
+        ? config.responsibilities
+        : {},
+      memberSettings: config.memberSettings && typeof config.memberSettings === 'object' && !Array.isArray(config.memberSettings)
+        ? config.memberSettings
+        : {},
+      autonomy: config.autonomy || { mode: 'auto', maxDepth: 4, maxJobs: 32, budgetTokens: 200000, requireApprovalKinds: [] },
+      collaboration: {
+        enabled: config.collaboration?.enabled !== false,
+        autoHandoff: config.collaboration?.autoHandoff !== false,
+        sharedBoard: config.collaboration?.sharedBoard !== false,
+        // A template must not preserve a team's private allow-list. Targets
+        // are selected after the new team is created.
+        allowedTeamIds: [],
+      },
+    }, id);
+  }
+  removeTeamTemplate(id) {
+    if (!this.teamTemplate(id)) throw new Error('团队模板不存在。');
+    return this.records.remove('team-templates', id);
+  }
+  createTeamFromTemplate(templateId, input = {}) {
+    const template = this.teamTemplate(templateId);
+    if (!template) throw new Error('团队模板不存在。');
+    const name = String(input.name ?? '').trim();
+    const goal = String(input.goal ?? template.goal ?? '').trim();
+    if (!name || name.length > 80) throw new Error('新团队名称无效。');
+    if (!goal || goal.length > 2000) throw new Error('新团队目标无效。');
+    const workspace = String(input.workspace ?? this.config.workspace).trim();
+    const model = Object.hasOwn(input, 'model') ? input.model : template.model;
+    const providerId = Object.hasOwn(input, 'providerId') ? input.providerId : template.providerId;
+    // A copy starts a fresh recruitment identity. Never carry the source
+    // team's session, turns, proposal or confirmation timestamp across.
+    const requestedPhase = input.recruitment && typeof input.recruitment === 'object' && !Array.isArray(input.recruitment)
+      && input.recruitment.phase === 'discovery'
+      ? 'discovery'
+      : 'confirmed';
+    const recruitment = {
+      phase: requestedPhase,
+      sessionId: null,
+      turns: 0,
+      brief: goal,
+      proposal: null,
+      confirmedAt: requestedPhase === 'confirmed' ? new Date().toISOString() : null,
+    };
+    return this.saveTeamSpace({
+      name,
+      goal,
+      purpose: String(input.purpose ?? goal).trim(),
+      teamType: input.teamType ?? template.teamType,
+      model,
+      providerId,
+      workspace,
+      workspaceMode: input.workspaceMode ?? template.workspaceMode,
+      pmRoleId: template.pmRoleId,
+      memberRoleIds: template.memberRoleIds,
+      responsibilities: template.responsibilities,
+      memberSettings: template.memberSettings,
+      autonomy: template.autonomy,
+      collaboration: {
+        ...template.collaboration,
+        ...(input.collaboration && typeof input.collaboration === 'object' ? input.collaboration : {}),
+        allowedTeamIds: Array.isArray(input.collaboration?.allowedTeamIds)
+          ? [...new Set(input.collaboration.allowedTeamIds
+            .filter((value) => typeof value === 'string')
+            .filter((value) => {
+              const target = this.teamSpace(value);
+              return target && target.status === 'active' && target.recruitment?.phase === 'confirmed';
+            }))]
+          : [],
+      },
+      recruitment,
+    });
+  }
   normalizeTeamSpace(space) {
     if (!space) return space;
+    // Spaces created before recruitment existed were already user-created
+    // teams. Keep them in “我的团队”; new drafts always carry an explicit
+    // recruitment phase when they are saved.
+    const legacyPhase = space.recruitment ? undefined : 'confirmed';
     const collaboration = {
       enabled: true,
       autoHandoff: true,
@@ -287,6 +445,9 @@ export class Store {
     return {
       teamType: 'custom',
       purpose: space.goal || '',
+      // Team work defaults to a private execution directory. Callers can
+      // explicitly opt into shared mode for teams that need it.
+      workspaceMode: 'isolated',
       chatId: space.id,
       model: null,
       providerId: null,
@@ -303,7 +464,7 @@ export class Store {
         ...(space.review && typeof space.review === 'object' && !Array.isArray(space.review) ? space.review : {}),
       },
       recruitment: {
-        phase: 'discovery',
+        phase: legacyPhase || 'discovery',
         sessionId: null,
         turns: 0,
         brief: '',
@@ -359,6 +520,9 @@ export class Store {
         ? null
         : String(providerValue).trim().slice(0, 160);
     if (providerId && !providerValue) throw new Error('团队供应商无效。');
+    const workspaceMode = input.workspaceMode ?? existing?.workspaceMode ?? 'isolated';
+    if (!['isolated', 'worktree', 'snapshot', 'shared'].includes(workspaceMode))
+      throw new Error('团队执行目录模式无效。');
     const responsibilities = {};
     const suppliedResponsibilities = input.responsibilities ?? existing?.responsibilities ?? {};
     if (suppliedResponsibilities && typeof suppliedResponsibilities === 'object' && !Array.isArray(suppliedResponsibilities)) {
@@ -456,6 +620,7 @@ export class Store {
       purpose,
       model,
       providerId,
+      workspaceMode,
       teamType,
       workspace: input.workspace || existing?.workspace || this.config.workspace,
       pmRoleId,
@@ -474,6 +639,267 @@ export class Store {
     return this.records
       .list('space-messages')
       .filter((message) => message.spaceId === spaceId);
+  }
+  recruitmentPage(spaceId, { after = null, limit = 100 } = {}) {
+    const space = this.teamSpace(spaceId);
+    if (!space) return { items: [], hasMore: false, cursor: null };
+    const sessionId = space.recruitment?.sessionId || null;
+    const tasks = new Map(this.tasks().map((task) => [task.id, task]));
+    const messages = this.teamMessages(spaceId)
+      .filter((message) => {
+        if (!sessionId || !message.taskId) return true;
+        return tasks.get(message.taskId)?.sessionId === sessionId;
+      })
+      .map((message) => ({
+        ...message,
+        cursorAt: message.updatedAt || message.createdAt,
+      }))
+      .sort((a, b) => a.cursorAt.localeCompare(b.cursorAt) || String(a.id).localeCompare(String(b.id)));
+    const cursorParts = typeof after === 'string' && after.trim() ? after.split('|') : [];
+    const afterAt = cursorParts[0] || null;
+    const afterId = cursorParts.slice(1).join('|') || null;
+    const filtered = messages.filter((message) =>
+      !afterAt || message.cursorAt > afterAt || (message.cursorAt === afterAt && Boolean(afterId && String(message.id) > afterId)),
+    );
+    const pageSize = Math.max(1, Math.min(200, Number(limit) || 100));
+    const page = filtered.slice(0, pageSize + 1);
+    const hasMore = page.length > pageSize;
+    const items = (hasMore ? page.slice(0, pageSize) : page).map(({ cursorAt: _cursorAt, ...message }) => message);
+    const last = page[page.length - (hasMore ? 2 : 1)];
+    return {
+      items,
+      hasMore,
+      cursor: last ? `${last.cursorAt}|${last.id}` : after || null,
+      sessionId,
+      recruitment: space.recruitment,
+    };
+  }
+  taskDelivery(task) {
+    const meta = this.records.get('task-meta', task.id) || {};
+    const job = meta.jobId ? this.records.get('jobs', meta.jobId) : null;
+    const normalizeVersion = (value) => {
+      const version = Number(value || 1);
+      return Number.isInteger(version) && version > 0 ? version : 1;
+    };
+    const currentRequirementVersion = normalizeVersion(job?.requirementVersion || meta.requirementVersion);
+    const artifacts = this.records.list('artifacts').filter((artifact) => artifact.taskId === task.id);
+    const verifications = artifacts
+      .filter((artifact) => artifact.kind === 'verification')
+      .sort((a, b) => {
+        const at = a.finishedAt || a.updatedAt || a.createdAt || '';
+        const bt = b.finishedAt || b.updatedAt || b.createdAt || '';
+        return bt.localeCompare(at) || String(b.id).localeCompare(String(a.id));
+      });
+    const latestVerification = verifications[0] || null;
+    const verificationRequirementVersion = normalizeVersion(latestVerification?.requirementVersion);
+    const verificationStatus = latestVerification
+      ? latestVerification.status || (latestVerification.verified === true ? 'verified' : 'pending-review')
+      : task.status === 'completed'
+        ? 'pending-review'
+        : null;
+    const hasCurrentVerificationEvidence = Boolean(
+      latestVerification &&
+      verificationRequirementVersion === currentRequirementVersion &&
+      verificationStatus === 'verified',
+    );
+    const savedAcceptance = this.records.get('task-acceptance', task.id);
+    const acceptance = savedAcceptance &&
+      savedAcceptance.status !== 'stale' &&
+      normalizeVersion(savedAcceptance.requirementVersion) === currentRequirementVersion
+      ? savedAcceptance
+      : null;
+    const acceptanceMatchesEvidence = Boolean(
+      acceptance &&
+      acceptance.verificationId === (latestVerification?.id || null),
+    );
+    const effectiveAcceptance = acceptanceMatchesEvidence ? acceptance : null;
+    let deliveryStatus = task.status;
+    if (task.status === 'completed') {
+      if (effectiveAcceptance?.decision === 'accepted' && hasCurrentVerificationEvidence)
+        deliveryStatus = 'accepted';
+      else if (effectiveAcceptance?.decision === 'rejected') deliveryStatus = 'rejected';
+      else if (hasCurrentVerificationEvidence) deliveryStatus = 'awaiting-owner';
+      else if (verificationStatus === 'failed') deliveryStatus = 'failed';
+      else deliveryStatus = 'pending-review';
+    }
+    return {
+      executionStatus: task.status,
+      deliveryStatus,
+      acceptanceStatus: verificationStatus,
+      acceptanceDecision: effectiveAcceptance?.decision || null,
+      acceptanceNote: effectiveAcceptance?.note || null,
+      acceptanceAt: effectiveAcceptance?.decidedAt || null,
+      acceptanceCriteria: job?.acceptance || null,
+      currentRequirementVersion,
+      verificationRequirementVersion: latestVerification ? verificationRequirementVersion : null,
+      hasCurrentVerificationEvidence,
+      evidenceCount: artifacts.length,
+      hasVerificationEvidence: Boolean(latestVerification),
+      latestVerificationId: latestVerification?.id || null,
+      latestVerificationAt: latestVerification?.finishedAt || latestVerification?.updatedAt || latestVerification?.createdAt || null,
+      latestVerification,
+      acceptance: effectiveAcceptance,
+    };
+  }
+  teamTimeline(spaceId, limit = 120, before = null) {
+    if (!this.teamSpace(spaceId)) return [];
+    const tasks = this.tasks().filter((task) => {
+      const meta = this.records.get('task-meta', task.id) || {};
+      const job = meta.jobId ? this.records.get('jobs', meta.jobId) : null;
+      return (meta.spaceId || job?.spaceId || null) === spaceId;
+    });
+    const taskIds = new Set(tasks.map((task) => task.id));
+    const taskById = new Map(tasks.map((task) => [task.id, task]));
+    const items = [];
+    for (const message of this.teamMessages(spaceId)) {
+      items.push({
+        id: `message:${message.id}`,
+        type: 'message',
+        at: message.createdAt,
+        messageId: message.id,
+        clientMessageId: message.clientMessageId || null,
+        senderType: message.senderType,
+        senderId: message.senderId,
+        fromTeamId: message.fromTeamId || null,
+        toTeamId: message.toTeamId || null,
+        relatedMessageId: message.relatedMessageId || null,
+        kind: message.kind,
+        taskId: message.taskId || null,
+        content: message.content,
+        status: message.status,
+        error: message.error || null,
+        attachmentIds: Array.isArray(message.attachmentIds) ? message.attachmentIds : [],
+      });
+    }
+    for (const task of tasks) {
+      const meta = this.records.get('task-meta', task.id) || {};
+      const artifacts = this.records.list('artifacts').filter((artifact) => artifact.taskId === task.id);
+      const delivery = this.taskDelivery(task);
+      items.push({
+        id: `task:${task.id}`,
+        type: 'task',
+        at: task.updatedAt || task.createdAt,
+        taskId: task.id,
+        role: task.role,
+        title: task.title,
+        status: task.status,
+        result: String(task.result || '').slice(0, 360),
+        error: String(task.error || '').slice(0, 360),
+        workspaceMode: meta.workspaceMode || null,
+        artifactCount: artifacts.length,
+        verificationStatus: delivery.hasVerificationEvidence ? delivery.acceptanceStatus : null,
+        deliveryStatus: delivery.deliveryStatus,
+        acceptanceDecision: delivery.acceptanceDecision,
+      });
+    }
+    for (const event of this.records.list('task-events')) {
+      if (!taskIds.has(event.taskId)) continue;
+      items.push({
+        id: `event:${event.id}`,
+        type: 'task-event',
+        at: event.at || event.updatedAt || event.createdAt || taskById.get(event.taskId)?.updatedAt || taskById.get(event.taskId)?.createdAt,
+        taskId: event.taskId,
+        eventType: event.type || 'event',
+        data: event.data || null,
+      });
+    }
+    for (const artifact of this.records.list('artifacts')) {
+      if (!taskIds.has(artifact.taskId)) continue;
+      items.push({
+        id: `artifact:${artifact.id}`,
+        type: artifact.kind === 'verification' ? 'verification' : 'artifact',
+        at: artifact.finishedAt || artifact.updatedAt || artifact.createdAt || taskById.get(artifact.taskId)?.updatedAt || taskById.get(artifact.taskId)?.createdAt,
+        taskId: artifact.taskId,
+        kind: artifact.kind || 'artifact',
+        name: artifact.name || '未命名产物',
+        status: artifact.status || null,
+        verified: artifact.verified === true,
+      });
+    }
+    for (const acceptance of this.records.list('task-acceptance')) {
+      if (!taskIds.has(acceptance.taskId)) continue;
+      items.push({
+        id: `acceptance:${acceptance.id}`,
+        type: 'acceptance',
+        at: acceptance.decidedAt || acceptance.updatedAt || acceptance.createdAt || taskById.get(acceptance.taskId)?.updatedAt || taskById.get(acceptance.taskId)?.createdAt,
+        taskId: acceptance.taskId,
+        status: acceptance.status || 'active',
+        acceptanceDecision: acceptance.decision || null,
+        acceptanceNote: String(acceptance.note || '').slice(0, 360),
+        currentRequirementVersion: Number(acceptance.requirementVersion || 1),
+      });
+    }
+    const cursor = typeof before === 'string' && before.trim()
+      ? before.split('|')
+      : [];
+    const beforeAt = cursor[0] || null;
+    const beforeId = cursor.slice(1).join('|') || null;
+    return items
+      .filter((item) => typeof item.at === 'string' && item.at)
+      .sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id))
+      .filter((item) => !beforeAt || item.at < beforeAt || (item.at === beforeAt && Boolean(beforeId && item.id < beforeId)))
+      .slice(-Math.max(1, Math.min(200, Number(limit) || 120)));
+  }
+  draftKey(spaceId, roleId) {
+    const scope = spaceId ? String(spaceId).trim() : 'standalone';
+    const role = String(roleId || '').trim();
+    return `draft:${encodeURIComponent(scope)}:${encodeURIComponent(role)}`;
+  }
+  teamDraft(spaceId, roleId) {
+    const key = this.draftKey(spaceId, roleId);
+    return this.records.get('space-drafts', key);
+  }
+  teamDrafts() {
+    return this.records.list('space-drafts');
+  }
+  saveTeamDraft(input, expectedRevision) {
+    const spaceId = typeof input.spaceId === 'string' && input.spaceId.trim()
+      ? input.spaceId.trim()
+      : null;
+    const roleId = String(input.roleId || '').trim();
+    if (!roleId || !this.role(roleId) || this.role(roleId).archived)
+      throw new Error('草稿所属助手不存在或已归档。');
+    if (spaceId) {
+      const space = this.teamSpace(spaceId);
+      if (!space) throw new Error('草稿所属团队不存在。');
+      if (space.status !== 'active') throw new Error('草稿所属团队当前不可编辑。');
+      if (!space.memberRoleIds.includes(roleId))
+        throw new Error('该助手不属于当前团队。');
+    }
+    const content = String(input.content ?? '').trim();
+    const attachmentIds = Array.isArray(input.attachmentIds)
+      ? [...new Set(input.attachmentIds.filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim()))]
+      : [];
+    const key = this.draftKey(spaceId, roleId);
+    const existing = this.records.get('space-drafts', key);
+    const revisionConflict = () => Object.assign(
+      new Error('草稿已在其他窗口更新，请刷新后重试。'),
+      { status: 409 },
+    );
+    // A missing revision is safe for the first write only. Once a draft
+    // exists, requiring the caller to send the revision prevents an offline
+    // tab from overwriting newer work after it reconnects.
+    if (existing && (expectedRevision === undefined || existing.revision !== expectedRevision))
+      throw revisionConflict();
+    if (!content && !attachmentIds.length) {
+      if (existing) this.records.remove('space-drafts', key);
+      return null;
+    }
+    if (content.length > 32000) throw new Error('草稿不能超过 32000 字符。');
+    return this.records.save('space-drafts', {
+      spaceId,
+      roleId,
+      content,
+      attachmentIds: attachmentIds.slice(0, 20),
+    }, key, expectedRevision);
+  }
+  removeTeamDraft(spaceId, roleId, expectedRevision) {
+    const key = this.draftKey(spaceId, roleId);
+    const existing = this.records.get('space-drafts', key);
+    if (!existing) return false;
+    if (expectedRevision === undefined || existing.revision !== expectedRevision)
+      throw Object.assign(new Error('草稿已在其他窗口更新，请刷新后重试。'), { status: 409 });
+    return this.records.remove('space-drafts', key);
   }
   saveTeamMessage(input, id) {
     const spaceId = input.spaceId || input.teamId;
@@ -531,11 +957,14 @@ export class Store {
     prompt,
     sessionId,
     sourceTaskId,
+    teamId,
+    spaceId,
     workspace = this.config.workspace,
   }) {
     const assistant = this.role(role);
     if (!assistant || assistant.archived)
       throw new Error('助手不存在或已归档，请先恢复助手。');
+    const scopeId = teamId || spaceId || null;
     const now = new Date().toISOString(),
       id = randomUUID();
     this.db.exec('SAVEPOINT create_task');
@@ -550,6 +979,29 @@ export class Store {
           session.workspace !== workspace
         )
           throw new Error('这个会话不属于当前助手或工作目录，请新建会话。');
+        const previousTasks = this.db
+          .prepare('SELECT id FROM tasks WHERE sessionId=?')
+          .all(sessionId);
+        if (scopeId) {
+          const crossesTeamBoundary = previousTasks.some(({ id: previousTaskId }) => {
+            const meta = this.records.get('task-meta', previousTaskId);
+            const previousScopeId = meta?.teamId || meta?.spaceId || null;
+            return previousScopeId !== scopeId;
+          });
+          if (crossesTeamBoundary)
+            throw Object.assign(
+              new Error('这个会话属于另一个团队，请为当前团队新建会话。'),
+              { status: 409 },
+            );
+        } else if (previousTasks.some(({ id: previousTaskId }) => {
+          const meta = this.records.get('task-meta', previousTaskId);
+          return Boolean(meta?.teamId || meta?.spaceId);
+        })) {
+          throw Object.assign(
+            new Error('这个会话属于团队空间，请使用团队自己的会话。'),
+            { status: 409 },
+          );
+        }
       } else {
         sessionId = randomUUID();
         this.db
@@ -585,11 +1037,21 @@ export class Store {
     const existing = this.db
       .prepare('SELECT * FROM knowledge WHERE id=?')
       .get(id);
+    const scope = typeof input.scope === 'string' ? input.scope.trim() : '';
+    const teamId = scope === 'team'
+      ? String(input.teamId || existing?.teamId || '').trim()
+      : '';
+    if (scope === 'team') {
+      const team = teamId ? this.teamSpace(teamId) : null;
+      if (!team || team.status === 'archived') throw new Error('团队知识必须绑定到有效的团队。');
+    }
     const item = {
       ...input,
       id,
+      scope,
+      teamId,
       projectPath:
-        input.scope === 'personal'
+        scope === 'personal'
           ? ''
           : existing?.projectPath || input.projectPath || this.config.workspace,
       updatedAt: new Date().toISOString(),
@@ -607,7 +1069,7 @@ export class Store {
       });
     this.db
       .prepare(
-        'INSERT INTO knowledge VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,content=excluded.content,scope=excluded.scope,state=excluded.state,source=excluded.source,projectPath=excluded.projectPath,updatedAt=excluded.updatedAt',
+        'INSERT INTO knowledge VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,content=excluded.content,scope=excluded.scope,state=excluded.state,source=excluded.source,projectPath=excluded.projectPath,teamId=excluded.teamId,updatedAt=excluded.updatedAt',
       )
       .run(
         id,
@@ -617,6 +1079,7 @@ export class Store {
         item.state,
         item.source,
         item.projectPath,
+        item.teamId,
         item.updatedAt,
       );
     this.exportKnowledge(item);
@@ -649,6 +1112,8 @@ export class Store {
     );
   }
   retrieve(task) {
+    const taskMeta = this.records.get('task-meta', task.id) || {};
+    const teamId = taskMeta.teamId || taskMeta.spaceId || null;
     const terms = [
       ...new Set(
         task.prompt
@@ -660,6 +1125,7 @@ export class Store {
       .filter(
         (k) =>
           k.scope === 'personal' ||
+          (k.scope === 'team' && Boolean(teamId) && k.teamId === teamId) ||
           (k.projectPath === task.workspace &&
             ['project', task.role].includes(k.scope)),
       )

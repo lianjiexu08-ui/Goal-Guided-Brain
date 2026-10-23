@@ -60,7 +60,7 @@ test('TypeSafe-only configuration does not masquerade as a chat model', async (t
 });
 
 test('management API synchronizes a provider catalog without exposing its credential', async (t) => {
-  const { app, request } = await fixture(t);
+  const { app, request, dataDir } = await fixture(t);
   let authorization = '';
   const remote = http.createServer((req, res) => {
     authorization = req.headers.authorization || '';
@@ -75,6 +75,7 @@ test('management API synchronizes a provider catalog without exposing its creden
   await new Promise((resolve) => remote.listen(0, '127.0.0.1', resolve));
   t.after(() => remote.close());
   await request('vault/initialize', { passphrase: 'fixture-vault-password-123' });
+  assert.equal(fs.existsSync(path.join(dataDir, '.vault_pass')), false);
   const credential = await app.platform.vault.put({ name: 'catalog', value: 'catalog-secret' });
   const created = await request('providers', {
     name: 'Catalog fixture',
@@ -109,6 +110,7 @@ test('legacy key migration preserves the old file until encrypted storage succee
     ).status,
     200,
   );
+  assert.equal(fs.existsSync(path.join(dataDir, '.vault_pass')), false);
   const migrated = await request('vault/import-legacy', {});
   assert.equal(migrated.status, 200);
   assert.equal(migrated.body.removedLegacyFile, true);
@@ -162,6 +164,94 @@ test('custom skill details preserve frontmatter and keep previous pinned version
   assert.equal(current.enabled, false);
 });
 
+test('management capability records expose assistant and team bindings', async (t) => {
+  const { app, request, workspace } = await fixture(t);
+  const created = await request('capabilities', {
+    kind: 'skill',
+    name: 'Bound workflow',
+    content: '---\nname: bound-workflow\ndescription: Bound workflow\n---\n\nRun the bound workflow.',
+    enabled: true,
+  });
+  assert.equal(created.status, 200);
+  const capabilityId = created.body.id;
+  const updatedRole = await request('roles/product', {
+    capabilityIds: [capabilityId],
+  }, 'PUT');
+  assert.equal(updatedRole.status, 200);
+  const team = await request('spaces', {
+    name: '绑定检查团队',
+    goal: '验证能力绑定来源可见。',
+    purpose: '验证能力绑定来源可见。',
+    workspace,
+    pmRoleId: 'project_manager',
+    memberRoleIds: ['project_manager'],
+    memberSettings: {
+      project_manager: { capabilityIds: [capabilityId] },
+    },
+    recruitment: { phase: 'confirmed', proposal: null },
+  });
+  assert.equal(team.status, 201);
+  const managed = await request('manage');
+  const capability = managed.body.capabilities.find((item) => item.id === capabilityId);
+  assert.deepEqual(capability.bindings.assistants, [{ id: 'product', name: app.store.role('product').name }]);
+  assert.deepEqual(capability.bindings.teams, [{
+    id: `${team.body.id}:project_manager`,
+    teamId: team.body.id,
+    teamName: '绑定检查团队',
+    roleId: 'project_manager',
+    roleName: app.store.role('project_manager').name,
+  }]);
+  assert.equal(capability.boundAssistantCount, 1);
+  assert.equal(capability.boundTeamCount, 1);
+});
+
+test('high-risk capability binding and enablement require explicit owner confirmation and leave an audit trail', async (t) => {
+  const { app, request } = await fixture(t);
+  const created = await request('capabilities', {
+    kind: 'mcp',
+    name: '高风险外部系统',
+    transport: 'streamable-http',
+    url: 'https://example.test/mcp',
+    credentialId: 'external-credential',
+    enabled: false,
+  });
+  assert.equal(created.status, 200);
+  const rejectedEnable = await request(`capabilities/${created.body.id}/enable`, {}, 'POST');
+  assert.equal(rejectedEnable.status, 409);
+  const enabled = await request(`capabilities/${created.body.id}/enable`, { confirmed: true }, 'POST');
+  assert.equal(enabled.status, 200);
+  const capability = enabled.body;
+  const rejectedBinding = await request('roles/product', {
+    capabilityIds: [capability.id],
+    capabilityApprovals: {},
+  }, 'PUT');
+  assert.equal(rejectedBinding.status, 409);
+  assert.match(rejectedBinding.body.error, /逐项确认/);
+  const approval = {
+    [capability.id]: {
+      confirmed: true,
+      digest: capability.digest || String(capability.revision),
+      riskLevel: 'high',
+      confirmedAt: new Date().toISOString(),
+    },
+  };
+  const bound = await request('roles/product', {
+    capabilityIds: [capability.id],
+    capabilityApprovals: approval,
+  }, 'PUT');
+  assert.equal(bound.status, 200, JSON.stringify(bound));
+  const managed = await request('manage');
+  const managedCapability = managed.body.capabilities.find((item) => item.id === capability.id);
+  assert.equal(managedCapability.latestAudit.action, 'bind');
+  assert.equal(managedCapability.latestAudit.confirmed, true);
+  assert.ok(managedCapability.audits.some((item) => item.action === 'bind' && item.roleId === 'product'));
+  assert.ok(managedCapability.audits.some((item) => item.action === 'enable' && item.confirmed === true));
+  const detail = await request(`capabilities/${capability.id}`);
+  assert.equal(detail.body.risk.level, 'high');
+  assert.ok(detail.body.audits.length >= 2);
+  assert.equal(app.store.records.list('capability-audits').filter((item) => item.capabilityId === capability.id).length, 2);
+});
+
 test('knowledge changes and deletion retain versioned source snapshots', async (t) => {
   const { request, dataDir } = await fixture(t);
   const original = {
@@ -194,6 +284,94 @@ test('knowledge changes and deletion retain versioned source snapshots', async (
   assert.equal(history[0].action, 'deleted');
   assert.equal(history[0].snapshot.source, 'Owner');
   assert.equal((await request('state')).body.knowledge.length, 0);
+});
+
+test('team knowledge is persisted with its team scope and rejects unknown teams', async (t) => {
+  const { app, request, workspace } = await fixture(t);
+  const team = (await request('spaces', {
+    name: '团队知识 fixture',
+    goal: '验证团队知识隔离。',
+    purpose: '验证团队知识隔离。',
+    workspace,
+    pmRoleId: 'project_manager',
+    memberRoleIds: ['project_manager'],
+  })).body;
+  const created = await request('knowledge', {
+    title: '团队发布约定',
+    content: '发布前必须有回滚方案。',
+    scope: 'team',
+    teamId: team.id,
+    state: 'confirmed',
+    source: '团队确认',
+  });
+  assert.equal(created.status, 200);
+  assert.deepEqual(created.body, {
+    id: created.body.id,
+    title: '团队发布约定',
+    content: '发布前必须有回滚方案。',
+    scope: 'team',
+    teamId: team.id,
+    state: 'confirmed',
+    source: '团队确认',
+    projectPath: app.store.config.workspace,
+    updatedAt: created.body.updatedAt,
+  });
+  const state = (await request('state')).body;
+  assert.deepEqual(state.knowledge.find((item) => item.id === created.body.id), created.body);
+  const invalid = await request('knowledge', {
+    title: '无效团队知识',
+    content: '不能保存。',
+    scope: 'team',
+    teamId: 'missing-team',
+    state: 'confirmed',
+    source: 'fixture',
+  });
+  assert.equal(invalid.status, 400);
+  assert.match(invalid.body.error, /有效的团队/);
+});
+
+test('recruitment endpoint provides a durable cursor for another device to catch up', async (t) => {
+  const { app, request, workspace } = await fixture(t);
+  const team = (await request('spaces', {
+    name: '招募会话 fixture',
+    goal: '验证招募会话同步。',
+    purpose: '验证招募会话同步。',
+    workspace,
+    pmRoleId: 'project_manager',
+    memberRoleIds: ['project_manager'],
+    recruitment: { phase: 'discovery', sessionId: null, turns: 0, proposal: null },
+  })).body;
+  app.store.saveTeamMessage({
+    spaceId: team.id,
+    teamId: team.id,
+    clientMessageId: 'recruitment-device-one',
+    kind: 'request',
+    senderType: 'owner',
+    senderId: 'owner',
+    content: '第一台设备的需求',
+    status: 'sent',
+  }, 'recruitment-device-one');
+  app.store.saveTeamMessage({
+    spaceId: team.id,
+    teamId: team.id,
+    clientMessageId: 'recruitment-device-two',
+    kind: 'reply',
+    senderType: 'agent',
+    senderId: 'project_manager',
+    content: '第二台设备可以继续看到这条回复',
+    status: 'answered',
+  }, 'recruitment-device-two');
+  const first = await request(`spaces/${team.id}/recruitment?limit=1`);
+  assert.equal(first.status, 200);
+  assert.equal(first.body.messages.length, 1);
+  assert.equal(first.body.hasMore, true);
+  assert.equal(first.body.recruitment.phase, 'discovery');
+  assert.ok(first.body.cursor);
+  const second = await request(`spaces/${team.id}/recruitment?limit=10&after=${encodeURIComponent(first.body.cursor)}`);
+  assert.equal(second.status, 200);
+  assert.equal(second.body.messages.length, 1);
+  assert.equal(second.body.messages[0].content, '第二台设备可以继续看到这条回复');
+  assert.equal(second.body.hasMore, false);
 });
 
 test('persisted assistant requirements constrain provider selection after editing', async t => {

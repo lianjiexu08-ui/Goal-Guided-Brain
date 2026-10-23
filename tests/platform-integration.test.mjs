@@ -169,3 +169,26 @@ test('remote capability bundles are verified and remapped to node-local content-
   assert.throws(() => node.installBundles({ ...assignment, bundles: [{ ...assignment.bundles[0], digest: '0'.repeat(64) }] }), /摘要/);
   assert.throws(() => node.installBundles({ ...assignment, bundles: [{ ...assignment.bundles[0], files: [{ path: '../escape', base64: '' }] }] }), /路径/);
 });
+
+test('remote capability bundles accept controller paths from another operating system', async t => {
+  const { directory, workspace, url, clients } = await fixture(t);
+  const node = new NodeClient({ controlUrl: url, dataDir: path.join(directory, 'windows-bundle-node'), workspaces: { default: workspace }, runtimeFactory: () => ({}) });
+  clients.push(node);
+  const content = Buffer.from('---\nname: windows-review\ndescription: Cross-platform fixture.\n---\n');
+  const digest = createHash('sha256').update('SKILL.md').update('\0').update(content).digest('hex');
+  const assignment = {
+    bundles: [{
+      digest,
+      // This is the path shape emitted by a Windows control plane. The test
+      // intentionally runs on macOS/Linux to protect remote worker handoff.
+      sourceRoot: 'C:\\controller\\skills\\review\\',
+      files: [{ path: 'SKILL.md', base64: content.toString('base64') }],
+    }],
+    capabilityPatch: [{ id: 'skill-filesystem', config: { customSkillDirs: ['C:\\controller\\skills\\review\\'] } }],
+  };
+  const patches = node.installBundles(assignment);
+  const destination = path.join(directory, 'windows-bundle-node', 'capabilities', digest);
+  assert.equal(patches[0].config.customSkillDirs[0], destination);
+  assert.ok(fs.existsSync(path.join(destination, 'SKILL.md')));
+  assert.throws(() => node.installBundles({ ...assignment, capabilityPatch: [{ id: 'skill-filesystem', config: { customSkillDirs: ['C:\\controller\\skills\\review\\..\\outside'] } }] }), /映射路径/);
+});

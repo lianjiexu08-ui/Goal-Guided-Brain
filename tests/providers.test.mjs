@@ -243,6 +243,27 @@ test('TypeSafe decision provider stays out of text routing and returns typed dec
   await assert.rejects(service.probe(provider.id, { toolTest: true }), /结构化决策/);
 });
 
+test('automatic routing prefers healthy providers and keeps health evidence credential-free', () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec(RECORDS_SCHEMA);
+  const service = new ProviderService({
+    store: { records: new Records(db) },
+    vault: { get: () => 'should-not-be-exposed', status: () => ({ unlocked: false }) },
+  });
+  const first = service.save({ name: 'First', protocol: 'openai-completions', baseUrl: 'http://127.0.0.1:1/v1', models: [{ id: 'shared' }], priority: 1 });
+  const second = service.save({ name: 'Second', protocol: 'openai-completions', baseUrl: 'http://127.0.0.1:2/v1', models: [{ id: 'shared' }], priority: 2 });
+  const third = service.save({ name: 'Third', protocol: 'openai-completions', baseUrl: 'http://127.0.0.1:3/v1', models: [{ id: 'shared' }], priority: 3 });
+  service.records.save('providers', { ...first, health: { ok: false, checkedAt: new Date().toISOString(), error: 'secret-value' } }, first.id);
+  service.records.save('providers', { ...second, health: { ok: true, checkedAt: new Date().toISOString(), status: 200 } }, second.id);
+  const route = service.select({ providerIds: [first.id, second.id, third.id] });
+  assert.equal(route.providerId, second.id);
+  assert.equal(route.routingCandidates[0].providerId, second.id);
+  assert.equal(route.routingCandidates[0].health.ok, true);
+  assert.ok(!JSON.stringify(route.routingCandidates).includes('secret-value'));
+  assert.equal(service.select({ providerIds: [first.id, second.id] }, { modelOverride: 'shared', exactModel: true }).providerId, first.id);
+  db.close();
+});
+
 test('provider model sync uses the remote catalog and removes unsupported modalities', async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-provider-sync-'));
   const db = new DatabaseSync(':memory:');

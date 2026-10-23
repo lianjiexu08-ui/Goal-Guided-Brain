@@ -44,6 +44,7 @@ export type Assistant = {
   requiresVision?: boolean;
   requiredContextWindow?: number;
   capabilityIds?: string[];
+  capabilityApprovals?: Record<string, { confirmed: boolean; digest: string; riskLevel: string; confirmedAt: string }>;
   nodeId?: string;
   workspaceMode?: 'shared' | 'isolated';
 };
@@ -73,6 +74,7 @@ export const blankAssistant: Assistant = {
   requiresVision: false,
   requiredContextWindow: 1,
   capabilityIds: [],
+  capabilityApprovals: {},
   nodeId: '',
   workspaceMode: 'isolated',
 };
@@ -576,30 +578,82 @@ export function AssistantEditor({
                 </label>
                 <fieldset className="tool-options">
                   <legend>已安装能力与 MCP</legend>
-                  {(bindings?.capabilities || []).map((capability) => (
-                    <label key={capability.id}>
-                      <input
-                        type="checkbox"
-                        checked={(form.capabilityIds || []).includes(
-                          capability.id,
+                  {(bindings?.capabilities || []).map((capability) => {
+                    const checked = (form.capabilityIds || []).includes(capability.id);
+                    const approval = form.capabilityApprovals?.[capability.id];
+                    const capabilityDigest = typeof capability.digest === 'string'
+                      ? capability.digest
+                      : typeof capability.revision === 'string' || typeof capability.revision === 'number'
+                        ? String(capability.revision)
+                        : '';
+                    const compatibility = typeof capability.compatibility === 'string' ? capability.compatibility : '';
+                    const diagnostics = Array.isArray(capability.diagnostics)
+                      ? capability.diagnostics.filter((item): item is string => typeof item === 'string')
+                      : [];
+                    const risk = capability.risk && typeof capability.risk === 'object'
+                      ? (capability.risk as { level?: string; requiresReview?: boolean; reasons?: unknown[] })
+                      : null;
+                    const riskLabel = risk?.level === 'high' ? '高风险' : risk?.level === 'medium' ? '中风险' : risk?.level === 'low' ? '低风险' : '';
+                    const firstRiskReason = typeof risk?.reasons?.[0] === 'string' ? risk.reasons[0] : '';
+                    const unavailable = capability.enabled === false || compatibility === 'unsupported';
+                    const usage = [
+                      typeof capability.boundAssistantCount === 'number' ? `${capability.boundAssistantCount} 个助手` : '',
+                      typeof capability.boundTeamCount === 'number' ? `${capability.boundTeamCount} 个团队成员` : '',
+                    ].filter(Boolean).join(' · ');
+                    return (
+                      <label key={capability.id} className="assistant-capability-option">
+                        <input
+                          type="checkbox"
+                          aria-label={`绑定能力：${capability.name || capability.id}`}
+                          checked={checked}
+                          disabled={unavailable && !checked}
+                          onChange={(event) =>
+                            field(
+                              'capabilityIds',
+                              event.target.checked
+                                ? [...(form.capabilityIds || []), capability.id]
+                                : (form.capabilityIds || []).filter(
+                                    (id) => id !== capability.id,
+                                  ),
+                            )
+                          }
+                        />
+                        {risk?.requiresReview && (
+                          <input
+                            type="checkbox"
+                            aria-label={`确认能力风险：${capability.name || capability.id}`}
+                            checked={Boolean(approval?.confirmed && approval.digest === capabilityDigest)}
+                            disabled={!checked || unavailable}
+                            onChange={(event) => {
+                              const next = { ...form.capabilityApprovals };
+                              if (event.target.checked) next[capability.id] = {
+                                confirmed: true,
+                                digest: capabilityDigest,
+                                riskLevel: risk.level || 'unknown',
+                                confirmedAt: new Date().toISOString(),
+                              };
+                              else delete next[capability.id];
+                              field('capabilityApprovals', next);
+                            }}
+                          />
                         )}
-                        onChange={(event) =>
-                          field(
-                            'capabilityIds',
-                            event.target.checked
-                              ? [...(form.capabilityIds || []), capability.id]
-                              : (form.capabilityIds || []).filter(
-                                  (id) => id !== capability.id,
-                                ),
-                          )
-                        }
-                      />
-                      <span>
-                        {capability.name || capability.id}
-                        {capability.enabled === false ? '（已停用）' : ''}
-                      </span>
-                    </label>
-                  ))}
+                        <span className="assistant-capability-label">
+                          <strong>{capability.name || capability.id}</strong>
+                          <small>
+                            {[capability.kind, compatibility === 'partial' ? '部分兼容' : compatibility === 'compatible' ? '可直接使用' : compatibility === 'unsupported' ? '不支持' : '', capability.enabled === false ? '已停用' : '', usage].filter(Boolean).join(' · ')}
+                          </small>
+                          {diagnostics[0] && <small className="assistant-capability-warning">{diagnostics[0]}</small>}
+                          {risk && (
+                            <small className={risk.requiresReview ? 'assistant-capability-warning' : undefined}>
+                              {riskLabel}{risk.requiresReview ? ' · 绑定前需要复核' : ''}
+                              {firstRiskReason ? ` · ${firstRiskReason}` : ''}
+                            </small>
+                          )}
+                          {risk?.requiresReview && <small>勾选右侧复选框，确认该能力的外部访问或执行风险</small>}
+                        </span>
+                      </label>
+                    );
+                  })}
                   {bindings && !bindings.capabilities.length && (
                     <span className="manage-muted">暂无已安装能力</span>
                   )}
