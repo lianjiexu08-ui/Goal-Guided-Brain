@@ -272,3 +272,18 @@ CLI 是主要操作面，补齐了以下能力。
 ```
 
 stdout 保持干净，可直接管道；`--json` 时 `turn_end` 事件包含 `usage`、`contextWindow` 与 `elapsedMs`。
+
+## 凭据登录（API Key）
+
+`ggb login <providerId>` 把密钥写入工作台的加密凭据库，而不是留在环境变量里：
+
+1. 取密钥：`--api-key` → 供应商环境变量 → 交互式隐藏输入
+2. 口令：`--passphrase` → `GGB_VAULT_PASSWORD` → 交互式输入（首次初始化需二次确认）
+3. 写入 vault（Argon2id + AES-256-GCM），复用已有凭据，不重复创建
+4. 按预设创建或更新供应商（协议、模型列表、上下文窗口），并启用
+
+`ggb logout <providerId>` 删除供应商及其凭据，并清理同名残留凭据。
+
+`ggb models` 会把已登录的供应商标成 `✓`。
+
+**当前只支持 API Key。OAuth / 设备码登录尚未实现**——pi 有这类流程，GGB 暂无。

@@ -96,6 +96,8 @@ const usage = `用法：
   ggb team watch <id>            # 订阅实时事件流（不再轮询）
   ggb context list|share <teamId> ...   # 查看或发布跨团队共享上下文
   ggb models                     # 供应商与模型目录（含自定义 models.json）
+  ggb login <providerId>         # 把 API Key 写入加密凭据库，并在工作台启用供应商
+  ggb logout <providerId>        # 移除该供应商的凭据与配置
 
 支持预设：${Object.keys(PRESETS).join('、')}（gpt/openai 是 Codex/OpenAI 别名）；TypeSafe 通过 decide 命令作为可选结构化决策后端。
 密钥从对应环境变量读取，也可用 --api-key 临时传入（不会写入磁盘）。
@@ -379,8 +381,135 @@ async function taskCommand(args) {
   if (result.delivery) console.log(`交付状态：${result.delivery.deliveryStatus}`);
 }
 
+/** 隐藏输入的交互式读取（密钥/口令）。 */
+function askSecret(label) {
+  if (!process.stdin.isTTY) throw new Error(`${label}需要在交互式终端输入，或用参数/环境变量提供。`);
+  return new Promise((resolve) => {
+    process.stderr.write(label);
+    const rl = readline.createInterface({ input: process.stdin, output: process.stderr, terminal: true });
+    rl._writeToOutput = () => {};
+    rl.question('', (answer) => {
+      rl.close();
+      process.stderr.write('\n');
+      resolve(answer.trim());
+    });
+  });
+}
+
+// CLI 协议名 → 控制平面协议名
+function controlProtocol(preset, providerId) {
+  if (providerId === 'deepseek') return 'deepseek';
+  if (preset.protocol === 'anthropic') return 'anthropic-messages';
+  if (preset.protocol === 'responses') return 'openai-responses';
+  return 'openai-completions';
+}
+
+function providerModels(preset) {
+  const ids = preset.models && preset.models.length ? preset.models : (preset.model ? [preset.model] : []);
+  if (!ids.length) throw new Error('该供应商没有可用模型列表，请用 --model 指定，或在 models.json 中配置 models。');
+  return ids.map((id) => ({ id, name: id, tools: true, contextWindow: Number(preset.contextWindow) || 128000 }));
+}
+
+async function loginCommand(args) {
+  const providerId = args[0] && !args[0].startsWith('--') ? args[0] : '';
+  if (!providerId) throw new Error('用法：ggb login <providerId> [--api-key KEY] [--passphrase 口令] [--model ID] [--base-url URL]');
+  const { name: canonical, preset } = presetFor(providerId);
+
+  // 1) 取密钥：参数 → 环境变量 → 交互输入
+  let apiKey = valueAfter(args, '--api-key', '');
+  if (!apiKey) apiKey = pickKey(preset, '');
+  if (!apiKey || apiKey === 'local') {
+    apiKey = await askSecret(`${preset.label} API Key（输入不回显）› `);
+  }
+  if (!apiKey) throw new Error('未提供 API Key。');
+
+  // 2) 凭据库状态
+  let manage;
+  try {
+    manage = await workbenchFetch(args, 'manage');
+  } catch (error) {
+    throw new Error(`无法连接工作台（${workbenchBase(args)}）：${error.message}\n请先运行 npm start，或改用环境变量 ${(preset.keys || []).join('/') || 'API Key'}。`);
+  }
+  const vault = manage.vault || {};
+  let passphrase = valueAfter(args, '--passphrase', process.env.GGB_VAULT_PASSWORD || '');
+  if (!passphrase) {
+    passphrase = await askSecret(vault.initialized ? '凭据库口令（输入不回显）› ' : '设置凭据库口令（至少 6 位，输入不回显）› ');
+    if (!vault.initialized) {
+      const confirm = await askSecret('再输入一次确认 › ');
+      if (confirm !== passphrase) throw new Error('两次输入的口令不一致。');
+    }
+  }
+  if (!passphrase) throw new Error('需要凭据库口令。');
+  if (vault.initialized) await workbenchFetch(args, 'vault/unlock', { method: 'POST', body: { passphrase } });
+  else await workbenchFetch(args, 'vault/initialize', { method: 'POST', body: { passphrase } });
+
+  // 4) 先找现有供应商，尽量复用同一个凭据，避免重复登录产生多份密钥。
+  const baseUrl = valueAfter(args, '--base-url', preset.baseUrl);
+  const existing = await workbenchFetch(args, 'providers');
+  const match = (existing || []).find((item) => item.name === preset.label || item.baseUrl === baseUrl);
+
+  // 3) 写入加密凭据（已有则原地更新）
+  const credential = match?.credentialId
+    ? await workbenchFetch(args, `credentials/${match.credentialId}`, {
+        method: 'PUT',
+        body: { name: `${preset.label} API Key`, value: apiKey, kind: 'api-key' },
+      })
+    : await workbenchFetch(args, 'credentials', {
+        method: 'POST',
+        body: { name: `${preset.label} API Key`, value: apiKey, kind: 'api-key' },
+      });
+
+  // 5) 建或更新供应商
+  const modelOverride = valueAfter(args, '--model', '');
+  const models = providerModels(preset);
+  const payload = {
+    name: preset.label,
+    protocol: controlProtocol(preset, canonical),
+    baseUrl,
+    credentialId: credential.id,
+    models: modelOverride ? [{ id: modelOverride, name: modelOverride, tools: true, contextWindow: Number(preset.contextWindow) || 128000 }] : models,
+    enabled: true,
+    priority: 100,
+  };
+  const saved = match
+    ? await workbenchFetch(args, `providers/${match.id}`, { method: 'PUT', body: payload })
+    : await workbenchFetch(args, 'providers', { method: 'POST', body: payload });
+
+  if (has(args, '--json')) return console.log(JSON.stringify({ credential, provider: saved }, null, 2));
+  console.log(`已登录 ${preset.label}：密钥写入加密凭据库，供应商「${saved.name}」已启用。`);
+  console.log(`模型：${saved.models.map((model) => model.id).join(', ')}`);
+  console.log(`团队任务即可使用该供应商；CLI 可直接 ggb run --provider ${canonical} "…"`);
+  return;
+}
+
+async function logoutCommand(args) {
+  const providerId = args[0] && !args[0].startsWith('--') ? args[0] : '';
+  if (!providerId) throw new Error('用法：ggb logout <providerId>');
+  const { preset } = presetFor(providerId);
+  const providers = await workbenchFetch(args, 'providers');
+  const matches = (providers || []).filter((item) => item.name === preset.label || item.baseUrl === preset.baseUrl);
+  if (!matches.length) return console.log(`没有找到已登录的「${preset.label}」。`);
+  for (const provider of matches) {
+    if (provider.credentialId) {
+      await workbenchFetch(args, `credentials/${provider.credentialId}`, { method: 'DELETE' }).catch(() => {});
+    }
+    await workbenchFetch(args, `providers/${provider.id}`, { method: 'DELETE' }).catch(() => {});
+  }
+  // 清理同名残留凭据（历史重复登录可能留下多份）。
+  const leftover = (await workbenchFetch(args, 'credentials').catch(() => []) || [])
+    .filter((entry) => entry.name === `${preset.label} API Key`);
+  for (const entry of leftover)
+    await workbenchFetch(args, `credentials/${entry.id}`, { method: 'DELETE' }).catch(() => {});
+  console.log(`已移除 ${preset.label} 的凭据与供应商配置（${matches.length} 个供应商，${leftover.length} 份残留凭据）。`);
+}
+
 async function modelsCommand(args) {
   const presets = allPresets();
+  // 尽力读取工作台的已配置供应商，用于标记“已登录”。
+  let serverProviders = [];
+  try { serverProviders = await workbenchFetch(args, 'providers'); } catch { serverProviders = []; }
+  const loggedIn = (preset) => serverProviders.some((item) =>
+    item.name === preset.label || item.baseUrl === preset.baseUrl);
   const rows = Object.entries(presets).map(([id, preset]) => ({
     id,
     label: preset.label,
@@ -389,7 +518,8 @@ async function modelsCommand(args) {
     models: preset.models || [],
     contextWindow: Number(preset.contextWindow) || 128000,
     baseUrl: preset.baseUrl,
-    configured: Boolean(pickKey(preset, '')),
+    configured: Boolean(pickKey(preset, '')) || loggedIn(preset),
+    loggedIn: loggedIn(preset),
     custom: Boolean(preset.custom),
     keys: preset.keys || [],
   }));
@@ -1188,6 +1318,8 @@ async function main() {
   if (command === 'task') return taskCommand(args);
   if (command === 'skill') return skillCommand(args);
   if (command === 'models') return modelsCommand(args);
+  if (command === 'login') return loginCommand(args);
+  if (command === 'logout') return logoutCommand(args);
   if (command === 'context') return contextCommand(args);
   if (command !== 'run' && command !== 'chat') throw new Error(`未知命令“${command}”。\n\n${usage}`);
   const input = parseInput(args);

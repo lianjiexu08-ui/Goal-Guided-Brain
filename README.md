@@ -149,6 +149,8 @@ CLI 支持：
   - `ggb team watch <id>`：订阅服务端 SSE 事件流（消息与任务状态实时推送，不轮询）；`team run --watch` 也走同一流。
   - `ggb context list|share <teamId>`：查看或发布跨团队共享上下文（支持 `--key/--title/--content/--kind/--revision`）。
   - `ggb models [--json]`：列出供应商、协议、上下文窗口与凭据状态；自定义供应商写入 `~/.ggb/models.json`（可用 `GGB_MODELS_FILE` 指定）。
+  - `ggb login <providerId>`：把 API Key 写入**加密凭据库**并在工作台启用该供应商（团队任务与 CLI 共用）；重复登录复用同一凭据。
+  - `ggb logout <providerId>`：移除该供应商的凭据与配置。
   - 每次对话结束会在终端底部输出状态行：`模型 · in/out tokens · 上下文占用 · 耗时`（写 stderr，不污染 stdout）。
   - 通用：`--api` 指定工作台地址（默认 `http://127.0.0.1:3089`），开启认证时用 `--password` 或环境变量 `GGB_PASSWORD` 登录。
 
