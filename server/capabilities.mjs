@@ -475,8 +475,9 @@ export class CapabilityService {
     if (cached && cached.until > Date.now()) return cached.data;
     const sources = [
       { url: `${HUB_REPO_API}/contents/catalog.json?ref=main`, options: { headers: { Accept: 'application/vnd.github.raw' } } },
-      { url: `${HUB_REPO_JSDELIVR}/catalog.json` },
+      // raw 的边缘缓存远短于 jsDelivr 的分支缓存（可长达数小时），优先于 jsDelivr。
       { url: `${SELF_HOSTED_HUB}/catalog.json` },
+      { url: `${HUB_REPO_JSDELIVR}/catalog.json` },
     ];
     let lastError;
     for (const source of sources) {

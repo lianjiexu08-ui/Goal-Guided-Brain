@@ -17,15 +17,23 @@ function setup(t) {
 }
 
 // 自维护 Hub 的搜索依赖公开 catalog.json；离线环境跳过网络用例。
+// 与 hubCatalog 相同的回退顺序；GitHub API 被限流时 jsDelivr 仍可用。
 async function hubReachable() {
-  try {
-    const response = await fetch('https://raw.githubusercontent.com/lianjiexu08-ui/skills-hub/main/catalog.json', {
-      signal: AbortSignal.timeout(8000),
-    });
-    return response.ok;
-  } catch {
-    return false;
+  for (const url of [
+    'https://api.github.com/repos/lianjiexu08-ui/skills-hub/contents/catalog.json?ref=main',
+    'https://cdn.jsdelivr.net/gh/lianjiexu08-ui/skills-hub@main/catalog.json',
+    'https://raw.githubusercontent.com/lianjiexu08-ui/skills-hub/main/catalog.json',
+  ]) {
+    try {
+      const response = await fetch(url, {
+        headers: url.includes('api.github.com') ? { Accept: 'application/vnd.github.raw' } : {},
+        signal: AbortSignal.timeout(8000),
+      });
+      if (response.status === 403 || response.status === 429) continue;
+      if (response.ok) return true;
+    } catch {}
   }
+  return false;
 }
 
 test('自维护 Hub 的 catalog 包含开发相关 Skill 且字段完整', async t => {
