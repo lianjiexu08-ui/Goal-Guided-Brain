@@ -1149,6 +1149,17 @@ if (
 ) {
   const app = createWorkbench();
   const port = Number(process.env.WORKBENCH_API_PORT || 3089);
+  app.server.on('error', (error) => {
+    if (error?.code === 'EADDRINUSE') {
+      console.error(`端口 ${port} 已被占用：大概率已有一个工作台在运行。`);
+      console.error(`  · 沿用现有实例：直接使用 http://127.0.0.1:${port}（ggb 默认连接它）`);
+      console.error(`  · 换端口启动：WORKBENCH_API_PORT=<其它端口> node server/index.mjs`);
+      console.error(`  · 停掉旧实例：lsof -ti :${port} | xargs kill`);
+      process.exit(1);
+    }
+    console.error(`工作台启动失败：${error.message}`);
+    process.exit(1);
+  });
   app.server.listen(
     port,
     process.env.WORKBENCH_BIND_HOST || '127.0.0.1',

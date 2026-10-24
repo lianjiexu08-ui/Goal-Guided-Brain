@@ -270,8 +270,6 @@ const teamUsage = `用法：
   ggb models [--json]
 通用：--api 指定工作台地址（默认 http://127.0.0.1:3089），--password 或 GGB_PASSWORD 登录。`;
 
-function teamIdArg(args) { return args.find(value => !value.startsWith('--') && value !== 'team'); }
-
 async function teamList(args) {
   const teams = await workbenchFetch(args, 'teams');
   if (has(args, '--json')) return console.log(JSON.stringify(teams, null, 2));
@@ -292,6 +290,11 @@ async function teamCreate(args) {
   const requireReview = !has(args, '--no-review');
   const workspace = valueAfter(args, '--workspace', '');
   if (workspace && !path.isAbsolute(workspace)) throw new Error('--workspace 需要绝对路径。');
+  if (workspace && !fs.existsSync(workspace)) throw new Error(`--workspace 目录不存在：${workspace}`);
+  if (workspace) {
+    const entries = fs.readdirSync(workspace).filter((name) => name !== '.git' && name !== 'node_modules');
+    if (!entries.length) console.error(`警告：${workspace} 是空目录，团队将没有可处理的代码。`);
+  }
   const body = {
     name, goal, purpose: goal, teamType, pmRoleId: 'project_manager', memberRoleIds: ['project_manager'],
     requireReview,
@@ -305,7 +308,7 @@ async function teamCreate(args) {
   console.log(`下一步：ggb team run ${saved.id} "你要达成的目标" --watch`);
 }
 
-function renderTeamStatus(team) {
+function renderTeamStatus(team, tasksOptions = [], options = {}) {
   console.log(`团队：${team.name} (${team.id})  阶段：${team.recruitment?.phase || 'unknown'}  状态：${team.status}`);
   if (team.goal) console.log(`目标：${team.goal}`);
   const messages = team.messages || [];
@@ -317,15 +320,27 @@ function renderTeamStatus(team) {
       console.log(`  [${fmtTime(message.createdAt)}] ${who}: ${String(message.content || '').slice(0, 160)}${message.status === 'blocked' ? '（阻塞）' : ''}`);
     }
   }
-  const tasks = team.tasks || [];
-  if (tasks.length) {
-    console.log('\n任务：');
-    for (const task of tasks.slice(-10)) {
+  if (options.filtered) {
+    console.log(`\n任务（过滤后 ${tasksOptions.length}/${options.total}）：`);
+    if (!tasksOptions.length) console.log('  （没有匹配的任务）');
+    for (const task of tasksOptions) {
       const acceptance = task.verificationStatus ? ` 验证:${task.verificationStatus}` : '';
       const delivery = task.deliveryStatus ? ` 交付:${task.deliveryStatus}` : '';
-      console.log(`  [${task.status}] ${task.title || task.id}${acceptance}${delivery}`);
+      const title = String(task.title || task.id || '').replace(/\s+/g, ' ').slice(0, 50);
+      console.log(`  [${task.status}] ${title}${acceptance}${delivery}`);
       console.log(`    id: ${task.id}`);
     }
+    console.log('\n过滤：ggb team status <id> --open（未完成） / --failed（失败） / --limit N');
+  } else if (options.total) {
+    console.log(`\n任务（最近 ${Math.min(tasksOptions.length, options.total)}/${options.total}）：`);
+    for (const task of tasksOptions) {
+      const acceptance = task.verificationStatus ? ` 验证:${task.verificationStatus}` : '';
+      const delivery = task.deliveryStatus ? ` 交付:${task.deliveryStatus}` : '';
+      const title = String(task.title || task.id || '').replace(/\s+/g, ' ').slice(0, 50);
+      console.log(`  [${task.status}] ${title}${acceptance}${delivery}`);
+      console.log(`    id: ${task.id}`);
+    }
+    console.log('\n过滤：ggb team status <id> --open（未完成） / --failed（失败） / --limit N');
   }
 }
 
@@ -948,11 +963,21 @@ async function skillCommand(args) {
 }
 
 async function teamStatus(args) {
-  const id = teamIdArg(args.slice(1));
+  const rest = args.slice(1);
+  const id = rest[0] && !rest[0].startsWith('--') ? rest[0] : '';
   if (!id) throw new Error('team status 需要团队 ID。');
+  // --open 只看未完成的任务；--failed 只看失败；--limit N 控制条数。
+  const filter = has(args, '--open') ? 'open' : has(args, '--failed') ? 'failed' : '';
+  const limit = Number(valueAfter(args, '--limit', '10')) || 10;
   const team = await workbenchFetch(args, `teams/${id}`);
   if (has(args, '--json')) return console.log(JSON.stringify(team, null, 2));
-  renderTeamStatus(team);
+  const tasks = team.tasks || [];
+  const visible = filter === 'open'
+    ? tasks.filter((task) => !['completed', 'failed', 'cancelled'].includes(task.status))
+    : filter === 'failed'
+      ? tasks.filter((task) => task.status === 'failed' || (task.deliveryStatus || '').includes('fail'))
+      : tasks;
+  renderTeamStatus(team, visible.slice(0, limit), { filtered: Boolean(filter), total: tasks.length });
 }
 
 async function teamReviews(args) {
