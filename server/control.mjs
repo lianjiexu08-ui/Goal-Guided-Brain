@@ -350,7 +350,9 @@ export class ControlPlane {
         nodeId: job.nodeId, workspaceKey: job.workspaceKey, workspaceMode: body.workspaceMode,
         sourceTaskId: body.sourceTaskId, providerIds: body.providerIds, model: body.model, requirementVersion: job.requirementVersion,
         assistantSnapshot: body.assistantSnapshot, contextExtra: body.contextExtra,
-        capabilityCommand: body.capabilityCommand });
+        capabilityCommand: body.capabilityCommand,
+        // 子任务默认沿用父任务的自动验证设置；显式传入 false 可关闭。
+        autoVerify: body.autoVerify === false ? false : undefined });
       const taskMeta = this.records.get('task-meta', task.id) || {};
       this.records.save('task-meta', { ...taskMeta, jobId: job.id, groupId, batchId: job.batchId,
         nodeId: job.nodeId, workspaceKey: job.workspaceKey, permissions, requirementVersion: job.requirementVersion,

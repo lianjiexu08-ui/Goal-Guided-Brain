@@ -1713,6 +1713,8 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
   const [acceptanceNote, setAcceptanceNote] = useState('');
   const [command, setCommand] = useState('npm');
   const [args, setArgs] = useState('test');
+  const [verifyAuto, setVerifyAuto] = useState(true);
+  const [verifyProfile, setVerifyProfile] = useState<Entity | null>(null);
   useEffect(() => {
     let cancelled = false;
     void api<Entity>(`tasks/${taskId}`)
@@ -1830,13 +1832,15 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
         action === 'commit'
           ? { message }
           : action === 'verify'
-            ? {
-                command,
-                args: args
-                  .split('\n')
-                  .map((item) => item.trim())
-                  .filter(Boolean),
-              }
+            ? verifyAuto
+              ? { auto: true }
+              : {
+                  command,
+                  args: args
+                    .split('\n')
+                    .map((item) => item.trim())
+                    .filter(Boolean),
+                }
             : undefined,
       );
       setResult(output);
@@ -2166,6 +2170,10 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
               onClick={() => {
                 setMode('verify');
                 setResult(null);
+                setVerifyProfile(null);
+                void api<Entity>(`workspaces/${taskId}/profile`)
+                  .then(setVerifyProfile)
+                  .catch(() => setVerifyProfile(null));
               }}
             >
               <Terminal size={15} />
@@ -2205,22 +2213,56 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
                 void perform('verify');
               }}
             >
-              <label>
-                验证程序
+              <label className="team-collaboration-toggle" aria-label="自动探测并运行项目检查">
                 <input
-                  required
-                  value={command}
-                  onChange={(event) => setCommand(event.target.value)}
+                  type="checkbox"
+                  checked={verifyAuto}
+                  onChange={(event) => setVerifyAuto(event.target.checked)}
                 />
+                <span>
+                  <strong>自动探测并运行项目检查</strong>
+                  <small>按项目类型运行类型检查、lint、测试与构建；结果会保存为验收证据。</small>
+                </span>
               </label>
-              <label>
-                参数（每行一项）
-                <textarea
-                  rows={3}
-                  value={args}
-                  onChange={(event) => setArgs(event.target.value)}
-                />
-              </label>
+              {verifyAuto && verifyProfile && Array.isArray(verifyProfile.checks) && (
+                <div className="recruitment-open-questions">
+                  <strong>将执行以下检查</strong>
+                  {(verifyProfile.checks as Entity[]).length ? (
+                    <ul>
+                      {(verifyProfile.checks as Entity[]).map((check, index) => (
+                        <li key={index}>
+                          {String(check.command)} {Array.isArray(check.args) ? (check.args as string[]).join(' ') : ''}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p>未识别出可验证的项目类型。</p>
+                  )}
+                  {Array.isArray(verifyProfile.warnings) && (verifyProfile.warnings as string[]).length > 0 && (
+                    <p className="field-help">{(verifyProfile.warnings as string[]).join('；')}</p>
+                  )}
+                </div>
+              )}
+              {!verifyAuto && (
+                <>
+                  <label>
+                    验证程序
+                    <input
+                      required
+                      value={command}
+                      onChange={(event) => setCommand(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    参数（每行一项）
+                    <textarea
+                      rows={3}
+                      value={args}
+                      onChange={(event) => setArgs(event.target.value)}
+                    />
+                  </label>
+                </>
+              )}
               <button
                 className="primary-button"
                 disabled={busy || Boolean(mutating)}

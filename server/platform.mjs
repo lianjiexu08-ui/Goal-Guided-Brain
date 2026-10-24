@@ -22,6 +22,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { AttachmentService } from './attachments.mjs';
+import { detectVerificationPlan, runVerificationPlan, summarizeVerification } from './verification.mjs';
 
 const nowIso = () => new Date().toISOString();
 const text = (v, max = 32000) =>
@@ -225,6 +226,7 @@ export function createPlatform({
           ...(providerIds.length ? { providerIds } : {}),
         },
         capabilityCommand: input.capabilityCommand || null,
+        autoVerify: input.autoVerify === false ? false : undefined,
         excludedProviders: [],
       },
       task.id,
@@ -687,6 +689,10 @@ export function createPlatform({
             error: redact(error, [route?.secret, token]),
           });
         workspaces.finish(task.id);
+        // 验证门禁：任务完成后在本地目录自动探测并运行检查，结果写成验收证据。
+        if (status === 'completed' && !stoppingTasks.has(task.id)) {
+          queueMicrotask(() => void autoVerify(task.id).catch(() => {}));
+        }
         if (stagedAttachmentRoot) fs.rmSync(stagedAttachmentRoot, { recursive: true, force: true });
       } catch (failure) {
         records.save('late-results', {
@@ -826,6 +832,89 @@ export function createPlatform({
         `start:${task.id}`,
       );
     }
+  }
+  /**
+   * 验证门禁：为已完成的任务自动探测项目类型并运行检查。
+   * 仅在本地节点、目录未被隔离、且配置开启时生效。
+   * 结论落成 verification 产物：verified / failed / unavailable。
+   */
+  async function autoVerify(taskId) {
+    if (stopping || stoppingTasks.has(taskId)) return null;
+    const task = store.task(taskId);
+    if (!task || task.status !== 'completed') return null;
+    const meta = records.get('task-meta', taskId) || {};
+    if (meta.autoVerify === false) return null;
+    if ((meta.nodeId || 'local') !== 'local') return null;
+    const workspace = records.get('workspaces', taskId);
+    if (!workspace || workspace.state === 'quarantined' || runs.has(taskId)) return null;
+    const config = Object.assign({ mode: 'auto', timeoutMs: 300000 }, store.config.verification);
+    if (config.mode === 'off') return null;
+    let plan;
+    try {
+      plan = detectVerificationPlan(workspace.path, { maxChecks: config.maxChecks });
+    } catch (error) {
+      recordEvent(task, { type: 'verification/error', data: { message: error.message } });
+      return null;
+    }
+    if (!plan.checks.length) {
+      recordEvent(task, { type: 'verification/skipped', data: { warnings: plan.warnings } });
+      return null;
+    }
+    recordEvent(task, {
+      type: 'verification/started',
+      data: { checks: plan.checks.map((check) => `${String(check.command)} ${check.args.join(' ')}`.trim()), warnings: plan.warnings },
+    });
+    const aggregate = await runVerificationPlan(plan, {
+      timeoutMs: config.timeoutMs,
+      onCheck: (result) => recordEvent(task, {
+        type: 'verification/check',
+        data: { id: result.id, command: result.command, status: result.status, durationMs: result.durationMs },
+      }),
+    });
+    const job = meta.jobId ? records.get('jobs', meta.jobId) : null;
+    const base = {
+      taskId,
+      groupId: meta.groupId || job?.groupId || null,
+      requirementVersion: Number(job?.requirementVersion || meta.requirementVersion || 1),
+      kind: 'verification',
+      source: 'auto',
+      path: workspace.path,
+      stacks: aggregate.stacks,
+    };
+    // 先写每条检查的明细，最后写聚合结论（作为最新一条验收证据）。
+    for (const result of aggregate.results) {
+      records.save('artifacts', {
+        ...base,
+        name: result.command,
+        checkId: result.id,
+        status: result.status,
+        output: result.output,
+        durationMs: result.durationMs,
+        startedAt: result.startedAt,
+        finishedAt: result.finishedAt,
+      }, `verify:${taskId}:${result.id}:${result.finishedAt}`);
+    }
+    const evidence = records.save('artifacts', {
+      ...base,
+      name: `验证门禁：${aggregate.status === 'verified' ? '通过' : aggregate.status === 'failed' ? '失败' : '环境不可用'}`,
+      status: aggregate.status,
+      output: summarizeVerification(aggregate),
+      checks: aggregate.results.map((result) => ({
+        id: result.id, command: result.command, status: result.status, durationMs: result.durationMs,
+      })),
+      warnings: aggregate.warnings,
+      finishedAt: new Date().toISOString(),
+    }, `verify:${taskId}:aggregate:${Date.now()}`);
+    if (aggregate.status === 'failed')
+      control.attention({
+        kind: 'verification',
+        taskId,
+        groupId: base.groupId,
+        title: '自动验证未通过',
+        detail: summarizeVerification(aggregate).slice(0, 4000),
+        verificationId: evidence.id,
+      }, `verify:${taskId}`);
+    return { id: evidence.id, ...aggregate };
   }
   async function schedule() {
     if (stopping) return;
@@ -1705,10 +1794,27 @@ export function createPlatform({
       }
     }
     if (collection === 'workspaces') {
+      if (method === 'GET' && action === 'profile') {
+        const workspace = records.get('workspaces', id);
+        if (!workspace) throw new Error('执行目录不存在。');
+        return ok(detectVerificationPlan(workspace.path, {
+          maxChecks: store.config.verification?.maxChecks,
+        }));
+      }
       if (method === 'GET' && id) return ok(await workspaces.diff(id));
       if (method === 'POST' && action === 'commit')
         return ok(await workspaces.commit(id, body.message));
       if (method === 'POST' && action === 'verify') {
+        // auto: true 时忽略手填命令，直接探测项目类型并运行全部检查。
+        if (body.auto === true) {
+          const result = await autoVerify(id);
+          if (!result) throw new Error('当前任务不满足自动验证条件（未完成、目录被隔离、非本地节点或已关闭自动验证）。');
+          return ok({
+            ok: result.status === 'verified',
+            verified: result.status === 'verified',
+            ...result,
+          });
+        }
         const workspace = records.get('workspaces', id);
         if (!workspace || workspace.state === 'quarantined' || runs.has(id))
           throw new Error('请等待有效执行目录空闲后再验证。');

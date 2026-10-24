@@ -497,6 +497,21 @@ export function createWorkbench({
             required(body.apiKey, 'API Key', 1000),
           );
         store.configure({ workspace: fs.realpathSync(folder), model });
+        // 验证门禁配置：mode 控制自动验证，timeoutMs / maxChecks 控制资源上限。
+        if (body.verification !== undefined) {
+          const input = body.verification;
+          if (!input || typeof input !== 'object' || Array.isArray(input))
+            throw new Error('验证配置格式无效。');
+          const mode = input.mode === undefined ? 'auto' : input.mode;
+          if (!['auto', 'off'].includes(mode)) throw new Error('验证模式只支持 auto 或 off。');
+          const timeoutMs = input.timeoutMs === undefined ? 300000 : input.timeoutMs;
+          if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 5000 || timeoutMs > 1800000)
+            throw new Error('验证超时需要在 5000 至 1800000 毫秒之间。');
+          const maxChecks = input.maxChecks === undefined ? 8 : input.maxChecks;
+          if (!Number.isSafeInteger(maxChecks) || maxChecks < 1 || maxChecks > 16)
+            throw new Error('验证检查数量上限需要在 1 至 16 之间。');
+          store.configure({ verification: { mode, timeoutMs, maxChecks } });
+        }
         return send(200, { ok: true });
       }
       if (parts[1] === 'profile' && !parts[2]) {
@@ -925,6 +940,7 @@ export function createWorkbench({
             budgetTokens: body.budgetTokens,
             workspaceMode: body.workspaceMode,
             workspaceKey: body.workspaceKey,
+            autoVerify: body.autoVerify === false ? false : undefined,
             workspace: body.sessionId
               ? store.sessions().find((s) => s.id === body.sessionId)?.workspace
               : undefined,

@@ -112,3 +112,58 @@
 
 - **死循环熔断（失败模式 #3 步骤死循环）**：同一执行实例连续 4 次以**相同工具 + 相同参数**调用时，判定为空转，自动暂停任务、撤销执行权限、标记 `blockedReason: 'loop-detected'`，并写入 `loop-detected` 待处理事项提醒你介入——不再任由实例空转烧 token。检测在事件流（本地与远程节点共用）上进行。
 - **结果收网（失败模式 #5 不知何时终止）**：成员提交产物后，系统比对其职责中提取的交付物名词；当可识别的交付物均被产物覆盖时，在待处理事项写入一条 `wrap-up`（"交付物已齐备，建议汇总结论"），提醒项目经理核对证据并收尾，而不是做完还在尬聊。同一任务组只提醒一次。
+
+## 自动验证门禁
+
+任务的 `completed` 只代表执行结束。为了让"是否可交付"有硬证据，完成时会**自动探测项目类型并运行检查**（默认开启）。
+
+### 行为
+
+| 情况 | 结果 |
+| --- | --- |
+| 所有检查通过 | 写入 `verified` 验证证据，交付进入"待验收" |
+| 任一检查失败 | 立即停止后续检查，写 `failed` 证据并产生 `verification` 待处理事项 |
+| 工具或依赖缺失、超时 | 记为 `unavailable`：不算通过，也不误判为失败 |
+| 未识别出项目类型 | 不伪造证据，只记录 `verification/skipped` 事件 |
+| 非本地节点 / 目录被隔离 / 显式关闭 | 跳过自动验证 |
+
+**"环境不可用"与"真实失败"必须区分**：没装依赖（例如隔离目录没有 `node_modules`）或命令不存在时判为 `unavailable`，避免把环境问题误报成代码问题。
+
+### 探测规则
+
+按项目标志文件识别，只用项目自带的标准入口：
+
+| 生态 | 检查（按快→慢） |
+| --- | --- |
+| Node | `typecheck` → `lint` → `test` → `build`（按 `package.json` scripts 存在与否；识别 npm/pnpm/yarn/bun） |
+| Python | `pytest` → `ruff` → `mypy`（按配置存在与否） |
+| Go | `go vet` → `go build` → `go test` |
+| Rust | `cargo check` → `cargo test` |
+| JVM | `mvn test` / `gradle test` |
+| 其他 | 有 `Makefile` 且定义了 `check`/`test` 时用 `make` |
+
+Node 的 `test` 会带 `CI=1`，避免 watch 模式挂住。monorepo 只跑根级脚本并给出提示。
+
+### 配置
+
+```jsonc
+// PUT /api/settings
+{ "verification": { "mode": "auto", "timeoutMs": 300000, "maxChecks": 8 } }
+```
+
+- `mode`: `auto`（默认）或 `off`
+- `timeoutMs`: 单项检查超时，5s–30min
+- `maxChecks`: 单次最多执行几项，1–16
+
+任务级关闭：创建任务时传 `autoVerify: false`。
+
+### 接口
+
+- `GET /api/workspaces/:taskId/profile`：返回探测到的检查计划（只读取，不执行）。
+- `POST /api/workspaces/:taskId/verify`：`{ auto: true }` 使用探测计划；或传 `command` + `args` 手动验证。
+
+### 边界
+
+- 自动验证只在本机执行目录中运行；远程节点跳过。
+- 只运行标准检查入口，不执行安装、部署或发布类命令。
+- 验证结论写入产物，仍由验收流程决定是否接受；自动验证通过不等于已验收。

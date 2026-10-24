@@ -8,13 +8,13 @@ import { childEnvironment, terminateProcessTree } from './runtime.mjs';
 export function command(
   executable,
   args,
-  { cwd, timeout = 60000, maxOutputBytes = 32_000_000 } = {},
+  { cwd, timeout = 60000, maxOutputBytes = 32_000_000, env = {} } = {},
 ) {
   return new Promise((resolve, reject) => {
     const child = spawn(executable, args, {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...childEnvironment(), GIT_TERMINAL_PROMPT: '0' },
+      env: { ...childEnvironment(), GIT_TERMINAL_PROMPT: '0', ...env },
     });
     const stdout = [],
       stderr = [];
