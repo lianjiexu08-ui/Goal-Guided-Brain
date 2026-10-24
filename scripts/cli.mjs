@@ -92,8 +92,8 @@ const usage = `用法：
   ggb chat --provider claude --session personal
   ggb decide --state '{"goal":"..."}' --questions '{"urgent":{"type":"noul","instructions":"Is this urgent?"}}'
   ggb team list | create | run <id> "目标" [--watch] | status <id> | reviews <id> | review --approve <opId>
-  ggb skill recommend "任务描述" | install <技能ID> | list
-  ggb task <id> | ack <id> | accept <id> | reject <id> --note "需改什么"
+  ggb skill recommend "任务描述" | install <技能ID> | list | enable|disable <ID|名称> [--yes]
+  ggb task <id> | ack <id> | accept <id> | reject <id> --note "需改什么" | retry <id>
   ggb team watch <id>            # 订阅实时事件流（不再轮询）
   ggb context list|share <teamId> ...   # 查看或发布跨团队共享上下文
   ggb models                     # 供应商与模型目录（含自定义 models.json）
@@ -143,7 +143,12 @@ async function workbenchFetch(args, route, { method = 'GET', body } = {}) {
     headers: { 'Content-Type': 'application/json', ...(authCookie ? { Cookie: authCookie } : {}) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
-  let response = await attempt(cookie);
+  let response;
+  try {
+    response = await attempt(cookie);
+  } catch (error) {
+    throw new Error(`无法连接工作台 ${base}。请先在工作台目录运行 npm start，或用 --api 指定地址。\n原始错误：${error.message}`);
+  }
   if (response.status === 401) {
     const password = valueAfter(args, '--password', process.env.GGB_PASSWORD || '');
     if (!password) throw new Error('工作台需要登录。请用 --password 或环境变量 GGB_PASSWORD 提供密码。');
@@ -244,7 +249,7 @@ async function doctor(args) {
 // ---- ggb team：终端版自治团队 ----
 const teamUsage = `用法：
   ggb team list
-  ggb team create --name 团队名 --goal 目标 [--no-review] [--type development|product|operations|project|custom]
+  ggb team create --name 团队名 --goal 目标 [--workspace /项目绝对路径] [--no-review] [--type development|product|operations|project|custom]
   ggb team run <teamId> "要达成的目标" [--watch]
   ggb team watch <teamId>
   ggb team status <teamId>
@@ -285,14 +290,18 @@ async function teamCreate(args) {
   if (!name || !goal) throw new Error('team create 需要 --name 和 --goal。');
   const teamType = valueAfter(args, '--type', 'custom');
   const requireReview = !has(args, '--no-review');
+  const workspace = valueAfter(args, '--workspace', '');
+  if (workspace && !path.isAbsolute(workspace)) throw new Error('--workspace 需要绝对路径。');
   const body = {
     name, goal, purpose: goal, teamType, pmRoleId: 'project_manager', memberRoleIds: ['project_manager'],
     requireReview,
+    ...(workspace ? { workspace } : {}),
     collaboration: { enabled: true, autoHandoff: true, sharedBoard: true, allowedTeamIds: [] },
   };
   const saved = await workbenchFetch(args, 'teams', { method: 'POST', body });
   if (has(args, '--json')) return console.log(JSON.stringify(saved, null, 2));
   console.log(`已创建团队「${saved.name}」(${saved.id})，招募审核：${requireReview ? '需要人工确认' : '自动确认（自治）'}。`);
+  if (saved.workspace) console.log(`工作目录：${saved.workspace}`);
   console.log(`下一步：ggb team run ${saved.id} "你要达成的目标" --watch`);
 }
 
@@ -364,7 +373,7 @@ function renderTask(task) {
 async function taskCommand(args) {
   const sub = args[0];
   if (!sub || sub === 'help' || sub === '--help' || sub === '-h') return console.log(teamUsage);
-  const known = ['ack', 'accept', 'reject'];
+  const known = ['ack', 'accept', 'reject', 'retry'];
   if (!known.includes(sub)) {
     const task = await workbenchFetch(args, `tasks/${sub}`);
     if (has(args, '--json')) return console.log(JSON.stringify(task, null, 2));
@@ -379,6 +388,12 @@ async function taskCommand(args) {
     return console.log(`已确认影响面：${id}`);
   }
   if (sub === 'reject' && !note) throw new Error('退回复核需要 --note 说明需要改什么。');
+  if (sub === 'retry') {
+    const result = await workbenchFetch(args, `tasks/${id}/retry`, { method: 'POST', body: {} });
+    if (has(args, '--json')) return console.log(JSON.stringify(result, null, 2));
+    console.log(`已重试：新执行实例 ${result.taskId || result.id || id}`);
+    return;
+  }
   const result = await workbenchFetch(args, `tasks/${id}/${sub}`, { method: 'POST', body: { note } });
   if (has(args, '--json')) return console.log(JSON.stringify(result, null, 2));
   console.log(sub === 'accept' ? `已验收通过：${id}` : `已退回复核：${id}`);
@@ -649,7 +664,9 @@ async function teamWatch(args) {
           ? ` 影响:${data.impactRisk}${data.impactAcknowledged ? '(已确认)' : ''}`
           : '';
         const verify = data.verificationStatus ? ` 验证:${data.verificationStatus}` : '';
-        console.log(`\n[任务] ${data.title || data.id}  ${data.status}  交付:${data.deliveryStatus || '-'}${verify}${risk}`);
+        const title = String(data.title || data.id || '').replace(/\s+/g, ' ').slice(0, 60);
+        const failedMark = data.status === 'failed' ? `  ✗ ${String(data.error || '任务失败').slice(0, 160)}` : '';
+        console.log(`\n[任务] ${title}  ${data.status}  交付:${data.deliveryStatus || '-'}${verify}${risk}${failedMark}`);
         console.log(`       ggb task ${data.id}`);
       }
     }, { signal: controller.signal });
@@ -899,7 +916,7 @@ async function skillCommand(args) {
     const installed = await workbenchFetch(args, 'capabilities/install', { method: 'POST', body: { source: 'git', sourceUrl } });
     if (has(args, '--json')) return console.log(JSON.stringify(installed, null, 2));
     console.log(`已安装：${installed.name} (${installed.id})，默认未启用。`);
-    console.log(`启用：在管理界面启用并确认风险，或调用 POST /api/capabilities/${installed.id}/enable`);
+    console.log(`启用：ggb skill enable ${installed.name}`);
     return;
   }
   if (sub === 'list') {
@@ -907,7 +924,24 @@ async function skillCommand(args) {
     if (has(args, '--json')) return console.log(JSON.stringify(items, null, 2));
     if (!items.length) return console.log('还没有安装任何能力。用 ggb skill recommend 找找。');
     for (const item of items)
-      console.log(`${item.enabled === false ? '停用' : '启用'}  ${String(item.kind).padEnd(7)} ${String(item.id).padEnd(38)} ${item.name}`);
+      console.log(`${item.enabled === false ? '停用' : '启用'}  ${String(item.kind).padEnd(7)} ${String(item.name).padEnd(24)} ${item.id}`);
+    return;
+  }
+  if (sub === 'enable' || sub === 'disable') {
+    const id = args[1] && !args[1].startsWith('--') ? args[1] : '';
+    if (!id) throw new Error(`用法：ggb skill ${sub} <能力ID或名称>`);
+    const items = await workbenchFetch(args, 'capabilities');
+    const match = (items || []).find(item => item.id === id || item.name === id)
+      || (items || []).find(item => Array.isArray(item.skills) && item.skills.some(skill => skill.name === id))
+      || (items || []).find(item => item.name === id || item.name.includes(id));
+    if (!match) throw new Error(`找不到能力「${id}」。用 ggb skill list 查看已安装项。`);
+    const confirmed = has(args, '--yes');
+    const saved = await workbenchFetch(args, `capabilities/${match.id}/${sub}`, {
+      method: 'POST',
+      body: { confirmed, ...(sub === 'enable' ? {} : {}) },
+    });
+    if (has(args, '--json')) return console.log(JSON.stringify(saved, null, 2));
+    console.log(`已${sub === 'enable' ? '启用' : '停用'}：${saved.name} (${saved.id})`);
     return;
   }
   throw new Error(`未知 skill 子命令“${sub}”。\n\n${teamUsage}`);
@@ -987,7 +1021,9 @@ async function teamRun(args) {
         const risk = data.impactRisk && data.impactRisk !== 'unknown'
           ? ` 影响:${data.impactRisk}${data.impactAcknowledged ? '(已确认)' : ''}`
           : '';
-        console.log(`[任务] ${data.title || data.id}  ${data.status}  交付:${data.deliveryStatus || '-'}${verify}${risk}`);
+        const title = String(data.title || data.id || '').replace(/\s+/g, ' ').slice(0, 60);
+        const failedMark = data.status === 'failed' ? `  ✗ ${String(data.error || '任务失败').slice(0, 160)}` : '';
+        console.log(`[任务] ${title}  ${data.status}  交付:${data.deliveryStatus || '-'}${verify}${risk}${failedMark}`);
         console.log(`       ggb task ${data.id}`);
       }
     }, { signal: controller.signal });

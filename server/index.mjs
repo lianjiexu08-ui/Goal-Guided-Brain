@@ -670,6 +670,26 @@ export function createWorkbench({
               messages: seenMessages.size,
               tasks: taskState.size,
             });
+            // 连接快照：未完成或最近失败的任务立即推送一次，新接入的观察者不用等下次变更。
+            for (const task of store.tasks().filter((task) => {
+              const meta = store.records.get('task-meta', task.id) || {};
+              return (meta.spaceId || meta.teamId) === space.id;
+            })) {
+              const active = ['queued', 'running', 'waiting_children', 'blocked'].includes(task.status);
+              const recentlyFailed = task.status === 'failed';
+              if (!active && !recentlyFailed) continue;
+              const delivery = store.taskDelivery(task);
+              sendEvent('task', {
+                id: task.id,
+                title: task.title,
+                status: task.status,
+                error: task.status === 'failed' ? String(task.error || '').slice(0, 300) : null,
+                deliveryStatus: delivery.deliveryStatus,
+                verificationStatus: delivery.acceptanceStatus,
+                impactRisk: delivery.impact?.risk || null,
+                impactAcknowledged: delivery.impactAcknowledged,
+              });
+            }
             const tick = () => {
               if (closed) return;
               try {
@@ -691,6 +711,7 @@ export function createWorkbench({
                     id: task.id,
                     title: task.title,
                     status: task.status,
+                    error: task.status === 'failed' ? String(task.error || '').slice(0, 300) : null,
                     deliveryStatus: delivery.deliveryStatus,
                     verificationStatus: delivery.acceptanceStatus,
                     impactRisk: delivery.impact?.risk || null,
