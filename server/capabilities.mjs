@@ -7,6 +7,8 @@ import { command } from './workspaces.mjs';
 import { parse as parseArguments } from 'shell-quote';
 
 function bounded(value, max = 2000) { return String(value || '').slice(0, max); }
+// 自维护 Skill 库（可通过 WORKBENCH_SKILL_HUB 覆盖为内部镜像）。
+const SELF_HOSTED_HUB = String(process.env.WORKBENCH_SKILL_HUB || 'https://raw.githubusercontent.com/lianjiexu08-ui/skills-hub/main').replace(/\/$/, '');
 
 /**
  * Summarise the amount of trust an installed capability needs before an
@@ -392,7 +394,15 @@ export class CapabilityService {
     const key = `${source}:${q}`, cached = this.cache.get(key);
     if (cached && cached.until > Date.now()) return cached.items;
     let items;
-    if (source === 'skillsmp') {
+    if (source === 'hub') {
+      // 自维护 Skill 库：读取 catalog.json，免密钥、可版本固定。
+      const data = await jsonFetch(`${SELF_HOSTED_HUB}/catalog.json`);
+      const needle = q.toLowerCase();
+      items = (Array.isArray(data.skills) ? data.skills : [])
+        .filter(skill => `${skill.id} ${skill.name} ${skill.title} ${skill.description}`.toLowerCase().includes(needle))
+        .map(skill => ({ id: skill.id, name: skill.title || skill.name, description: skill.description,
+          source, kind: 'skill', sourceUrl: skill.installUrl, url: skill.installUrl, version: skill.version || null }));
+    } else if (source === 'skillsmp') {
       const data = await jsonFetch(`https://skillsmp.com/api/v1/skills/search?q=${encodeURIComponent(q)}&limit=25`);
       items = (data.data?.skills || data.data?.results || data.skills || []).map(s => ({ id: s.id || s.githubUrl, name: s.name, description: s.description, source, sourceUrl: s.githubUrl, url: s.skillUrl || s.githubUrl, stars: s.stars, kind: 'skill' }));
     } else if (source === 'clawhub') {
@@ -404,7 +414,7 @@ export class CapabilityService {
         const s = item.server || item;
         return { id: s.name, name: s.name, description: s.description, source, kind: 'mcp', sourceUrl: s.repository?.url, url: s.repository?.url, version: s.version, remotes: s.remotes, packages: s.packages };
       });
-    } else throw new Error('该市场需要独立认证；当前支持 SkillsMP、ClawHub 和 MCP Registry。');
+    } else throw new Error('该市场需要独立认证；当前支持自维护 Hub、SkillsMP、ClawHub 和 MCP Registry。');
     this.cache.set(key, { until: Date.now() + 300000, items });
     return items;
   }

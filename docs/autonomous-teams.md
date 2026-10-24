@@ -86,6 +86,17 @@
 - 深度与任务组规模上限仍然存在，作为自治系统的防失控保险丝。
 - `reviewer` 轮的跨供应商复核在配置了多个供应商时自动生效；只有一个供应商时降级为同供应商，需人工或另一实例复核。
 
+## 自维护 Skill 库（skills-hub）
+
+开发场景的能力可以按需从团队自维护的 Skill 库增强，不需要任何收费中介或 API key：
+
+- 仓库：`https://github.com/lianjiexu08-ui/skills-hub`，条目索引在 `catalog.json`。
+- GGB 能力中心的搜索源新增 `hub`（可用 `WORKBENCH_SKILL_HUB` 指向内部镜像），直接读 `catalog.json` 并按关键词过滤。
+- 安装仍走现有安全闸门：从条目自带的 GitHub tree URL 拉取 → 计算摘要并固定版本 → `assessCapabilityRisk` 评估 → 用户确认后才绑定。安装后默认不启用，也不影响已运行任务。
+- 纯指令类 Skill 评估为低风险；含命令、Hook 或 MCP 的包会提升风险等级并要求逐项确认。
+
+当前包含：`engineering-workflow`、`code-review`、`bug-fix`、`project-map`、`verification-gate`、`change-impact`、`task-orchestration`。仓库自带 `npm run check` 校验元数据并检查禁用术语。
+
 ## 跨团队共享上下文（共享记忆层）
 
 除了 handoff 消息，双向协作的团队之间现在可以共享一份**结构化的上下文记忆**：

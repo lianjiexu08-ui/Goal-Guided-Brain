@@ -3907,6 +3907,7 @@ export function Management({
                 setMarketSearched(false);
               }}
             >
+              <option value="hub">自维护 Hub</option>
               <option value="skillsmp">SkillsMP</option>
               <option value="clawhub">ClawHub</option>
               <option value="mcp">MCP Registry</option>
@@ -4763,6 +4764,7 @@ export function Management({
                   }}
                 >
                   <option value="github">Git 仓库 / 本地目录</option>
+                  <option value="hub">自维护 Hub</option>
                   <option value="skillsmp">SkillsMP</option>
                   <option value="clawhub">ClawHub</option>
                   <option value="mcp">MCP Registry</option>

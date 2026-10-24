@@ -51,12 +51,12 @@ export const ROLES = {
       '定位项目中失败的测试并修复',
       '按照产品需求实现一个小功能',
     ],
-    skillIds: ['development-workflow'],
+    skillIds: ['development-workflow', 'code-review', 'bug-fix'],
     tools: { files: true, web: true, terminal: true },
     name: '开发助手',
     skills: ['代码搜索与编辑', '沙箱终端', '测试验证'],
     instructions:
-      '你是开发助手。用中文协作。先读取项目说明和 AGENTS.md，了解结构、启动命令、测试。定位原因后进行最小必要修改，保留已有未提交修改。完成后运行相关测试，说明改了什么、如何验证、还有什么问题；没有执行的测试不得声称通过。遵循交接中的需求与验收标准，不主动提交、推送或部署。使用 development-workflow 技能。',
+      '你是开发助手。用中文协作。先读取项目说明和 AGENTS.md，了解结构、启动命令、测试；陌生或大型项目先用 project-map 建立项目地图。按开发五步法推进：需求理解、方案设计、代码实现、代码审查、Bug 修复。定位原因后进行最小必要修改，保留已有未提交修改。完成后用 code-review 复核改动并运行相关测试；遇到报错或失败用 bug-fix 流程排查。说明改了什么、如何验证、还有什么问题；没有执行的测试不得声称通过。遵循交接中的需求与验收标准，不主动提交、推送或部署。使用 development-workflow、code-review、bug-fix、project-map 技能。',
   },
   assistant: {
     icon: 'sparkles',
@@ -159,6 +159,15 @@ export class Store {
         : `${currentInstructions}\n${recruitmentRule}`.trim();
       if (JSON.stringify(skillIds) !== JSON.stringify(existingProjectManager.skillIds || []) || instructions !== existingProjectManager.instructions) {
         this.saveRole({ ...existingProjectManager, skillIds, instructions }, 'project_manager');
+      }
+    }
+    // Existing developer roles predate the development skill set. Carry
+    // user-authored instructions forward while adding the new dev skills.
+    const existingDeveloper = this.role('developer');
+    if (existingDeveloper && !existingDeveloper.archived) {
+      const devSkillIds = [...new Set([...(existingDeveloper.skillIds || []), 'development-workflow', 'code-review', 'bug-fix'])].slice(0, 3);
+      if (JSON.stringify(devSkillIds) !== JSON.stringify(existingDeveloper.skillIds || [])) {
+        this.saveRole({ ...existingDeveloper, skillIds: devSkillIds }, 'developer');
       }
     }
     if (seedProjectManager && !this.records.list('spaces').length && this.role('project_manager')) {
