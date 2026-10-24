@@ -82,6 +82,7 @@ const PROVIDER_ALIASES = { gpt: 'codex', moonshot: 'kimi', glm: 'zhipu' };
 const CLI_NAME = 'ggb';
 
 const usage = `用法：
+  ggb                            # 直接进入对话（同 chat）
   ggb providers
   ggb doctor [--api-url http://127.0.0.1:3089/api/health] [--ui-url http://127.0.0.1:3088/] [--json]
   ggb run --provider gemini --model gemini-2.5-flash "解释这段代码"
@@ -1492,13 +1493,19 @@ async function run(input, prompt, history = []) {
   return { text: state.text, usage: state.usage, elapsedMs };
 }
 
-async function interactiveChat(input) {
-  if (!process.stdin.isTTY || !process.stdout.isTTY)
+async function interactiveChat(input, args = []) {
+  // GGB_FORCE_INTERACTIVE 供测试或嵌入式调用绕过 TTY 检查（readline 仍按行驱动）。
+  if (!(process.env.GGB_FORCE_INTERACTIVE === '1') &&
+      (!process.stdin.isTTY || !process.stdout.isTTY))
     throw new Error(`chat 需要交互式终端；管道输入请使用 ${CLI_NAME} run。`);
   prepareSession(input);
-  if (!input.apiKey) throw new Error(`未找到 ${input.preset.label} 密钥，请设置 ${input.preset.keys.join(' 或 ')}`);
+  // 密钥延迟检查：/team、/tasks 等命令不需要模型；真正发模型请求时才要求。
+  const requireModelKey = () => {
+    if (!input.apiKey)
+      throw new Error(`未找到 ${input.preset.label} 密钥，请设置 ${input.preset.keys.join(' 或 ')}，或先运行 ggb login ${input.providerName}`);
+  };
   console.log(`${CLI_NAME} · ${input.providerName}/${input.model} · 会话 ${input.sessionId}`);
-  console.log('输入 /help 查看命令，/exit 退出。\n');
+  console.log('输入 /help 查看命令，/exit 退出。');
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, historySize: 1000 });
   const ask = () => new Promise(resolve => rl.question('你 › ', resolve));
   try {
@@ -1507,7 +1514,12 @@ async function interactiveChat(input) {
       if (!value) continue;
       if (value === '/exit' || value === '/quit') break;
       if (value === '/help') {
-        console.log('/new 新建会话  /model [供应商/]模型 切换模型  /session 查看会话  /exit 退出  /help 帮助\n');
+        console.log([
+          '/new 新建会话   /model [供应商/]模型 切换模型   /session 查看会话',
+          '/team [id]      切换/查看当前团队（后续任务在该团队上下文执行）',
+          '/tasks [id]     查看团队最近任务',
+          '/exit 退出      /help 帮助',
+        ].join('\n') + '\n');
         continue;
       }
       if (value === '/model' || value.startsWith('/model ')) {
@@ -1544,6 +1556,52 @@ async function interactiveChat(input) {
         console.log(`会话：${input.sessionId}\n文件：${input.sessionFile}\n模型：${input.providerName}/${input.model}\n`);
         continue;
       }
+      if (value === '/team' || value.startsWith('/team ')) {
+        const tokens = value.slice('/team'.length).trim().split(/\s+/).filter(Boolean);
+        try {
+          const teams = await workbenchFetch(args, 'teams');
+          if (!tokens.length) {
+            if (input.teamId) {
+              const current = teams.find((team) => team.id === input.teamId);
+              console.log(`当前团队：${current?.name || input.teamId}  阶段 ${current?.recruitment?.phase || '-'}\n`);
+            } else {
+              console.log('未绑定团队。用 /team <teamId> 选择：');
+              for (const team of teams) console.log(`  ${team.id}  ${team.name}  [${team.recruitment?.phase || '-'}]`);
+              console.log('');
+            }
+          } else {
+            const match = teams.find((team) => team.id === tokens[0] || team.name === tokens[0])
+              || teams.find((team) => team.name.includes(tokens[0]));
+            if (!match) throw new Error(`找不到团队「${tokens[0]}」。`);
+            input.teamId = match.id;
+            console.log(`已绑定团队：${match.name} (${match.id})\n后续 prompt 会作为该团队的需求发给项目经理。\n`);
+          }
+        } catch (error) {
+          console.error(`${CLI_NAME}: ${error.message}\n`);
+        }
+        continue;
+      }
+      if (value === '/tasks' || value.startsWith('/tasks ')) {
+        const tokens = value.slice('/tasks'.length).trim().split(/\s+/).filter(Boolean);
+        const teamId = input.teamId || tokens[0];
+        if (!teamId) {
+          console.log('请先用 /team <teamId> 绑定团队，或 /tasks <teamId>。\n');
+          continue;
+        }
+        try {
+          const team = await workbenchFetch(args, `teams/${teamId}`);
+          const tasks = (team.tasks || []).slice(0, 8);
+          if (!tasks.length) console.log('该团队还没有任务。\n');
+          for (const task of tasks) {
+            const title = String(task.title || task.id).replace(/\s+/g, ' ').slice(0, 50);
+            console.log(`[${task.status}] ${title}\n    ggb task ${task.id}`);
+          }
+          console.log('');
+        } catch (error) {
+          console.error(`${CLI_NAME}: ${error.message}\n`);
+        }
+        continue;
+      }
       if (value === '/new') {
         input.session = randomUUID();
         input.continueSession = false;
@@ -1557,7 +1615,20 @@ async function interactiveChat(input) {
         type: 'prompt', sessionId: input.sessionId, at: new Date().toISOString(),
         text: redactSession(prompt, input),
       });
+      if (input.teamId) {
+        try {
+          const result = await workbenchFetch(args, `teams/${input.teamId}/messages`, {
+            method: 'POST',
+            body: { clientMessageId: `chat-${randomUUID()}`, content: prompt },
+          });
+          console.log(`已交给团队项目经理（会话 ${result.sessionId || '-'}）。查看进展：/tasks 或 ggb team watch ${input.teamId}\n`);
+        } catch (error) {
+          console.error(`${CLI_NAME}: ${error.message}\n`);
+        }
+        continue;
+      }
       try {
+        requireModelKey();
         const turn = await run(input, prompt, input.history);
         appendSession(input.sessionFile, {
           type: 'response', sessionId: input.sessionId, at: new Date().toISOString(),
@@ -1581,7 +1652,14 @@ async function interactiveChat(input) {
 }
 
 async function main() {
-  const [command = 'help', ...args] = process.argv.slice(2);
+  const [command = '', ...args] = process.argv.slice(2);
+  // 裸 ggb：交互终端直接进入对话（与 claude/gemini 一致）；非交互保持帮助。
+  if (!command) {
+    if (process.stdin.isTTY && process.stdout.isTTY) {
+      return interactiveChat(parseInput(args), args);
+    }
+    return console.log(usage);
+  }
   if (command === 'help' || command === '--help' || command === '-h') return console.log(usage);
   if (command === 'providers') {
     for (const [id, preset] of Object.entries(PRESETS)) console.log(`${id.padEnd(9)} ${preset.label.padEnd(14)} ${preset.protocol.padEnd(10)} ${preset.model}`);
@@ -1603,7 +1681,7 @@ async function main() {
   if (command === 'context') return contextCommand(args);
   if (command !== 'run' && command !== 'chat') throw new Error(`未知命令“${command}”。\n\n${usage}`);
   const input = parseInput(args);
-  if (command === 'chat') return interactiveChat(input);
+  if (command === 'chat') return interactiveChat(input, args);
   const stdin = await readStdin();
   const prompt = [input.prompt, stdin].filter(Boolean).join(input.prompt && stdin ? '\n\n' : '');
   if (!prompt) throw new Error('请提供提示词参数或通过 stdin 输入内容。');
