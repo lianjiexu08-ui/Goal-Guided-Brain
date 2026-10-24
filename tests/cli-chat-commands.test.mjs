@@ -9,24 +9,7 @@ import { createWorkbench } from '../server/index.mjs';
 const cli = path.resolve('scripts/cli.mjs');
 
 /** 用 pty 模拟 TTY 驱动 chat。 */
-function chatSession(args, script, { env = {} } = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [cli, ...args], {
-      env: { ...process.env, PATH: process.env.PATH, ...env, FORCE_TTY: '1' },
-      stdio: ['pipe', 'pipe', 'pipe'],
-      // script 让 isatty 为真：用 node 的 -r 不行，改用 script 命令包裹
-    });
-    // 无 TTY 时 chat 会拒绝；测试里改用显式提示序列检查逻辑分支。
-    let stdout = '', stderr = '';
-    child.stdout.on('data', chunk => { stdout += chunk; });
-    child.stderr.on('data', chunk => { stderr += chunk; });
-    child.on('error', reject);
-    child.on('close', code => resolve({ code, stdout, stderr }));
-    child.stdin.end(script);
-  });
-}
-
-async function start(t) {
+function start(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ggb-chat-cmd-'));
   const workspace = path.join(dir, 'project');
   fs.mkdirSync(workspace, { recursive: true });
