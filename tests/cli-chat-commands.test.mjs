@@ -43,7 +43,7 @@ test('裸 ggb 进入工作台首页：团队列表与编号选择', async t => {
 
   const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ggb-home-sess-'));
   t.after(() => fs.rmSync(sessionDir, { recursive: true, force: true }));
-  const input = ['1', '/exit', '', 'q', ''].join('\n');
+  const input = ['/help', '/bogus', '1', '/exit', '', 'q', ''].join('\n');
   const result = await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cli, '--api', base, '--session', 'hometest'], {
       env: { ...process.env, PATH: process.env.PATH, DSH_SESSION_DIR: sessionDir, GGB_FORCE_INTERACTIVE: '1' },
@@ -64,6 +64,8 @@ test('裸 ggb 进入工作台首页：团队列表与编号选择', async t => {
 
   assert.match(result.out, /Goal-Guided Brain/);
   assert.match(result.out, /首页团队/);
+  assert.match(result.out, /首页命令/, '/help 应列出首页命令');
+  assert.match(result.out, /未知命令 \/bogus/, '未知命令应提示可用列表');
   assert.match(result.out, /已进入团队「首页团队」/);
 });
 

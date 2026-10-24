@@ -1539,7 +1539,16 @@ async function run(input, prompt, history = []) {
 // 工作台首页：团队列表 + 模型状态 + 编号选择。派活是主路径，裸模型对话是次级选项。
 async function home(input, args) {
   prepareSession(input);
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const HOME_COMMANDS = ['/', '/help', '/login ', '/logout ', '/models', '/tasks ', '/new', '/exit'];
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    completer: line => {
+      if (!line.startsWith('/')) return [[], line];
+      const hits = HOME_COMMANDS.filter(cmd => cmd.startsWith(line));
+      return [hits.length ? hits : HOME_COMMANDS, line];
+    },
+  });
   const readLine = label => new Promise(resolve => {
     if (rl.closed) return resolve('q');
     rl.question(label, resolve);
@@ -1580,11 +1589,61 @@ async function home(input, args) {
         });
       }
       console.log('');
-      console.log('输入团队序号 → 进入派活会话；c → 纯模型对话；r → 刷新；q → 退出');
+      console.log('序号 → 进入派活 · / 命令列表 · c → 纯模型对话 · q → 退出');
       const answer = (await readLine('ggb › ')).trim();
       if (!answer) continue;
-      if (answer === 'q' || answer === 'quit' || answer === '/exit') break;
+      if (answer === 'q' || answer === 'quit' || answer === '/exit' || answer === '/q') break;
       if (answer === 'r' || answer === 'refresh') continue;
+      if (answer.startsWith('/')) {
+        const [cmd, ...rest] = answer.slice(1).split(/\s+/).filter(Boolean);
+        const arg = rest.join(' ');
+        if (cmd === 'help' || answer === '/') {
+          console.log([
+            '首页命令：',
+            '  /help                本列表',
+            '  /login <供应商>      登录模型供应商（密钥入加密凭据库）',
+            '  /models              供应商与模型目录',
+            '  /tasks [序号]        查看团队任务',
+            '  /new                 创建新团队',
+            '  /exit | /q           退出',
+            '输入团队序号进入派活会话；c 进入纯模型对话。',
+          ].join('\n') + '\n');
+          continue;
+        }
+        if (cmd === 'login') {
+          try { await loginCommand([arg, '--api', workbenchBase(args)].filter(Boolean)); } catch (error) { console.error(`${CLI_NAME}: ${error.message}\n`); }
+          continue;
+        }
+        if (cmd === 'logout') {
+          try { await logoutCommand([arg]); } catch (error) { console.error(`${CLI_NAME}: ${error.message}\n`); }
+          continue;
+        }
+        if (cmd === 'models') {
+          try { await modelsCommand(args); } catch (error) { console.error(`${CLI_NAME}: ${error.message}\n`); }
+          continue;
+        }
+        if (cmd === 'tasks') {
+          const target = teams[Number(arg) - 1];
+          const teamId = target?.id || arg;
+          if (!teamId) { console.log('用法：/tasks [团队序号]\n'); continue; }
+          try {
+            const detail = await workbenchFetch(args, `teams/${teamId}`);
+            const tasks = (detail.tasks || []).slice(0, 8);
+            if (!tasks.length) console.log('该团队还没有任务。\n');
+            for (const task of tasks) {
+              const title = String(task.title || task.id).replace(/\s+/g, ' ').slice(0, 50);
+              console.log(`[${task.status}] ${title}\n    ggb task ${task.id}`);
+            }
+            console.log('');
+          } catch (error) { console.error(`${CLI_NAME}: ${error.message}\n`); }
+          continue;
+        }
+        console.log([
+          `未知命令 /${cmd}。可用：`,
+          '  /help  /login <供应商>  /logout <供应商>  /models  /tasks [序号]  /new  /exit',
+        ].join('\n') + '\n');
+        continue;
+      }
       if (answer === 'c' || answer === 'chat') {
         if (!pickKey(input.preset, '') && !(await workbenchFetch(args, 'providers').catch(() => [])).some(item => item.enabled !== false)) {
           console.log(`未配置模型。先运行 ggb login ${input.providerName}，或设置 ${(input.preset.keys || []).join('/') || 'API Key'}。\n`);
@@ -1619,7 +1678,7 @@ async function home(input, args) {
         await interactiveChat(input, args);
         continue;
       }
-      console.log(`无法理解「${answer}」。输入序号、c、n、r 或 q。`);
+      console.log(`无法理解「${answer}」。输入序号派活，/ 查看命令，c 纯模型对话，q 退出。`);
     }
   } finally {
     rl.close();
@@ -1639,7 +1698,17 @@ async function interactiveChat(input, args = []) {
   };
   console.log(`${CLI_NAME} · ${input.providerName}/${input.model} · 会话 ${input.sessionId}`);
   console.log('输入 /help 查看命令，/exit 退出。');
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, historySize: 1000 });
+  const CHAT_COMMANDS = ['/help', '/new', '/model ', '/session', '/team ', '/tasks ', '/exit'];
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    historySize: 1000,
+    completer: line => {
+      if (!line.startsWith('/')) return [[], line];
+      const hits = CHAT_COMMANDS.filter(cmd => cmd.startsWith(line));
+      return [hits.length ? hits : CHAT_COMMANDS, line];
+    },
+  });
   const ask = () => new Promise(resolve => {
     // stdin 先于异步命令处理结束时 readline 已关闭，安静退出而不是报错。
     if (rl.closed) return resolve('/exit');
