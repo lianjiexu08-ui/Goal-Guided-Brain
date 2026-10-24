@@ -9,7 +9,7 @@ import { createWorkbench } from '../server/index.mjs';
 const cli = path.resolve('scripts/cli.mjs');
 
 /** 用 pty 模拟 TTY 驱动 chat。 */
-function start(t) {
+async function start(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ggb-chat-cmd-'));
   const workspace = path.join(dir, 'project');
   fs.mkdirSync(workspace, { recursive: true });
