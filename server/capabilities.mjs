@@ -9,6 +9,8 @@ import { parse as parseArguments } from 'shell-quote';
 function bounded(value, max = 2000) { return String(value || '').slice(0, max); }
 // 自维护 Skill 库（可通过 WORKBENCH_SKILL_HUB 覆盖为内部镜像）。
 const SELF_HOSTED_HUB = String(process.env.WORKBENCH_SKILL_HUB || 'https://raw.githubusercontent.com/lianjiexu08-ui/skills-hub/main').replace(/\/$/, '');
+const HUB_REPO_API = String(process.env.WORKBENCH_SKILL_HUB_API || 'https://api.github.com/repos/lianjiexu08-ui/skills-hub').replace(/\/$/, '');
+const HUB_REPO_JSDELIVR = String(process.env.WORKBENCH_SKILL_HUB_CDN || 'https://cdn.jsdelivr.net/gh/lianjiexu08-ui/skills-hub@main').replace(/\/$/, '');
 
 /**
  * Summarise the amount of trust an installed capability needs before an
@@ -263,7 +265,7 @@ export function inspectBundle(root) {
 }
 
 export class CapabilityService {
-  constructor({ store, vault, dataDir }) { this.store = store; this.vault = vault; this.dir = path.join(dataDir, 'capabilities'); this.cache = new Map(); }
+  constructor({ store, vault, dataDir }) { this.store = store; this.vault = vault; this.dir = path.join(dataDir, 'capabilities'); this.cache = new Map(); this.hubCatalogCache = null; }
   list() { return this.store.records.list('capabilities'); }
   components(id) {
     const row = this.store.records.get('capabilities', id);
@@ -388,6 +390,30 @@ export class CapabilityService {
     }
     return this.store.records.save('capabilities', row, id);
   }
+  // 拉取自维护 Hub 的 catalog。优先用 GitHub API contents（内容权威，
+  // 不受 raw CDN 的陈旧缓存影响），失败时回退 jsDelivr 与 raw。
+  // 整份 catalog 缓存 5 分钟，多个关键词共享一次拉取。
+  async hubCatalog() {
+    const cached = this.hubCatalogCache;
+    if (cached && cached.until > Date.now()) return cached.data;
+    const sources = [
+      { url: `${HUB_REPO_API}/contents/catalog.json?ref=main`, options: { headers: { Accept: 'application/vnd.github.raw' } } },
+      { url: `${HUB_REPO_JSDELIVR}/catalog.json` },
+      { url: `${SELF_HOSTED_HUB}/catalog.json` },
+    ];
+    let lastError;
+    for (const source of sources) {
+      try {
+        const data = await jsonFetch(source.url, source.options);
+        if (!data || !Array.isArray(data.skills)) throw new Error('catalog 格式无效。');
+        this.hubCatalogCache = { until: Date.now() + 300000, data };
+        return data;
+      } catch (error) { lastError = error; }
+    }
+    // 回退全部失败时，宁可返回过期缓存，也不让搜索直接报错。
+    if (cached) return cached.data;
+    throw lastError || new Error('无法读取自维护 Skill 库索引。');
+  }
   async search(source, query) {
     const q = bounded(query, 200).trim();
     if (!q) return [];
@@ -395,8 +421,8 @@ export class CapabilityService {
     if (cached && cached.until > Date.now()) return cached.items;
     let items;
     if (source === 'hub') {
-      // 自维护 Skill 库：读取 catalog.json，免密钥、可版本固定。
-      const data = await jsonFetch(`${SELF_HOSTED_HUB}/catalog.json`);
+      // 自维护 Skill 库：免密钥、可版本固定；目录由 hubCatalog 统一缓存。
+      const data = await this.hubCatalog();
       const needle = q.toLowerCase();
       items = (Array.isArray(data.skills) ? data.skills : [])
         .filter(skill => `${skill.id} ${skill.name} ${skill.title} ${skill.description}`.toLowerCase().includes(needle))

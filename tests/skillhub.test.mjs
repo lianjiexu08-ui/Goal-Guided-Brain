@@ -45,7 +45,6 @@ test('自维护 Hub 的 catalog 包含开发相关 Skill 且字段完整', async
 });
 
 test('从自维护 Hub 按 GitHub tree URL 安装 Skill 并固定摘要', async t => {
-  if (!(await hubReachable())) return t.skip('无法连接自维护 Hub');
   const { store, capabilities } = setup(t);
   const row = await capabilities.install({
     source: 'git',
@@ -66,4 +65,18 @@ test('从自维护 Hub 按 GitHub tree URL 安装 Skill 并固定摘要', async 
   const patch = capabilities.patch({ capabilityIds: [row.id] });
   assert.ok(patch.patches.some(item => item.id === 'skill-filesystem'));
   assert.equal(store.records.get('capabilities', row.id).digest, row.digest);
+});
+
+test('Hub 目录拉取不受 raw CDN 陈旧缓存影响，且整份目录只拉一次', async t => {
+  if (!(await hubReachable())) return t.skip('无法连接自维护 Hub');
+  const { capabilities } = setup(t);
+  const first = await capabilities.hubCatalog();
+  assert.ok(first.skills.length >= 25, `目录条目偏少：${first.skills.length}`);
+  for (const id of ['ui-automation', 'device-automation', 'disposable-workspace', 'issue-tracker-workflow']) {
+    assert.ok(first.skills.some(skill => skill.id === id), `目录缺少 ${id}`);
+  }
+  const cached = capabilities.hubCatalogCache;
+  assert.ok(cached && cached.until > Date.now(), '应缓存整份目录');
+  const second = await capabilities.hubCatalog();
+  assert.equal(second, cached.data, '第二次应复用缓存，不重复拉取');
 });
