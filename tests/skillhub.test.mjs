@@ -80,3 +80,14 @@ test('Hub 目录拉取不受 raw CDN 陈旧缓存影响，且整份目录只拉�
   const second = await capabilities.hubCatalog();
   assert.equal(second, cached.data, '第二次应复用缓存，不重复拉取');
 });
+
+ test('Hub 目录经 GitHub API 获取原始内容（不回退到旧 CDN 缓存）', async t => {
+  if (!(await hubReachable())) return t.skip('无法连接自维护 Hub');
+  const { capabilities } = setup(t);
+  const catalog = await capabilities.hubCatalog();
+  // 这三个 Skill 只在较新版本的自维护库中存在；旧 CDN 缓存（25 条）里没有。
+  for (const id of ['worktree-isolation', 'terminal-session', 'external-publishing']) {
+    assert.ok(catalog.skills.some(skill => skill.id === id), `目录缺少 ${id}，可能回退到了旧缓存`);
+  }
+  assert.ok(catalog.skills.length >= 28, `目录条目偏少：${catalog.skills.length}`);
+});

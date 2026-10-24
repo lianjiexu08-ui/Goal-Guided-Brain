@@ -120,7 +120,7 @@ export async function fetchLimited(url, options = {}, maxBytes = 4000000) {
   }
   return Buffer.concat(chunks);
 }
-const jsonFetch = async url => JSON.parse((await fetchLimited(url)).toString('utf8'));
+const jsonFetch = async (url, options = {}) => JSON.parse((await fetchLimited(url, options)).toString('utf8'));
 function filesIn(root, directory = root, output = []) {
   for (const item of fs.readdirSync(directory, { withFileTypes: true })) {
     if (['.git', 'node_modules'].includes(item.name)) continue;
