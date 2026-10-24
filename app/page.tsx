@@ -3241,6 +3241,15 @@ function Workbench() {
                                   {!!skillNames.length && <small>绑定 Skill：{skillNames.slice(0, 3).join(' · ')}</small>}
                                   {!!member.tools?.length && <small>工具说明：{member.tools.slice(0, 3).join(' · ')}</small>}
                                   {!!capabilityNames.length && <small>绑定能力：{capabilityNames.slice(0, 3).join(' · ')}</small>}
+                                  {!!(member as unknown as { recommendations?: { hub?: { title?: string; installUrl?: string | null }[] } }).recommendations?.hub?.length && (
+                                    <small>
+                                      建议安装（未安装）：
+                                      {(member as unknown as { recommendations: { hub: { title?: string; installUrl?: string | null }[] } }).recommendations.hub
+                                        .slice(0, 3)
+                                        .map((item) => item.title || '技能')
+                                        .join(' · ')}
+                                    </small>
+                                  )}
                                   {!!reviewCapabilities.length && (
                                     <div className="recruitment-capability-review">
                                       <strong>中/高风险能力，需要你逐项确认</strong>

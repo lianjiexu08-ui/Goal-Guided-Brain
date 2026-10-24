@@ -18,6 +18,8 @@ const ALIASES = {
   测试: ['test', 'quality', 'testing'],
   质量: ['quality'],
   审查: ['review', 'audit'],
+  审阅: ['review', 'audit', 'contract'],
+  检查: ['review', 'check', 'audit'],
   评审: ['review'],
   发布: ['release', 'deploy', 'deployment'],
   部署: ['deploy', 'deployment', 'operations'],

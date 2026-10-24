@@ -3,6 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
 import { parse } from 'yaml';
+import { fileURLToPath } from 'node:url';
 import { command } from './workspaces.mjs';
 import { parse as parseArguments } from 'shell-quote';
 import { SKILLS } from './roles.mjs';
@@ -11,6 +12,26 @@ import { collectCandidates, recommend as scoreCandidates } from './skill-routing
 function bounded(value, max = 2000) { return String(value || '').slice(0, max); }
 // 自维护 Skill 库（可通过 WORKBENCH_SKILL_HUB 覆盖为内部镜像）。
 const SELF_HOSTED_HUB = String(process.env.WORKBENCH_SKILL_HUB || 'https://raw.githubusercontent.com/lianjiexu08-ui/skills-hub/main').replace(/\/$/, '');
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const builtinTextCache = new Map();
+// 内置 Skill 的候选文本来自磁盘上的 SKILL.md，避免只用名字导致匹配不到。
+function builtinSkillText(skill) {
+  const key = `${skill.role}/${skill.id}`;
+  if (builtinTextCache.has(key)) return builtinTextCache.get(key);
+  let description = '';
+  try {
+    const file = path.join(REPO_ROOT, 'roles', skill.role, 'skills', skill.id, 'SKILL.md');
+    const text = fs.readFileSync(file, 'utf8');
+    const front = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    const meta = front ? parse(front[1]) : {};
+    description = typeof meta.description === 'string' ? meta.description : '';
+  } catch {
+    description = '';
+  }
+  const value = { description, name: skill.name };
+  builtinTextCache.set(key, value);
+  return value;
+}
 const HUB_REPO_API = String(process.env.WORKBENCH_SKILL_HUB_API || 'https://api.github.com/repos/lianjiexu08-ui/skills-hub').replace(/\/$/, '');
 const HUB_REPO_JSDELIVR = String(process.env.WORKBENCH_SKILL_HUB_CDN || 'https://cdn.jsdelivr.net/gh/lianjiexu08-ui/skills-hub@main').replace(/\/$/, '');
 
@@ -376,16 +397,21 @@ export class CapabilityService {
       kind: row.kind,
       installed: true,
       installUrl: row.sourceUrl || null,
+      // 推荐层需要知道风险，避免把需要逐项审批的能力自动写进权限。
+      risk: assessCapabilityRisk(row),
     }));
-    const builtin = SKILLS.map((skill) => ({
-      id: skill.id,
-      title: skill.name,
-      name: skill.name,
-      description: skill.name,
-      category: 'builtin',
-      categoryLabel: '内置 Skill',
-      builtin: true,
-    }));
+    const builtin = SKILLS.map((skill) => {
+      const { description } = builtinSkillText(skill);
+      return {
+        id: skill.id,
+        title: skill.name,
+        name: skill.name,
+        description: description || skill.name,
+        category: 'builtin',
+        categoryLabel: '内置 Skill',
+        builtin: true,
+      };
+    });
     let hub = [];
     if (includeHub) {
       try {

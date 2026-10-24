@@ -58,7 +58,8 @@ const tools = [
   { name: 'delegate_to_team', description: '把明确的协作目标委派给另一个长期团队的项目经理；目标团队使用自己的模型、能力、预算和权限。', inputSchema: objectSchema({ teamId: string, prompt: string, acceptance: string, idempotencyKey: string }, ['teamId', 'prompt', 'idempotencyKey']) },
   { name: 'read_team_task', description: '读取已获准协作团队中的一个委派任务状态和结果。', inputSchema: objectSchema({ taskId: string }, ['taskId']) },
   { name: 'read_team_roster', description: '读取当前已确认团队的成员实例、职责和可用角色模板；招募阶段只返回模板和当前方案。', inputSchema: objectSchema() },
-  { name: 'propose_team', description: '在多轮澄清完成后保存 Team Charter。用 skillIds、capabilityIds、providerIds 和 toolAccess 写入实际权限，skills/tools 仅作展示说明。若团队已关闭招募审核且方案无疑问，会自动确认并创建成员开始协作；否则保存为待用户在招募界面确认的草案，确认前不创建成员、不分派任务。', inputSchema: objectSchema({
+  { name: 'propose_team', description: '在多轮澄清完成后保存 Team Charter。用 skillIds、capabilityIds、providerIds 和 toolAccess 写入实际权限，skills/tools 仅作展示说明。默认按成员职责自动填充推荐的内置 Skill 与已安装能力（autoRecommend=false 可关闭），自维护库中未安装项只作为建议返回。若团队已关闭招募审核且方案无疑问，会自动确认并创建成员开始协作；否则保存为待用户在招募界面确认的草案，确认前不创建成员、不分派任务。', inputSchema: objectSchema({
+    autoRecommend: { type: 'boolean' },
     teamName: string, goal: string, purpose: string,
     members: { type: 'array', minItems: 1, maxItems: 8, items: objectSchema({
       memberId: string, roleId: string, name: string, responsibility: string,
@@ -255,9 +256,42 @@ export function createOrchestrationServer({ control, token, capabilities }) {
         case 'read_team_roster':
           response = control.readTeamRoster(principal);
           break;
-        case 'propose_team':
-          response = control.proposeTeam(input, principal);
+        case 'propose_team': {
+          // 未显式指定绑定能力时，按成员职责自动推荐并填入草案；
+          // hub 项只作为建议返回，不写入权限。
+          let payload = input;
+          if (capabilities && input.autoRecommend !== false && Array.isArray(input.members)) {
+            const members = [];
+            for (const member of input.members) {
+              const query = [member.name, member.responsibility, ...(Array.isArray(member.deliverables) ? member.deliverables : []), ...(Array.isArray(member.skills) ? member.skills : [])]
+                .filter((part) => typeof part === 'string' && part.trim()).join(' ');
+              // 分两次取：本地候选（内置+已安装）与含 Hub 的全局候选。
+              // 否则 Hub 的高分项会把内置 Skill 挤出 top N。
+              let local = [], global = [];
+              if (query) {
+                try { local = await capabilities.recommend(query, { limit: 6, includeHub: false }); } catch { local = []; }
+                try { global = await capabilities.recommend(query, { limit: 8 }); } catch { global = []; }
+              }
+              const builtin = local.filter((item) => item.source === 'builtin').slice(0, 2).map((item) => item.id);
+              // 只自动绑定低风险能力：中/高风险仍需用户逐项确认，只作为建议展示。
+              const installed = local
+                .filter((item) => item.source === 'installed' && item.enabled !== false && item.risk?.requiresReview !== true)
+                .slice(0, 2)
+                .map((item) => item.capabilityId || item.id);
+              const hub = global.filter((item) => item.source === 'hub').slice(0, 4)
+                .map((item) => ({ id: item.id, title: item.title, categoryLabel: item.categoryLabel || null, installUrl: item.installUrl || null }));
+              members.push({
+                ...member,
+                skillIds: Array.isArray(member.skillIds) && member.skillIds.length ? member.skillIds : builtin,
+                capabilityIds: Array.isArray(member.capabilityIds) && member.capabilityIds.length ? member.capabilityIds : installed,
+                recommendations: { builtin, installed, hub },
+              });
+            }
+            payload = { ...input, members };
+          }
+          response = control.proposeTeam(payload, principal);
           break;
+        }
         case 'list_agents':
           response = { items: control.store.tasks().filter(task => control.taskGroup(task.id) === principal.groupId).slice(0, 100).map(task => ({
             taskId: task.id, agentId: task.role, name: control.store.role(task.role)?.name,

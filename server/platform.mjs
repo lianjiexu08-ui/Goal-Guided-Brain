@@ -23,6 +23,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { AttachmentService } from './attachments.mjs';
 import { detectVerificationPlan, runVerificationPlan, summarizeVerification } from './verification.mjs';
+import { analyzeImpact, summarizeImpact } from './impact-analysis.mjs';
 
 const nowIso = () => new Date().toISOString();
 const text = (v, max = 32000) =>
@@ -690,7 +691,9 @@ export function createPlatform({
           });
         workspaces.finish(task.id);
         // 验证门禁：任务完成后在本地目录自动探测并运行检查，结果写成验收证据。
+        // 影响分析先跑：即使没有可执行检查，高风险改动也需要留痕并通知。
         if (status === 'completed' && !stoppingTasks.has(task.id)) {
+          queueMicrotask(() => void analyzeTaskImpact(task.id).catch(() => {}));
           queueMicrotask(() => void autoVerify(task.id).catch(() => {}));
         }
         if (stagedAttachmentRoot) fs.rmSync(stagedAttachmentRoot, { recursive: true, force: true });
@@ -838,6 +841,83 @@ export function createPlatform({
    * 仅在本地节点、目录未被隔离、且配置开启时生效。
    * 结论落成 verification 产物：verified / failed / unavailable。
    */
+  /**
+   * 影响分析：任务完成后根据 diff 判定风险，高风险改动通知协作团队并阻止直接验收。
+   * 非本地节点、目录被隔离或无基准时跳过并如实标记 unknown。
+   */
+  async function analyzeTaskImpact(taskId) {
+    if (stopping || stoppingTasks.has(taskId)) return null;
+    const task = store.task(taskId);
+    if (!task || task.status !== 'completed') return null;
+    const meta = records.get('task-meta', taskId) || {};
+    if ((meta.nodeId || 'local') !== 'local') return null;
+    const workspace = records.get('workspaces', taskId);
+    if (!workspace || workspace.state === 'quarantined') return null;
+
+    const impact = await analyzeImpact(workspace);
+    const job = meta.jobId ? records.get('jobs', meta.jobId) : null;
+    const artifact = records.save('artifacts', {
+      taskId,
+      groupId: meta.groupId || job?.groupId || null,
+      requirementVersion: Number(job?.requirementVersion || meta.requirementVersion || 1),
+      kind: 'impact',
+      source: 'auto',
+      name: `影响分析：${impact.riskLabel || impact.risk}`,
+      status: impact.risk === 'high' ? 'needs-ack' : 'recorded',
+      risk: impact.risk,
+      reasons: impact.reasons,
+      categories: impact.categories?.map((category) => ({ id: category.id, risk: category.risk, count: category.count })) || [],
+      stats: impact.stats || null,
+      files: impact.files || [],
+      output: summarizeImpact(impact),
+      finishedAt: new Date().toISOString(),
+      path: workspace.path,
+    }, `impact:${taskId}:${Date.now()}`);
+    records.save('task-meta', { ...meta, impact: {
+      risk: impact.risk,
+      requiresAck: impact.requiresAck === true,
+      requiresNotice: impact.requiresNotice === true,
+      reasons: impact.reasons,
+      stats: impact.stats || null,
+      artifactId: artifact.id,
+    } }, taskId);
+    recordEvent(task, { type: 'impact/analyzed', data: { risk: impact.risk, reasons: impact.reasons, stats: impact.stats || null } });
+    if (!impact.requiresNotice) return impact;
+
+    control.attention({
+      kind: 'impact',
+      taskId,
+      groupId: meta.groupId || job?.groupId || null,
+      title: `高风险变更需要确认：${task.title || taskId}`,
+      detail: summarizeImpact(impact).slice(0, 4000),
+      artifactId: artifact.id,
+    }, `impact:${taskId}`);
+
+    // 跨团队通知：只发给与本团队双向协作、且已确认的团队，按任务幂等。
+    const teamId = meta.teamId || meta.spaceId || null;
+    const team = teamId ? store.teamSpaces().find((candidate) => candidate.id === teamId) || null : null;
+    if (!team) return impact;
+    let collaborators = [];
+    try { collaborators = control.sharedContextTeams(team); } catch { collaborators = []; }
+    for (const target of collaborators) {
+      const messageId = `impact:${taskId}:${target.id}`;
+      if (records.get('space-messages', messageId)) continue;
+      store.saveTeamMessage({
+        spaceId: target.id,
+        teamId: target.id,
+        kind: 'notice',
+        senderType: 'team',
+        senderId: team.id,
+        fromTeamId: team.id,
+        toTeamId: target.id,
+        taskId,
+        content: `团队「${team.name}」完成了一项高风险变更，请知悉并评估对本团队的依赖：\n\n${summarizeImpact(impact)}`.slice(0, 32000),
+        status: 'sent',
+      }, messageId);
+    }
+    return impact;
+  }
+
   async function autoVerify(taskId) {
     if (stopping || stoppingTasks.has(taskId)) return null;
     const task = store.task(taskId);
@@ -1231,6 +1311,9 @@ export function createPlatform({
     if (task.status !== 'completed')
       throw Object.assign(new Error('只有已完成的任务可以进行交付验收。'), { status: 409 });
     const delivery = store.taskDelivery(task);
+    // 硬约束：高风险变更必须先由所有者确认影响面。
+    if (decision === 'accepted' && delivery.impact?.requiresAck && !delivery.impactAcknowledged)
+      throw Object.assign(new Error('这是高风险变更，请先确认影响面（内容见任务详情）再验收。'), { status: 409 });
     if (decision === 'accepted' && !delivery.hasCurrentVerificationEvidence)
       throw Object.assign(new Error('当前需求版本还没有通过的验收证据，请先运行验证。'), { status: 409 });
     if (decision === 'rejected' && !note)
@@ -1928,6 +2011,33 @@ export function createPlatform({
       collection === 'tasks' &&
       method === 'POST' &&
       id &&
+      action === 'impact' &&
+      parts[3] === 'ack'
+    ) {
+      if (principal?.type && principal.type !== 'owner')
+        throw Object.assign(new Error('只有所有者可以确认变更影响面。'), { status: 403 });
+      const task = store.task(id);
+      if (!task) throw Object.assign(new Error('任务不存在。'), { status: 404 });
+      const meta = records.get('task-meta', id) || {};
+      if (!meta.impact?.artifactId)
+        throw Object.assign(new Error('该任务还没有影响分析结果。'), { status: 409 });
+      const ack = records.save('impact-acks', {
+        taskId: id,
+        artifactId: meta.impact.artifactId,
+        risk: meta.impact.risk,
+        note: text(body.note, 2000),
+        actor: 'owner',
+        acknowledgedAt: nowIso(),
+      }, id);
+      const attention = records.get('attention', `impact:${id}`);
+      if (attention && attention.status === 'open')
+        records.save('attention', { ...attention, status: 'resolved', resolution: '所有者已确认影响面。' }, attention.id);
+      return ok({ ...ack, delivery: store.taskDelivery(task) });
+    }
+    if (
+      collection === 'tasks' &&
+      method === 'POST' &&
+      id &&
       ['accept', 'reject'].includes(action)
     ) {
       if (principal?.type && principal.type !== 'owner')
@@ -1946,6 +2056,7 @@ export function createPlatform({
         const artifacts = records
           .list('artifacts')
           .filter((item) => item.taskId === id);
+        const impactAck = records.get('impact-acks', id) || null;
         const delivery = store.taskDelivery(task);
         return ok({
           ...publicTask,
@@ -1962,6 +2073,9 @@ export function createPlatform({
           usage: records.list('usage').filter((e) => e.taskId === id),
           artifacts,
           delivery,
+          impact: delivery.impact,
+          impactAcknowledged: delivery.impactAcknowledged,
+          impactAck,
           latestVerification: delivery.latestVerification,
           acceptance: delivery.acceptance,
         });

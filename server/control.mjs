@@ -423,6 +423,27 @@ export class ControlPlane {
       const toolAccess = member.toolAccess && typeof member.toolAccess === 'object'
         ? Object.fromEntries(['files', 'web', 'terminal'].filter(key => member.toolAccess[key] !== undefined).map(key => [key, member.toolAccess[key]]))
         : null;
+      // 自动推荐结果仅作展示与后续安装指引，不构成权限。
+      const rawRecommendations = member.recommendations && typeof member.recommendations === 'object' && !Array.isArray(member.recommendations)
+        ? member.recommendations
+        : null;
+      const recommendations = rawRecommendations
+        ? {
+            builtin: idList(rawRecommendations.builtin, 8),
+            installed: idList(rawRecommendations.installed, 8),
+            hub: Array.isArray(rawRecommendations.hub)
+              ? rawRecommendations.hub
+                  .filter((item) => item && typeof item === 'object' && typeof item.id === 'string')
+                  .slice(0, 6)
+                  .map((item) => ({
+                    id: item.id.slice(0, 80),
+                    title: typeof item.title === 'string' ? item.title.slice(0, 120) : item.id,
+                    categoryLabel: typeof item.categoryLabel === 'string' ? item.categoryLabel.slice(0, 40) : null,
+                    installUrl: typeof item.installUrl === 'string' && item.installUrl.startsWith('https://') ? item.installUrl.slice(0, 500) : null,
+                  }))
+              : [],
+          }
+        : null;
       return {
         memberId,
         roleId,
@@ -437,6 +458,7 @@ export class ControlPlane {
         toolAccess,
         modelHint: typeof member.modelHint === 'string' ? member.modelHint.trim().slice(0, 160) : '',
         dependencies: list(member.dependencies),
+        recommendations,
       };
     });
     if (!seen.has('manager')) {

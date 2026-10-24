@@ -137,7 +137,7 @@ test('没有可识别检查时不伪造证据，只记录跳过事件', async t 
   assert.ok(skipped, '应记录跳过事件');
   assert.equal(
     app.platform.control.records.list('artifacts').filter(
-      item => item.taskId === created.id && item.source === 'auto',
+      item => item.taskId === created.id && item.source === 'auto' && item.kind === 'verification',
     ).length,
     0,
     '不应产生验证证据',

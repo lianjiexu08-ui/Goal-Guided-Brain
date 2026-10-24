@@ -691,7 +691,9 @@ export class Store {
       return Number.isInteger(version) && version > 0 ? version : 1;
     };
     const currentRequirementVersion = normalizeVersion(job?.requirementVersion || meta.requirementVersion);
-    const artifacts = this.records.list('artifacts').filter((artifact) => artifact.taskId === task.id);
+    // 影响分析是审查记录，不计入交付证据数量。
+    const artifacts = this.records.list('artifacts')
+      .filter((artifact) => artifact.taskId === task.id && artifact.kind !== 'impact');
     const verifications = artifacts
       .filter((artifact) => artifact.kind === 'verification')
       .sort((a, b) => {
@@ -731,8 +733,12 @@ export class Store {
       else if (verificationStatus === 'failed') deliveryStatus = 'failed';
       else deliveryStatus = 'pending-review';
     }
+    const impactRecord = this.records.get('task-meta', task.id)?.impact || null;
+    const impactAck = this.records.get('impact-acks', task.id) || null;
     return {
       executionStatus: task.status,
+      impact: impactRecord,
+      impactAcknowledged: Boolean(impactAck && (!impactRecord?.artifactId || impactAck.artifactId === impactRecord.artifactId)),
       deliveryStatus,
       acceptanceStatus: verificationStatus,
       acceptanceDecision: effectiveAcceptance?.decision || null,
@@ -782,7 +788,9 @@ export class Store {
     }
     for (const task of tasks) {
       const meta = this.records.get('task-meta', task.id) || {};
-      const artifacts = this.records.list('artifacts').filter((artifact) => artifact.taskId === task.id);
+      // 影响分析是审查记录，不计入交付证据数量。
+    const artifacts = this.records.list('artifacts')
+      .filter((artifact) => artifact.taskId === task.id && artifact.kind !== 'impact');
       const delivery = this.taskDelivery(task);
       items.push({
         id: `task:${task.id}`,

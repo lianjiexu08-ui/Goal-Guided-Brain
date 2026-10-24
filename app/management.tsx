@@ -1869,6 +1869,18 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
       setBusy(false);
     }
   };
+  const acknowledgeImpact = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      await api<Entity>(`tasks/${taskId}/impact/ack`, 'POST', { note: '已评估影响面' });
+      setExecution(await api<Entity>(`tasks/${taskId}`));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
   const acceptanceCriteria = delivery?.acceptanceCriteria;
   const acceptanceCriteriaText =
     typeof acceptanceCriteria === 'string'
@@ -1897,6 +1909,36 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
         <Empty busy={!error} />
       ) : (
         <>
+          {(() => {
+            const impact = execution.delivery && (execution.delivery as Entity).impact;
+            if (!impact) return null;
+            const risk = txt(impact as Entity, 'risk');
+            const reasons = Array.isArray((impact as Entity).reasons) ? ((impact as Entity).reasons as string[]) : [];
+            const acknowledged = Boolean(execution.impactAcknowledged);
+            return (
+              <div className="delivery-summary">
+                <strong>
+                  变更影响：{risk === 'high' ? '高风险' : risk === 'medium' ? '中风险' : risk === 'low' ? '低风险' : '未知'}
+                  {acknowledged ? '（已确认）' : ''}
+                </strong>
+                {reasons.length > 0 && (
+                  <ul>
+                    {reasons.slice(0, 5).map((reason) => <li key={reason}>{reason}</li>)}
+                  </ul>
+                )}
+                {risk === 'high' && !acknowledged && (
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void acknowledgeImpact()}
+                  >
+                    <Check size={15} /> 确认已评估影响面
+                  </button>
+                )}
+              </div>
+            );
+          })()}
           <div
             className="delivery-summary"
             data-tone={
@@ -3323,7 +3365,8 @@ export function Management({
   const [importVersion, setImportVersion] = useState('');
   const [importSource, setImportSource] = useState('github');
   const [importItem, setImportItem] = useState<Entity | null>(null);
-  const [marketSource, setMarketSource] = useState('skillsmp');
+  const [marketSource, setMarketSource] = useState('hub');
+  const [marketMode, setMarketMode] = useState<'recommend' | 'search'>('recommend');
   const [marketResults, setMarketResults] = useState<Entity[]>([]);
   const [marketSearched, setMarketSearched] = useState(false);
   const [probeItem, setProbeItem] = useState<Entity | null>(null);
@@ -3921,7 +3964,9 @@ export function Management({
                       results?: Entity[];
                     }
                 >(
-                  `capabilities/search?source=${encodeURIComponent(marketSource)}&q=${encodeURIComponent(query)}`,
+                  marketMode === 'recommend'
+                    ? `capabilities/recommend?q=${encodeURIComponent(query)}&limit=12`
+                    : `capabilities/search?source=${encodeURIComponent(marketSource)}&q=${encodeURIComponent(query)}`,
                 );
                 setMarketResults(
                   Array.isArray(result)
@@ -3941,25 +3986,39 @@ export function Management({
             }}
           >
             <select
-              aria-label="能力市场"
-              value={marketSource}
+              aria-label="查找方式"
+              value={marketMode}
               onChange={(event) => {
-                setMarketSource(event.target.value);
+                setMarketMode(event.target.value as 'recommend' | 'search');
                 setMarketResults([]);
                 setMarketSearched(false);
               }}
             >
-              <option value="hub">自维护 Hub</option>
-              <option value="skillsmp">SkillsMP</option>
-              <option value="clawhub">ClawHub</option>
-              <option value="mcp">MCP Registry</option>
+              <option value="recommend">按任务描述推荐</option>
+              <option value="search">按名称搜索市场</option>
             </select>
+            {marketMode === 'search' && (
+              <select
+                aria-label="能力市场"
+                value={marketSource}
+                onChange={(event) => {
+                  setMarketSource(event.target.value);
+                  setMarketResults([]);
+                  setMarketSearched(false);
+                }}
+              >
+                <option value="hub">自维护 Hub</option>
+                <option value="skillsmp">SkillsMP</option>
+                <option value="clawhub">ClawHub</option>
+                <option value="mcp">MCP Registry</option>
+              </select>
+            )}
             <div className="manage-search">
               <Search size={16} />
               <input
                 required
                 aria-label="搜索市场能力"
-                placeholder="搜索能力"
+                placeholder={marketMode === 'recommend' ? '描述你要做的事，例如：审一下这份合同的风险' : '搜索能力'}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
               />
@@ -3992,7 +4051,20 @@ export function Management({
                     <strong>{title(item)}</strong>
                     <p>{txt(item, 'description')}</p>
                     <small>
-                      {txt(item, 'author')} {txt(item, 'version')}
+                      {marketMode === 'recommend' && txt(item, 'source') && (
+                        <span className="recruitment-confirmed" style={{ marginRight: 8 }}>
+                          {txt(item, 'source') === 'builtin'
+                            ? '内置'
+                            : txt(item, 'source') === 'installed'
+                              ? '已安装'
+                              : 'Hub'}
+                        </span>
+                      )}
+                      {marketMode === 'recommend' && txt(item, 'categoryLabel')}
+                      {marketMode === 'recommend' && txt(item, 'reason') ? ` · ${txt(item, 'reason')}` : ''}
+                      {marketMode === 'recommend' && item.score !== undefined
+                        ? ` · 相关度 ${Number(item.score).toFixed(2)}`
+                        : ` ${txt(item, 'author')} ${txt(item, 'version')}`}
                     </small>
                   </div>
                   <div className="manage-actions">
@@ -4008,22 +4080,33 @@ export function Management({
                         <ExternalLink size={17} />
                       </a>
                     )}
-                    <button
-                      className="secondary-button"
-                      disabled={busy}
-                      onClick={() => {
-                        setImportSource(marketSource);
-                        setImportItem(item);
-                        setSourceUrl(
-                          sourceLink || txt(item, 'slug') || item.id,
-                        );
-                        setImportVersion(txt(item, 'version'));
-                        setImportDialog(true);
-                      }}
-                    >
-                      <Download size={15} />
-                      选择
-                    </button>
+                    {marketMode === 'recommend' && txt(item, 'source') !== 'hub' ? (
+                      <button className="secondary-button" disabled>
+                        {txt(item, 'source') === 'builtin'
+                          ? '已在角色中'
+                          : txt(item, 'enabled') === 'false'
+                            ? '已安装（未启用）'
+                            : '已安装'}
+                      </button>
+                    ) : (
+                      <button
+                        className="secondary-button"
+                        disabled={busy}
+                        onClick={() => {
+                          // Hub 条目通过 Git 地址安装；搜索模式沿用所选市场。
+                          setImportSource(marketMode === 'recommend' ? 'git' : marketSource);
+                          setImportItem(item);
+                          setSourceUrl(
+                            txt(item, 'installUrl') || sourceLink || txt(item, 'slug') || item.id,
+                          );
+                          setImportVersion(txt(item, 'version'));
+                          setImportDialog(true);
+                        }}
+                      >
+                        <Download size={15} />
+                        {marketMode === 'recommend' ? '安装' : '选择'}
+                      </button>
+                    )}
                   </div>
                 </div>
               );
