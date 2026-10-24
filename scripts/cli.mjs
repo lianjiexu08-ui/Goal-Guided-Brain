@@ -7,6 +7,7 @@ import readline from 'node:readline';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { SKILLS } from '../server/roles.mjs';
 
 const PRESETS = {
   deepseek: {
@@ -1537,22 +1538,130 @@ async function run(input, prompt, history = []) {
 }
 
 // 工作台首页：团队列表 + 模型状态 + 编号选择。派活是主路径，裸模型对话是次级选项。
+// ---- 斜杠菜单：输入 / 时在提示行上方实时显示过滤后的命令与 Skill ----
+// 对标 Claude Code / Cursor：内置命令 + 已装/可装 Skill 混排，Tab 补全，回车执行。
+const slashMenu = { count: 0, cache: null, cacheUntil: 0 };
+const BUILTIN_SKILL_COMMANDS = () => SKILLS.map(skill => {
+  const file = path.join(fileURLToPath(new URL('../roles', import.meta.url)), skill.role, 'skills', skill.id, 'SKILL.md');
+  let description = skill.name;
+  try {
+    const text = fs.readFileSync(file, 'utf8');
+    const front = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    if (front) {
+      const m = front[1].match(/^description:\s*([\s\S]*?)(?:\n[a-z-]+:|\s*$)/m);
+      if (m) description = m[1].replace(/\s+/g, ' ').trim();
+    }
+  } catch {}
+  return { id: skill.id, title: skill.name, description, source: 'builtin' };
+});
+let slashCatalogInFlight = null;
+async function slashCatalog(args) {
+  if (slashMenu.cache && slashMenu.cacheUntil > Date.now()) return slashMenu.cache;
+  // 多处调用共享同一次拉取，避免重复网络请求。
+  if (slashCatalogInFlight) return slashCatalogInFlight;
+  slashCatalogInFlight = (async () => {
+    let catalog = [];
+    try {
+      const data = await workbenchFetch(args, 'capabilities/hub-catalog');
+      catalog = (data.skills || []).map(skill => ({ ...skill, source: 'hub' }));
+    } catch {}
+    const items = [...BUILTIN_SKILL_COMMANDS(), ...catalog];
+    slashMenu.cache = items;
+    slashMenu.cacheUntil = Date.now() + 300000;
+    return items;
+  })();
+  try {
+    return await slashCatalogInFlight;
+  } finally {
+    slashCatalogInFlight = null;
+  }
+}
+function slashMatches(line, contextCommands, skills) {
+  const text = line.replace(/^\//, '').trim().toLowerCase();
+  const all = [
+    ...contextCommands,
+    ...skills.map(skill => ({ name: `/${skill.id}`, title: skill.title || skill.id, description: skill.description, source: skill.source, categoryLabel: skill.categoryLabel || '' })),
+  ];
+  if (!text) return all.slice(0, 8);
+  const scored = all.filter(item => `${item.name} ${item.title || ''} ${item.description || ''}`.toLowerCase().includes(text));
+  return scored.slice(0, 8);
+}
+function drawSlashMenu(matches, state) {
+  const out = process.stdout;
+  const width = out.columns || 80;
+  const clear = () => {
+    if (state.count) out.write(`\x1b[${state.count}A`);
+    for (let index = 0; index < state.count; index += 1) out.write('\x1b[2K\x1b[1B');
+    out.write(`\x1b[${state.count}A`);
+    state.count = 0;
+  };
+  if (!matches.length) return clear();
+  const lines = matches.map(item => {
+    const source = item.source === 'builtin' ? '内置' : item.source === 'installed' ? '已装' : item.source === 'command' ? '' : 'Hub';
+    const label = `${item.name}  ${item.title || ''}${source ? `  [${source}]` : ''}`;
+    const desc = item.description ? ` — ${String(item.description).slice(0, 40)}` : '';
+    return `  \x1b[2m${(label + desc).slice(0, width - 2)}\x1b[0m`;
+  });
+  clear();
+  out.write(lines.join('\n') + '\n');
+  // 光标回到提示行
+  out.write(`\x1b[${lines.length}A`);
+  state.count = lines.length;
+}
+function attachSlashMenu(rl, getContext) {
+  const state = { count: 0 };
+  const handler = () => setImmediate(() => {
+    try {
+      const { line, contextCommands, skills } = getContext();
+      if (line.startsWith('/')) {
+        slashMatches(line, contextCommands, skills).then(matches => drawSlashMenu(matches, state));
+      } else drawSlashMenu([], state);
+    } catch {}
+  });
+  process.stdin.on('keypress', handler);
+  rl.on('close', () => process.stdin.removeListener('keypress', handler));
+}
+
 async function home(input, args) {
   prepareSession(input);
-  const HOME_COMMANDS = ['/', '/help', '/login ', '/logout ', '/models', '/tasks ', '/new', '/exit'];
+  const homeCommands = [
+    { name: '/help', title: '命令列表', description: '', source: 'command' },
+    { name: '/login', title: '登录模型供应商', description: '密钥入加密凭据库', source: 'command' },
+    { name: '/logout', title: '移除供应商', description: '', source: 'command' },
+    { name: '/models', title: '供应商与模型目录', description: '', source: 'command' },
+    { name: '/tasks', title: '查看团队任务', description: '/tasks [序号]', source: 'command' },
+    { name: '/new', title: '创建新团队', description: '', source: 'command' },
+    { name: '/exit', title: '退出', description: '', source: 'command' },
+  ];
+  const homeSkills = () => slashCatalog(args);
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
     completer: line => {
       if (!line.startsWith('/')) return [[], line];
-      const hits = HOME_COMMANDS.filter(cmd => cmd.startsWith(line));
-      return [hits.length ? hits : HOME_COMMANDS, line];
+      const skills = slashMenu.cache || [];
+      const hits = slashMatches(line, homeCommands, skills).map(item => item.name);
+      return [hits.length ? hits : homeCommands.map(item => item.name), line];
     },
   });
-  const readLine = label => new Promise(resolve => {
-    if (rl.closed) return resolve('q');
-    rl.question(label, resolve);
+  attachSlashMenu(rl, () => ({
+    line: rl.line || '',
+    contextCommands: homeCommands,
+    skills: slashMenu.cache || [],
+  }));
+  void homeSkills();
+  const homeLineQueue = [];
+  let homeNotifyLine = null;
+  rl.on('line', line => {
+    if (homeNotifyLine) { const resolve = homeNotifyLine; homeNotifyLine = null; resolve(line); }
+    else homeLineQueue.push(line);
   });
+  const readLine = async label => {
+    if (homeLineQueue.length) return homeLineQueue.shift();
+    if (rl.closed) return 'q';
+    process.stdout.write(label);
+    return await new Promise(resolve => { homeNotifyLine = resolve; });
+  };
   try {
     for (;;) {
       // 拉取状态（失败不阻塞首页）
@@ -1576,6 +1685,7 @@ async function home(input, args) {
       console.log(`Goal-Guided Brain · ${workbenchOk ? '工作台运行中' : '工作台未连接'} · 模型${modelReady ? '已配置' : '未配置'}`);
       if (!modelReady) console.log(`  未配置模型：运行 ggb login <供应商>（如 ggb login deepseek），或设置对应环境变量。`);
       console.log('');
+      void slashCatalog(args).catch(() => {}); // 后台预热技能目录供斜杠补全
       if (!workbenchOk) {
         console.log('无法连接工作台，仅可使用纯模型对话。');
       } else if (!teams.length) {
@@ -1594,6 +1704,30 @@ async function home(input, args) {
       if (!answer) continue;
       if (answer === 'q' || answer === 'quit' || answer === '/exit' || answer === '/q') break;
       if (answer === 'r' || answer === 'refresh') continue;
+      if (answer.startsWith('/') && !['help', 'login', 'logout', 'models', 'tasks', 'new', 'exit', 'q'].includes(answer.slice(1).split(/\s+/)[0])) {
+        const skillId = answer.slice(1).split(/\s+/)[0];
+        let skills = slashMenu.cache || [];
+        if (!skills.length && slashCatalogInFlight) {
+          skills = await Promise.race([slashCatalogInFlight.catch(() => []), new Promise(resolve => setTimeout(() => resolve([]), 15000))]);
+        }
+        const skill = skills.find(item => item.id === skillId);
+        if (skill) {
+          const skillArgs = answer.slice(1 + skillId.length).trim();
+          if (skill.source === 'hub') {
+            console.log(`「${skill.title}」尚未安装。安装：ggb skill install ${skill.id}\n`);
+            continue;
+          }
+          if (!teams.length) { console.log('先创建团队（n）再使用技能派活。\n'); continue; }
+          console.log(`使用技能「${skill.title}」。输入团队序号：`);
+          const pick = (await readLine('ggb › ')).trim();
+          const team = teams[Number(pick) - 1];
+          if (!team || team.recruitment?.phase !== 'confirmed') { console.log('未选择有效团队。\n'); continue; }
+          input.teamId = team.id;
+          input.pendingPrompt = `请使用 ${skill.id} 技能（${skill.title}）处理：${skillArgs || '见团队上下文'}`;
+          await interactiveChat(input, args);
+          continue;
+        }
+      }
       if (answer.startsWith('/')) {
         const [cmd, ...rest] = answer.slice(1).split(/\s+/).filter(Boolean);
         const arg = rest.join(' ');
@@ -1638,10 +1772,14 @@ async function home(input, args) {
           } catch (error) { console.error(`${CLI_NAME}: ${error.message}\n`); }
           continue;
         }
-        console.log([
-          `未知命令 /${cmd}。可用：`,
-          '  /help  /login <供应商>  /logout <供应商>  /models  /tasks [序号]  /new  /exit',
-        ].join('\n') + '\n');
+        if (!slashMenu.cache) {
+          console.log('技能目录加载中，请重试。可用命令：/help /login /models /tasks /new /exit\n');
+        } else {
+          console.log([
+            `未知命令 /${cmd}。可用：`,
+            '  /help  /login <供应商>  /logout <供应商>  /models  /tasks [序号]  /new  /exit',
+          ].join('\n') + '\n');
+        }
         continue;
       }
       if (answer === 'c' || answer === 'chat') {
@@ -1698,22 +1836,45 @@ async function interactiveChat(input, args = []) {
   };
   console.log(`${CLI_NAME} · ${input.providerName}/${input.model} · 会话 ${input.sessionId}`);
   console.log('输入 /help 查看命令，/exit 退出。');
-  const CHAT_COMMANDS = ['/help', '/new', '/model ', '/session', '/team ', '/tasks ', '/exit'];
+  const chatCommands = [
+    { name: '/help', title: '命令列表', description: '', source: 'command' },
+    { name: '/new', title: '新建会话', description: '', source: 'command' },
+    { name: '/model', title: '切换模型', description: '/model [供应商/]模型', source: 'command' },
+    { name: '/session', title: '查看会话', description: '', source: 'command' },
+    { name: '/team', title: '绑定团队', description: '/team [id]', source: 'command' },
+    { name: '/tasks', title: '查看团队任务', description: '', source: 'command' },
+    { name: '/exit', title: '退出', description: '', source: 'command' },
+  ];
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
     historySize: 1000,
     completer: line => {
       if (!line.startsWith('/')) return [[], line];
-      const hits = CHAT_COMMANDS.filter(cmd => cmd.startsWith(line));
-      return [hits.length ? hits : CHAT_COMMANDS, line];
+      const skills = slashMenu.cache || [];
+      const hits = slashMatches(line, chatCommands, skills).map(item => item.name);
+      return [hits.length ? hits : chatCommands.map(item => item.name), line];
     },
   });
-  const ask = () => new Promise(resolve => {
-    // stdin 先于异步命令处理结束时 readline 已关闭，安静退出而不是报错。
-    if (rl.closed) return resolve('/exit');
-    rl.question('你 › ', resolve);
+  attachSlashMenu(rl, () => ({
+    line: rl.line || '',
+    contextCommands: chatCommands,
+    skills: slashMenu.cache || [],
+  }));
+  void slashCatalog(args).catch(() => {}); // 预热技能目录
+  const chatLineQueue = [];
+  let chatNotifyLine = null;
+  rl.on('line', line => {
+    if (chatNotifyLine) { const resolve = chatNotifyLine; chatNotifyLine = null; resolve(line); }
+    else chatLineQueue.push(line);
   });
+  const ask = async () => {
+    // 异步命令处理期间用户敲入的行进入队列，不会丢失。
+    if (chatLineQueue.length) return chatLineQueue.shift();
+    if (rl.closed) return '/exit';
+    process.stdout.write('你 › ');
+    return await new Promise(resolve => { chatNotifyLine = resolve; });
+  };
   try {
     for (;;) {
       const value = (await ask()).trim();
@@ -1815,6 +1976,37 @@ async function interactiveChat(input, args = []) {
         prepareSession(input);
         console.log(`已新建会话：${input.sessionId}\n`);
         continue;
+      }
+      // /<技能ID> [参数] → 以该技能为上下文发起任务
+      if (value.startsWith('/')) {
+        const skillId = value.slice(1).split(/\s+/)[0];
+        let skills = slashMenu.cache || [];
+        if (!skills.length && slashCatalogInFlight) {
+          skills = await Promise.race([slashCatalogInFlight.catch(() => []), new Promise(resolve => setTimeout(() => resolve([]), 15000))]);
+        }
+        const skill = skills.find(item => item.id === skillId);
+        if (skill) {
+          const skillArgs = value.slice(1 + skillId.length).trim();
+          if (skill.source === 'hub') {
+            console.log(`「${skill.title}」尚未安装。安装：ggb skill install ${skill.id}\n`);
+            continue;
+          }
+          const promptText = `请使用 ${skill.id} 技能（${skill.title}）处理：${skillArgs || '当前任务'}`;
+          if (input.teamId) {
+            try {
+              await workbenchFetch(args, `teams/${input.teamId}/messages`, {
+                method: 'POST',
+                body: { clientMessageId: `chat-${randomUUID()}`, content: promptText },
+              });
+              console.log(`已派给团队（使用技能 ${skill.id}）。/tasks 查看进展。\n`);
+            } catch (error) { console.error(`${CLI_NAME}: ${error.message}\n`); }
+            continue;
+          }
+          requireModelKey();
+          const turn = await run(input, promptText, input.history);
+          appendSession(input.sessionFile, { type: 'response', sessionId: input.sessionId, at: new Date().toISOString(), text: redactSession(turn.text, input) });
+          continue;
+        }
       }
       const prompt = value;
       appendSession(input.sessionFile, {

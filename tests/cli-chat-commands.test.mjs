@@ -43,7 +43,7 @@ test('裸 ggb 进入工作台首页：团队列表与编号选择', async t => {
 
   const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ggb-home-sess-'));
   t.after(() => fs.rmSync(sessionDir, { recursive: true, force: true }));
-  const input = ['/help', '/bogus', '1', '/exit', '', 'q', ''].join('\n');
+  const input = ['/help', '/flaky-test', '/bogus', '1', '/exit', '', 'q', ''].join('\n');
   const result = await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cli, '--api', base, '--session', 'hometest'], {
       env: { ...process.env, PATH: process.env.PATH, DSH_SESSION_DIR: sessionDir, GGB_FORCE_INTERACTIVE: '1' },
@@ -58,13 +58,15 @@ test('裸 ggb 进入工作台首页：团队列表与编号选择', async t => {
       if (index < lines.length) { child.stdin.write(`${lines[index]}\n`); index += 1; }
       else clearInterval(feeder);
     }, 300);
-    const killer = setTimeout(() => { try { child.kill('SIGKILL'); } catch {} resolve({ code: null, out }); }, 20000);
+    const killer = setTimeout(() => { try { child.kill('SIGKILL'); } catch {} resolve({ code: null, out }); }, 30000);
     child.on('close', code => { clearTimeout(killer); clearInterval(feeder); resolve({ code, out }); });
   });
 
   assert.match(result.out, /Goal-Guided Brain/);
   assert.match(result.out, /首页团队/);
   assert.match(result.out, /首页命令/, '/help 应列出首页命令');
+  if (!/尚未安装/.test(result.out)) console.error('DEBUG out:', result.out.slice(0, 1500));
+  assert.match(result.out, /尚未安装.*不稳定测试|ggb skill install flaky-test/, '未装 Skill 应提示安装');
   assert.match(result.out, /未知命令 \/bogus/, '未知命令应提示可用列表');
   assert.match(result.out, /已进入团队「首页团队」/);
 });

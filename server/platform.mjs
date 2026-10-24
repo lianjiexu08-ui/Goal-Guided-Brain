@@ -1683,6 +1683,17 @@ export function createPlatform({
       }
     }
     if (collection === 'capabilities') {
+      if (method === 'GET' && id === 'hub-catalog') {
+        const catalog = await capabilities.hubCatalog();
+        return ok({
+          total: catalog.total || (catalog.skills || []).length,
+          skills: (catalog.skills || []).map(skill => ({
+            id: skill.id, title: skill.title || skill.name,
+            description: skill.description, category: skill.category || null,
+            categoryLabel: skill.categoryLabel || null, installUrl: skill.installUrl || null,
+          })),
+        });
+      }
       if (method === 'GET' && id === 'recommend') {
         const limit = Math.min(20, Math.max(1, Number(query.get('limit')) || 8));
         return ok({ items: await capabilities.recommend(query.get('q') || '', { limit }) });
