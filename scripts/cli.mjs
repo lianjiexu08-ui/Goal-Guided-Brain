@@ -42,7 +42,9 @@ const usage = `用法：
   ggb run --session refactor --continue "继续重构"
   ggb chat --provider claude --session personal
   ggb decide --state '{"goal":"..."}' --questions '{"urgent":{"type":"noul","instructions":"Is this urgent?"}}'
-  ggb team list | create | run <id> "目标" [--watch] | status <id> | reviews <id> | review <id> --approve <opId>
+  ggb team list | create | run <id> "目标" [--watch] | status <id> | reviews <id> | review --approve <opId>
+  ggb skill recommend "任务描述" | install <技能ID> | list
+  ggb task <id> | ack <id> | accept <id> | reject <id> --note "需改什么"
 
 支持预设：${Object.keys(PRESETS).join('、')}（gpt/openai 是 Codex/OpenAI 别名）；TypeSafe 通过 decide 命令作为可选结构化决策后端。
 密钥从对应环境变量读取，也可用 --api-key 临时传入（不会写入磁盘）。
@@ -190,6 +192,15 @@ const teamUsage = `用法：
   ggb team status <teamId>
   ggb team reviews <teamId>
   ggb team review --approve|--reject <operationId> [--reason 说明]
+
+  ggb skill recommend "任务描述" [--limit 8] [--json]
+  ggb skill install <技能ID|安装地址>
+  ggb skill list [--json]
+
+  ggb task <taskId> [--json]
+  ggb task ack <taskId> [--note 说明]
+  ggb task accept <taskId> [--note 说明]
+  ggb task reject <taskId> --note 需要改什么
 通用：--api 指定工作台地址（默认 http://127.0.0.1:3089），--password 或 GGB_PASSWORD 登录。`;
 
 function teamIdArg(args) { return args.find(value => !value.startsWith('--') && value !== 'team'); }
@@ -239,10 +250,126 @@ function renderTeamStatus(team) {
   if (tasks.length) {
     console.log('\n任务：');
     for (const task of tasks.slice(-10)) {
-      const acceptance = task.verificationStatus ? ` 验收:${task.verificationStatus}` : '';
-      console.log(`  [${task.status}] ${task.title || task.id}${acceptance}`);
+      const acceptance = task.verificationStatus ? ` 验证:${task.verificationStatus}` : '';
+      const delivery = task.deliveryStatus ? ` 交付:${task.deliveryStatus}` : '';
+      console.log(`  [${task.status}] ${task.title || task.id}${acceptance}${delivery}`);
+      console.log(`    id: ${task.id}`);
     }
   }
+}
+
+const RISK_TEXT = { high: '高风险', medium: '中风险', low: '低风险', unknown: '未知' };
+
+function renderTask(task) {
+  const delivery = task.delivery || {};
+  const impact = delivery.impact || task.impact || null;
+  console.log(`任务：${task.title || task.id}`);
+  console.log(`状态：${task.status}   交付：${delivery.deliveryStatus || '-'}   验收：${delivery.acceptanceStatus || '-'}`);
+  if (task.error) console.log(`错误：${String(task.error).slice(0, 300)}`);
+  console.log(`\n执行目录：${task.executionWorkspace?.path || '-'}  (${task.executionWorkspace?.kind || '-'})`);
+
+  const verification = delivery.latestVerification;
+  if (verification) {
+    console.log(`\n验证：${verification.status}  ${fmtTime(verification.finishedAt || verification.updatedAt)}`);
+    const output = String(verification.output || '').trim();
+    if (output) console.log(output.split('\n').map(line => `  ${line}`).join('\n').slice(0, 2000));
+  } else {
+    console.log('\n验证：尚无证据');
+  }
+
+  if (impact) {
+    const ack = task.impactAcknowledged ? '已确认' : impact.requiresAck ? '待确认' : '无需确认';
+    console.log(`\n变更影响：${RISK_TEXT[impact.risk] || impact.risk}（${ack}）`);
+    const stats = impact.stats;
+    if (stats) console.log(`  文件：共 ${stats.total}（新增 ${stats.added} / 修改 ${stats.modified} / 删除 ${stats.deleted}）`);
+    for (const reason of impact.reasons || []) console.log(`  - ${reason}`);
+    if (impact.requiresAck && !task.impactAcknowledged)
+      console.log(`  下一步：ggb task ack ${task.id}`);
+  }
+
+  const artifacts = (task.artifacts || []).filter(item => item.kind !== 'impact');
+  if (artifacts.length) {
+    console.log('\n产物：');
+    for (const item of artifacts.slice(0, 10))
+      console.log(`  [${item.kind || 'artifact'}] ${item.name || item.title || item.id}${item.status ? ` (${item.status})` : ''}`);
+  }
+  if (task.result) {
+    console.log('\n结果：');
+    console.log(String(task.result).slice(0, 4000));
+  }
+}
+
+async function taskCommand(args) {
+  const sub = args[0];
+  if (!sub || sub === 'help' || sub === '--help' || sub === '-h') return console.log(teamUsage);
+  const known = ['ack', 'accept', 'reject'];
+  if (!known.includes(sub)) {
+    const task = await workbenchFetch(args, `tasks/${sub}`);
+    if (has(args, '--json')) return console.log(JSON.stringify(task, null, 2));
+    return renderTask(task);
+  }
+  const id = args[1] && !args[1].startsWith('--') ? args[1] : '';
+  if (!id) throw new Error(`task ${sub} 需要任务 ID。`);
+  const note = valueAfter(args, '--note', '');
+  if (sub === 'ack') {
+    const result = await workbenchFetch(args, `tasks/${id}/impact/ack`, { method: 'POST', body: { note } });
+    if (has(args, '--json')) return console.log(JSON.stringify(result, null, 2));
+    return console.log(`已确认影响面：${id}`);
+  }
+  if (sub === 'reject' && !note) throw new Error('退回复核需要 --note 说明需要改什么。');
+  const result = await workbenchFetch(args, `tasks/${id}/${sub}`, { method: 'POST', body: { note } });
+  if (has(args, '--json')) return console.log(JSON.stringify(result, null, 2));
+  console.log(sub === 'accept' ? `已验收通过：${id}` : `已退回复核：${id}`);
+  if (result.delivery) console.log(`交付状态：${result.delivery.deliveryStatus}`);
+}
+
+async function skillCommand(args) {
+  const sub = args[0];
+  if (!sub || sub === 'help' || sub === '--help' || sub === '-h') return console.log(teamUsage);
+  if (sub === 'recommend') {
+    const query = args.slice(1).filter(value => !value.startsWith('--') && value !== valueAfter(args, '--limit', '__none__')).join(' ');
+    if (!query) throw new Error('用法：ggb skill recommend "任务描述"');
+    const limit = Number(valueAfter(args, '--limit', '8')) || 8;
+    const data = await workbenchFetch(args, `capabilities/recommend?q=${encodeURIComponent(query)}&limit=${limit}`);
+    const items = data.items || [];
+    if (has(args, '--json')) return console.log(JSON.stringify(items, null, 2));
+    if (!items.length) return console.log('没有匹配的 Skill。换个说法再试。');
+    for (const item of items) {
+      const badge = item.source === 'builtin' ? '内置' : item.source === 'installed' ? '已装' : 'Hub ';
+      console.log(`${badge}  ${String(item.id).padEnd(28)} ${item.title || ''}  ${Number(item.score || 0).toFixed(2)}`);
+      if (item.reason) console.log(`      ${item.reason}`);
+      if (item.source === 'hub' && item.installUrl) console.log(`      安装：ggb skill install ${item.id}`);
+      if (item.source === 'installed') console.log(`      绑定：capabilityId=${item.capabilityId || item.id}${item.enabled === false ? '（未启用）' : ''}`);
+      if (item.source === 'builtin') console.log('      绑定：写入成员 skillIds');
+    }
+    return;
+  }
+  if (sub === 'install') {
+    const target = args[1] && !args[1].startsWith('--') ? args[1] : '';
+    if (!target) throw new Error('用法：ggb skill install <技能ID|安装地址>');
+    let sourceUrl = target;
+    if (!/^https?:\/\//.test(target)) {
+      // 用技能 ID 从自维护库解析安装地址。
+      const data = await workbenchFetch(args, `capabilities/search?source=hub&q=${encodeURIComponent(target)}`);
+      const items = (data.items || data || []).filter(item => item.id === target);
+      if (!items.length) throw new Error(`自维护 Hub 中找不到技能「${target}」。`);
+      sourceUrl = items[0].installUrl || items[0].sourceUrl;
+    }
+    const installed = await workbenchFetch(args, 'capabilities/install', { method: 'POST', body: { source: 'git', sourceUrl } });
+    if (has(args, '--json')) return console.log(JSON.stringify(installed, null, 2));
+    console.log(`已安装：${installed.name} (${installed.id})，默认未启用。`);
+    console.log(`启用：在管理界面启用并确认风险，或调用 POST /api/capabilities/${installed.id}/enable`);
+    return;
+  }
+  if (sub === 'list') {
+    const items = await workbenchFetch(args, 'capabilities');
+    if (has(args, '--json')) return console.log(JSON.stringify(items, null, 2));
+    if (!items.length) return console.log('还没有安装任何能力。用 ggb skill recommend 找找。');
+    for (const item of items)
+      console.log(`${item.enabled === false ? '停用' : '启用'}  ${String(item.kind).padEnd(7)} ${String(item.id).padEnd(38)} ${item.name}`);
+    return;
+  }
+  throw new Error(`未知 skill 子命令“${sub}”。\n\n${teamUsage}`);
 }
 
 async function teamStatus(args) {
@@ -735,6 +862,8 @@ async function main() {
   if (command === 'doctor') return doctor(args);
   if (command === 'decide') return decide(args);
   if (command === 'team') return team(args);
+  if (command === 'task') return taskCommand(args);
+  if (command === 'skill') return skillCommand(args);
   if (command !== 'run' && command !== 'chat') throw new Error(`未知命令“${command}”。\n\n${usage}`);
   const input = parseInput(args);
   if (command === 'chat') return interactiveChat(input);

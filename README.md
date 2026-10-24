@@ -141,6 +141,11 @@ CLI 支持：
   - `ggb team run <id> "目标" [--watch]`：把目标交给团队项目经理，`--watch` 持续输出 PM 消息与任务进度。
   - `ggb team status <id>`：查看团队消息、任务与验收状态。
   - `ggb team reviews <id>` / `ggb team review <id> --approve|--reject <opId>`：查看并确认高风险操作的多轮评审。
+  - `ggb skill recommend "任务描述"`：按描述推荐 Skill（内置 / 已安装 / 自维护 Hub），并给出绑定或安装命令。
+  - `ggb skill install <技能ID|地址>` / `ggb skill list`：从自维护 Hub 安装（默认不启用）或列出已装能力。
+  - `ggb task <taskId>`：查看任务详情，含自动验证结论与**变更影响**（风险等级、原因、文件统计）。
+  - `ggb task ack <taskId>`：确认高风险变更的影响面（未确认前不能验收）。
+  - `ggb task accept|reject <taskId> [--note]`：验收或退回复核。
   - 通用：`--api` 指定工作台地址（默认 `http://127.0.0.1:3089`），开启认证时用 `--password` 或环境变量 `GGB_PASSWORD` 登录。
 
 网页中的普通模型选择器不会把 TypeSafe 当作聊天模型；TypeSafe 只通过 `ggb decide`、管理页探测和编排 MCP 的 `evaluate_decision` 使用。
