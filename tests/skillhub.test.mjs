@@ -71,9 +71,14 @@ test('Hub 目录拉取不受 raw CDN 陈旧缓存影响，且整份目录只拉�
   if (!(await hubReachable())) return t.skip('无法连接自维护 Hub');
   const { capabilities } = setup(t);
   const first = await capabilities.hubCatalog();
-  assert.ok(first.skills.length >= 25, `目录条目偏少：${first.skills.length}`);
+  assert.ok(first.skills.length >= 200, `目录条目偏少：${first.skills.length}`);
   for (const id of ['ui-automation', 'device-automation', 'disposable-workspace', 'issue-tracker-workflow']) {
     assert.ok(first.skills.some(skill => skill.id === id), `目录缺少 ${id}`);
+  }
+  // 跨领域覆盖：分类索引必须存在且不只包含开发类。
+  assert.ok(first.categories && Object.keys(first.categories).length >= 15, '缺少分类索引');
+  for (const category of ['writing', 'data', 'finance', 'legal', 'learning', 'personal']) {
+    assert.ok(first.categories[category] > 0, `分类 ${category} 为空`);
   }
   const cached = capabilities.hubCatalogCache;
   assert.ok(cached && cached.until > Date.now(), '应缓存整份目录');
@@ -89,5 +94,5 @@ test('Hub 目录拉取不受 raw CDN 陈旧缓存影响，且整份目录只拉�
   for (const id of ['worktree-isolation', 'terminal-session', 'external-publishing']) {
     assert.ok(catalog.skills.some(skill => skill.id === id), `目录缺少 ${id}，可能回退到了旧缓存`);
   }
-  assert.ok(catalog.skills.length >= 28, `目录条目偏少：${catalog.skills.length}`);
+  assert.ok(catalog.skills.length >= 200, `目录条目偏少：${catalog.skills.length}`);
 });

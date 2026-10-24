@@ -425,9 +425,10 @@ export class CapabilityService {
       const data = await this.hubCatalog();
       const needle = q.toLowerCase();
       items = (Array.isArray(data.skills) ? data.skills : [])
-        .filter(skill => `${skill.id} ${skill.name} ${skill.title} ${skill.description}`.toLowerCase().includes(needle))
+        .filter(skill => `${skill.id} ${skill.name} ${skill.title} ${skill.description} ${skill.category || ''} ${skill.categoryLabel || ''}`.toLowerCase().includes(needle))
         .map(skill => ({ id: skill.id, name: skill.title || skill.name, description: skill.description,
-          source, kind: 'skill', sourceUrl: skill.installUrl, url: skill.installUrl, version: skill.version || null }));
+          source, kind: 'skill', sourceUrl: skill.installUrl, url: skill.installUrl, version: skill.version || null,
+          category: skill.category || null, categoryLabel: skill.categoryLabel || null }));
     } else if (source === 'skillsmp') {
       const data = await jsonFetch(`https://skillsmp.com/api/v1/skills/search?q=${encodeURIComponent(q)}&limit=25`);
       items = (data.data?.skills || data.data?.results || data.skills || []).map(s => ({ id: s.id || s.githubUrl, name: s.name, description: s.description, source, sourceUrl: s.githubUrl, url: s.skillUrl || s.githubUrl, stars: s.stars, kind: 'skill' }));
