@@ -4,7 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { Store } from './store.mjs';
+import { Store, atomicWrite } from './store.mjs';
 import { SKILLS } from './roles.mjs';
 import { DshRun, findDsh, redact } from './runtime.mjs';
 import { c as createTar } from 'tar';
@@ -381,7 +381,7 @@ export function createWorkbench({
           throw new Error('请求格式不正确。');
       }
       if (['GET', 'HEAD'].includes(req.method) && parts[1] === 'health')
-        return send(200, { ok: true });
+        return send(200, { ok: true, fingerprint: process.env.GGB_SERVER_FINGERPRINT || null, pid: process.pid });
       const options = {
         method: req.method,
         parts: parts.slice(1),
@@ -1147,6 +1147,10 @@ if (
   process.argv[1] &&
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
+  const { computeServerFingerprint } = await import('./fingerprint.mjs');
+  process.env.GGB_SERVER_FINGERPRINT = computeServerFingerprint(
+    path.dirname(fileURLToPath(import.meta.url)),
+  );
   const app = createWorkbench();
   const port = Number(process.env.WORKBENCH_API_PORT || 3089);
   app.server.on('error', (error) => {
@@ -1165,6 +1169,13 @@ if (
     process.env.WORKBENCH_BIND_HOST || '127.0.0.1',
     () => {
       console.log(`Goal-Guided Brain API: http://127.0.0.1:${port}`);
+      // 运行文件：CLI 据此判断常驻实例的代码版本与 PID，代码更新后自动重启。
+      try {
+        const runInfo = { pid: process.pid, port, fingerprint: process.env.GGB_SERVER_FINGERPRINT || null };
+        const runFile = path.join(process.env.WORKBENCH_DATA_DIR || path.join(os.homedir(), '.dsh-workbench'), 'workbench-run.json');
+        fs.mkdirSync(path.dirname(runFile), { recursive: true, mode: 0o700 });
+        atomicWrite(runFile, JSON.stringify(runInfo));
+      } catch {}
       void app.schedule();
       app.platform.start();
     },

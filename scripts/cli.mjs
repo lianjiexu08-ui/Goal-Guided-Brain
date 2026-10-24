@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { SKILLS } from '../server/roles.mjs';
@@ -137,7 +137,53 @@ function doctorCheck(id, label, status, detail) {
 const workbenchBase = args => String(valueAfter(args, '--api', process.env.GGB_API_URL || 'http://127.0.0.1:3089')).replace(/\/$/, '');
 const cookieFile = () => path.join(sessionDir(), '.workbench-session');
 // 工作台未运行时自动拉起一个（后台常驻），用户不需要先手动 npm start。
+// 常驻实例跑的是旧代码时（我们刚更新过），按代码指纹自动重启。
 const autoStarted = new Set();
+const fingerprintOf = dir => {
+  const hash = createHash('sha1');
+  const walk = directory => {
+    for (const item of fs.readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const full = path.join(directory, item.name);
+      if (item.isDirectory()) walk(full);
+      else if (item.name.endsWith('.mjs')) {
+        const stat = fs.statSync(full);
+        hash.update(item.name).update(String(stat.size)).update(String(Math.floor(stat.mtimeMs / 1000)));
+      }
+    }
+  };
+  walk(dir);
+  return hash.digest('hex').slice(0, 12);
+};
+const serverDir = () => path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'server');
+const workbenchDataDir = () => process.env.WORKBENCH_DATA_DIR || path.join(os.homedir(), '.dsh-workbench');
+const runFile = () => path.join(workbenchDataDir(), 'workbench-run.json');
+
+// 重启在 CLI 进程内同步完成：杀旧 → 等死 → 等端口 → 拉新 → 确认健康。
+// 拉新用的是已验证可在父进程退出后存活的 detached 模式。
+async function restartWorkbench(args, reason) {
+  const runInfo = fs.existsSync(runFile()) ? JSON.parse(fs.readFileSync(runFile(), 'utf8')) : null;
+  const base = workbenchBase(args);
+  let restartPort = 3089;
+  try { restartPort = new URL(base).port || 3089; } catch {}
+  const restartHelperPath = fileURLToPath(new URL('../server/restart-helper.mjs', import.meta.url));
+  const restartServerPath = fileURLToPath(new URL('../server/index.mjs', import.meta.url));
+  const restartDataDir = workbenchDataDir();
+  console.error(`· ${reason}，正在重启工作台（等待完成）…`);
+  // helper 同步执行：杀旧 → 等进程死透 → 等端口释放 → 拉新 → 确认健康后退出。
+  // CLI 等待 helper 完成再退出，避免父进程退出与子进程 exec 竞争导致新实例被静默回收。
+  const result = await new Promise(resolve => {
+    const child = spawn(process.execPath, [restartHelperPath, String(runInfo?.pid || ''), String(restartPort), restartDataDir, restartServerPath], {
+      stdio: 'inherit',
+      env: { ...process.env },
+    });
+    child.on('error', error => resolve({ ok: false, message: error.message }));
+    child.on('close', code => resolve({ ok: code === 0, message: code === 0 ? '' : `重启助手退出码 ${code}` }));
+  });
+  autoStarted.delete(base);
+  if (!result.ok) throw new Error(result.message || '工作台重启失败。');
+  console.error('· 工作台重启完成。');
+  return true;
+}
 async function ensureWorkbench(args) {
   if (has(args, '--no-autostart') || process.env.GGB_NO_AUTOSTART === '1') return false;
   const base = workbenchBase(args);
@@ -145,30 +191,40 @@ async function ensureWorkbench(args) {
   const serverPath = fileURLToPath(new URL('../server/index.mjs', import.meta.url));
   let port = 3089;
   try { port = new URL(base).port || 3089; } catch {}
-  const dataDir = process.env.WORKBENCH_DATA_DIR || path.join(os.homedir(), '.dsh-workbench');
+  const dataDir = workbenchDataDir();
   console.error(`· 工作台未运行，正在自动启动（数据目录 ${dataDir}）…`);
   const logFile = path.join(dataDir, 'autostart.log');
   fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-  const out = fs.openSync(logFile, 'a');
-  const child = spawn(process.execPath, [serverPath], {
-    detached: true,
-    stdio: ['ignore', out, out],
-    env: { ...process.env, WORKBENCH_API_PORT: String(port), WORKBENCH_DATA_DIR: dataDir },
-  });
-  child.unref();
-  fs.closeSync(out);
-  autoStarted.add(base);
-  // 等健康检查就绪（最多 20 秒）。
-  for (let index = 0; index < 60; index += 1) {
-    await new Promise(resolve => setTimeout(resolve, 300));
-    try {
-      const health = await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(1500) });
-      if (health.ok) {
-        console.error(`· 工作台已就绪：${base}`);
-        return true;
-      }
-    } catch {}
-    if (child.exitCode !== null) throw new Error(`工作台自动启动失败（退出码 ${child.exitCode}）。常见原因：端口 ${port} 被占用。`);
+  // 自愈：子进程意外退出（如端口未及时释放）时自动重拉，最多 3 次。
+  for (let attemptNo = 1; attemptNo <= 3; attemptNo += 1) {
+    const out = fs.openSync(logFile, 'a');
+    fs.appendFileSync(logFile, `[cli] spawn attempt ${attemptNo} pid=${process.pid}\n`);
+    const child = spawn(process.execPath, [serverPath], {
+      detached: true,
+      stdio: ['ignore', out, out],
+      env: { ...process.env, WORKBENCH_API_PORT: String(port), WORKBENCH_DATA_DIR: dataDir },
+    });
+    child.unref();
+    fs.closeSync(out);
+    child.once('exit', (code, signal) => fs.appendFileSync(logFile, `[cli] child exited code=${code} signal=${signal}\n`));
+    autoStarted.add(base);
+    // 等健康检查就绪（最多 20 秒）。
+    for (let index = 0; index < 60; index += 1) {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      if (child.exitCode !== null) break;
+      try {
+        const health = await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(1500) });
+        if (health.ok) {
+          console.error(`· 工作台已就绪：${base}`);
+          return true;
+        }
+      } catch {}
+    }
+    const logTail = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8').trim().split('\n').slice(-2).join(' | ') : '';
+    console.error(`· 工作台启动未就绪（第 ${attemptNo} 次）${child.exitCode !== null ? `，进程已退出（码 ${child.exitCode}）` : ''}。日志：${logTail.slice(0, 200)}，重试…`);
+    if (attemptNo === 3)
+      throw new Error(`工作台自动启动失败。请查看 ${logFile} 或手动运行 npm start 定位原因。`);
+    await new Promise(resolve => setTimeout(resolve, 1000));
   }
   throw new Error(`工作台自动启动超时（${base}）。请手动运行 npm start 查看具体错误。`);
 }
@@ -209,7 +265,35 @@ async function workbenchFetch(args, route, { method = 'GET', body } = {}) {
   let data = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = text; }
   if (!response.ok) throw new Error((data && data.error) || `HTTP ${response.status}`);
+  await checkWorkbenchFreshness(args).catch(() => {});
   return data;
+}
+
+// 常驻实例可能在跑旧代码：每进程一次，用 /api/health 的指纹比对，旧了就自动重启。
+let freshnessChecked = false;
+async function checkWorkbenchFreshness(args) {
+  if (freshnessChecked) return;
+  freshnessChecked = true;
+  if (has(args, '--no-autorestart') || process.env.GGB_NO_AUTORESTART === '1') return;
+  const base = workbenchBase(args);
+  if (autoStarted.has(base)) return; // 本进程刚拉起的，必然是最新代码
+  const health = await fetch(`${base}/api/health`, {
+    headers: fs.existsSync(cookieFile()) ? { Cookie: fs.readFileSync(cookieFile(), 'utf8').trim() } : {},
+    signal: AbortSignal.timeout(3000),
+  });
+  if (!health.ok) return;
+  const info = await health.json();
+  const mine = fingerprintOf(serverDir());
+  const runInfo = fs.existsSync(runFile()) ? JSON.parse(fs.readFileSync(runFile(), 'utf8')) : null;
+  if (process.env.GGB_DEBUG)
+    console.error(`[debug] 运行实例指纹=${info.fingerprint} 本地=${mine} 运行文件=${JSON.stringify(runInfo)}`);
+  if (info.fingerprint && info.fingerprint !== mine && runInfo?.pid && runInfo.fingerprint === info.fingerprint) {
+    const restarted = await restartWorkbench(args, '工作台代码已更新');
+    if (restarted) {
+      // 让当前调用的响应反映重启后的实例：重发一次原始请求由调用方处理，这里只提示。
+      console.error('· 后续命令将连接新实例。');
+    }
+  }
 }
 function fmtTime(value) { if (!value) return ''; const d = new Date(value); return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('zh-CN', { hour12: false }); }
 
