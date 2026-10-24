@@ -33,10 +33,41 @@ test('裸 ggb 在非 TTY 下输出帮助（交互入口需要 TTY）', async t =
   child.stdout.on('data', chunk => { stdout += chunk; });
   await new Promise(resolve => child.on('close', resolve));
   assert.match(stdout, /用法：/);
-  assert.match(stdout, /直接进入对话/);
+  assert.match(stdout, /进入工作台首页/);
 });
 
-test('chat 的 /team 与 /tasks 斜杠命令（script 分配伪 TTY 驱动真实循环）', async t => {
+test('裸 ggb 进入工作台首页：团队列表与编号选择', async t => {
+  const { base, app } = await start(t);
+  const store = app.platform.control.store;
+  store.saveTeamSpace({ name: '首页团队', goal: 'g', purpose: 'p', workspace: store.config.workspace, pmRoleId: 'project_manager' });
+
+  const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ggb-home-sess-'));
+  t.after(() => fs.rmSync(sessionDir, { recursive: true, force: true }));
+  const input = ['1', '/exit', '', 'q', ''].join('\n');
+  const result = await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cli, '--api', base, '--session', 'hometest'], {
+      env: { ...process.env, PATH: process.env.PATH, DSH_SESSION_DIR: sessionDir, GGB_FORCE_INTERACTIVE: '1' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let out = '';
+    child.stdout.on('data', chunk => { out += chunk; });
+    child.on('error', reject);
+    const lines = input.split('\n');
+    let index = 0;
+    const feeder = setInterval(() => {
+      if (index < lines.length) { child.stdin.write(`${lines[index]}\n`); index += 1; }
+      else clearInterval(feeder);
+    }, 300);
+    const killer = setTimeout(() => { try { child.kill('SIGKILL'); } catch {} resolve({ code: null, out }); }, 20000);
+    child.on('close', code => { clearTimeout(killer); clearInterval(feeder); resolve({ code, out }); });
+  });
+
+  assert.match(result.out, /Goal-Guided Brain/);
+  assert.match(result.out, /首页团队/);
+  assert.match(result.out, /已进入团队「首页团队」/);
+});
+
+test('chat 的 /team 与 /tasks 斜杠命令（GGB_FORCE_INTERACTIVE 驱动真实循环）', async t => {
   const { base, app } = await start(t);
   const store = app.platform.control.store;
   const team = store.saveTeamSpace({ name: '聊天绑定组', goal: 'g', purpose: 'p', workspace: store.config.workspace, pmRoleId: 'project_manager' });

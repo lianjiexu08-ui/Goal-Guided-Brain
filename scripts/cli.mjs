@@ -82,7 +82,7 @@ const PROVIDER_ALIASES = { gpt: 'codex', moonshot: 'kimi', glm: 'zhipu' };
 const CLI_NAME = 'ggb';
 
 const usage = `用法：
-  ggb                            # 直接进入对话（同 chat）
+  ggb                            # 进入工作台首页（选团队派活）
   ggb providers
   ggb doctor [--api-url http://127.0.0.1:3089/api/health] [--ui-url http://127.0.0.1:3088/] [--json]
   ggb run --provider gemini --model gemini-2.5-flash "解释这段代码"
@@ -1536,6 +1536,96 @@ async function run(input, prompt, history = []) {
   return { text: state.text, usage: state.usage, elapsedMs };
 }
 
+// 工作台首页：团队列表 + 模型状态 + 编号选择。派活是主路径，裸模型对话是次级选项。
+async function home(input, args) {
+  prepareSession(input);
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const readLine = label => new Promise(resolve => {
+    if (rl.closed) return resolve('q');
+    rl.question(label, resolve);
+  });
+  try {
+    for (;;) {
+      // 拉取状态（失败不阻塞首页）
+      let teams = [];
+      let providers = [];
+      let workbenchOk = true;
+      try {
+        teams = await workbenchFetch(args, 'teams');
+        providers = await workbenchFetch(args, 'providers');
+      } catch {
+        await ensureWorkbench(args).catch(() => {});
+        try {
+          teams = await workbenchFetch(args, 'teams');
+          providers = await workbenchFetch(args, 'providers');
+        } catch { workbenchOk = false; }
+      }
+      const envKey = Boolean(pickKey(input.preset, ''));
+      const enabledProvider = (providers || []).find(item => item.enabled !== false && (item.protocol !== 'typesafe-system-one'));
+      const modelReady = envKey || Boolean(enabledProvider);
+      console.log('');
+      console.log(`Goal-Guided Brain · ${workbenchOk ? '工作台运行中' : '工作台未连接'} · 模型${modelReady ? '已配置' : '未配置'}`);
+      if (!modelReady) console.log(`  未配置模型：运行 ggb login <供应商>（如 ggb login deepseek），或设置对应环境变量。`);
+      console.log('');
+      if (!workbenchOk) {
+        console.log('无法连接工作台，仅可使用纯模型对话。');
+      } else if (!teams.length) {
+        console.log('还没有团队。输入 n 创建第一个团队，或继续用纯模型对话。');
+      } else {
+        console.log('团队：');
+        teams.forEach((team, index) => {
+          const phase = team.recruitment?.phase === 'confirmed' ? '就绪' : team.recruitment?.phase || '-';
+          const members = team.recruitment?.phase === 'confirmed' ? (team.memberRoleIds || []).length : 1;
+          console.log(`  ${index + 1}. ${team.name}  [${phase}]  成员${members}  ${team.status}`);
+        });
+      }
+      console.log('');
+      console.log('输入团队序号 → 进入派活会话；c → 纯模型对话；r → 刷新；q → 退出');
+      const answer = (await readLine('ggb › ')).trim();
+      if (!answer) continue;
+      if (answer === 'q' || answer === 'quit' || answer === '/exit') break;
+      if (answer === 'r' || answer === 'refresh') continue;
+      if (answer === 'c' || answer === 'chat') {
+        if (!pickKey(input.preset, '') && !(await workbenchFetch(args, 'providers').catch(() => [])).some(item => item.enabled !== false)) {
+          console.log(`未配置模型。先运行 ggb login ${input.providerName}，或设置 ${(input.preset.keys || []).join('/') || 'API Key'}。\n`);
+          continue;
+        }
+        await interactiveChat(input, args);
+        continue;
+      }
+      if (answer === 'n' || answer === 'new') {
+        const name = (await readLine('团队名称 › ')).trim();
+        const goal = (await readLine('团队目标 › ')).trim();
+        if (!name || !goal) { console.log('需要名称与目标。\n'); continue; }
+        try {
+          const saved = await workbenchFetch(args, 'teams', { method: 'POST', body: {
+            name, goal, purpose: goal, pmRoleId: 'project_manager', memberRoleIds: ['project_manager'],
+            requireReview: false,
+            collaboration: { enabled: true, autoHandoff: true, sharedBoard: true, allowedTeamIds: [] },
+          } });
+          console.log(`已创建「${saved.name}」。\n`);
+        } catch (error) { console.error(`${CLI_NAME}: ${error.message}\n`); }
+        continue;
+      }
+      const index = Number(answer);
+      if (Number.isInteger(index) && index >= 1 && index <= teams.length) {
+        const team = teams[index - 1];
+        if (team.recruitment?.phase !== 'confirmed') {
+          console.log(`团队「${team.name}」尚未完成招募（${team.recruitment?.phase || '-'}），请先在网页或招募流程中确认。\n`);
+          continue;
+        }
+        input.teamId = team.id;
+        console.log(`已进入团队「${team.name}」。直接输入目标即可派活，/exit 返回首页。\n`);
+        await interactiveChat(input, args);
+        continue;
+      }
+      console.log(`无法理解「${answer}」。输入序号、c、n、r 或 q。`);
+    }
+  } finally {
+    rl.close();
+  }
+}
+
 async function interactiveChat(input, args = []) {
   // GGB_FORCE_INTERACTIVE 供测试或嵌入式调用绕过 TTY 检查（readline 仍按行驱动）。
   if (!(process.env.GGB_FORCE_INTERACTIVE === '1') &&
@@ -1699,12 +1789,18 @@ async function interactiveChat(input, args = []) {
 }
 
 async function main() {
-  const [command = '', ...args] = process.argv.slice(2);
+  let [command = '', ...args] = process.argv.slice(2);
+  // 允许全局选项写在命令前（如 ggb --api http://… team list）；首个 token 是选项时视为省略命令。
+  if (command.startsWith('--')) {
+    args = [command, ...args];
+    command = '';
+  }
   // 裸 ggb：交互终端直接进入对话（与 claude/gemini 一致）；非交互保持帮助。
   if (!command) {
-    if (process.stdin.isTTY && process.stdout.isTTY) {
-      return interactiveChat(parseInput(args), args);
-    }
+    // GGB_FORCE_INTERACTIVE 供测试或嵌入式调用绕过 TTY 检查。
+    const interactive = process.env.GGB_FORCE_INTERACTIVE === '1' ||
+      (process.stdin.isTTY && process.stdout.isTTY);
+    if (interactive) return home(parseInput(args), args);
     return console.log(usage);
   }
   if (command === 'help' || command === '--help' || command === '-h') return console.log(usage);
