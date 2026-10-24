@@ -151,6 +151,9 @@ CLI 支持：
   - `ggb models [--json]`：列出供应商、协议、上下文窗口与凭据状态；自定义供应商写入 `~/.ggb/models.json`（可用 `GGB_MODELS_FILE` 指定）。
   - `ggb login <providerId>`：把 API Key 写入**加密凭据库**并在工作台启用该供应商（团队任务与 CLI 共用）；重复登录复用同一凭据。
   - `ggb logout <providerId>`：移除该供应商的凭据与配置。
+  - `ggb rpc`：JSONL 机器协议，stdin 每行一个消息（prompt / follow_up / set_model / abort / session / ping），stdout 每行一个事件（text_delta / turn_end / error 等），适合脚本与工具集成。
+  - `ggb events <taskId> | --team <teamId> [--once] [--json]`：订阅任务或团队事件流。
+  - `ggb node --control-url <url> --workspace 名称=/绝对路径`：把本机作为远程执行节点接入控制平面。
   - 每次对话结束会在终端底部输出状态行：`模型 · in/out tokens · 上下文占用 · 耗时`（写 stderr，不污染 stdout）。
   - 通用：`--api` 指定工作台地址（默认 `http://127.0.0.1:3089`），开启认证时用 `--password` 或环境变量 `GGB_PASSWORD` 登录。
 
