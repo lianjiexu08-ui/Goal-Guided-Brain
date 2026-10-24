@@ -23,6 +23,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { AttachmentService } from './attachments.mjs';
 import { detectVerificationPlan, runVerificationPlan, summarizeVerification } from './verification.mjs';
+import { executionContext } from './execution-context.mjs';
 import { analyzeImpact, summarizeImpact } from './impact-analysis.mjs';
 
 const nowIso = () => new Date().toISOString();
@@ -822,7 +823,7 @@ export function createPlatform({
           void stopTask(task.id);
       }, 10000);
       run._heartbeat.unref();
-      await run.start(contextFor(task));
+      await run.start(executionContext(contextFor(task), workspace.path));
     } catch (error) {
       finish('failed', error.message);
       control.attention(

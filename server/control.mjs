@@ -1337,6 +1337,18 @@ export class ControlPlane {
           if (!['paused', 'failed', 'cancelled', 'interrupted', 'state_unknown', 'blocked'].includes(job.status)) throw fail('当前任务不能恢复。', 409);
           const previous = this.store.task(job.taskId);
           const previousMeta = this.records.get('task-meta', job.taskId) || {};
+          // 已完成的委派任务恢复时应继续等待/汇总子任务，而不是再派发一轮。
+          if (
+            action === 'resume' &&
+            previous?.status === 'completed' &&
+            !job.summaryTaskId &&
+            (previousMeta.requirementVersion || 1) === (job.requirementVersion || 1) &&
+            this.records.list('jobs').some((item) => item.parentJobId === job.id)
+          ) {
+            const waiting = this.records.save('jobs', { ...job, status: 'waiting_children', blockedReason: null }, job.id);
+            this.summarizeWhenReady(waiting);
+            return { status: 200, body: this.records.get('jobs', job.id) };
+          }
           const providerIds = body.providerIds ?? previousMeta.allowedProviderIds ?? previousMeta.providerIds;
           if (providerIds !== undefined && (!Array.isArray(providerIds) || providerIds.some(value => typeof value !== 'string'))) throw fail('模型路由必须是供应商 ID 列表。');
           const checkpoint = this.records.list('checkpoints').find(item => item.taskId === job.taskId);

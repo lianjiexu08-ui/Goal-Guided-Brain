@@ -473,6 +473,11 @@ export class ProviderService {
         model: model.id,
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 256,
+        // DeepSeek 思考模式会拒绝强制的 tool_choice。探测工具接口时关闭思考，
+        // 避免把这次小输出预算花在推理上导致探测误判。
+        ...(provider.protocol === 'deepseek'
+          ? { thinking: { type: 'disabled' } }
+          : {}),
         ...(toolTest
           ? {
               tools: [{ type: 'function', function: fn }],

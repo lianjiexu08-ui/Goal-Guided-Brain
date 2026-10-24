@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { executionContext } from './execution-context.mjs';
 import path from 'node:path';
 import net from 'node:net';
 import { DatabaseSync } from 'node:sqlite';
@@ -278,7 +279,12 @@ export class NodeClient {
       state.run = run;
       this.workspaceManager.releasePort(task.id);
       this.onEvent({ kind: 'started', taskId: task.id, workspace: prepared.workspace });
-      await run.start(assignment.prompt || assignment.context || task.prompt);
+      await run.start(
+        executionContext(
+          assignment.prompt || assignment.context || task.prompt,
+          prepared.workspace,
+        ),
+      );
     } catch (error) { done('failed', error.message); }
   }
   async stopExpired(force = false) {

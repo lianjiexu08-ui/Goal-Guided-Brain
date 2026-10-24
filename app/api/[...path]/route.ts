@@ -14,6 +14,21 @@ export async function HEAD(request: Request) {
   return forward(request);
 }
 async function forward(request: Request) {
+  try {
+    return await proxy(request);
+  } catch (error) {
+    if (
+      request.signal.aborted &&
+      (error === request.signal.reason ||
+        (error instanceof Error && error.name === 'AbortError'))
+    ) {
+      // 客户端已离开；响应会被适配层丢弃。向上游传递取消，避免泄漏请求与流。
+      return new Response(null, { status: 499 });
+    }
+    throw error;
+  }
+}
+async function proxy(request: Request) {
   const url = new URL(request.url);
   const uiPort = process.env.WORKBENCH_UI_PORT || '3088';
   const allowed = [`127.0.0.1:${uiPort}`, `localhost:${uiPort}`];
@@ -25,13 +40,24 @@ async function forward(request: Request) {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }
+  let body: string | undefined;
+  if (!['GET', 'HEAD'].includes(request.method)) {
+    try {
+      body = await request.text();
+    } catch (error) {
+      // Node 把不完整上传报成 ECONNRESET；只有当客户端真的断开时才翻译。
+      request.signal.throwIfAborted();
+      throw error;
+    }
+  }
   const upstream = await fetch(
     `http://127.0.0.1:${process.env.WORKBENCH_API_PORT || 3089}${url.pathname}${url.search}`,
     {
       method: request.method,
       headers,
-      ...(['GET', 'HEAD'].includes(request.method) ? {} : { body: await request.text() }),
+      body,
       redirect: 'manual',
+      signal: request.signal,
     },
   );
   const responseHeaders = new Headers({ 'Cache-Control': 'no-store' });

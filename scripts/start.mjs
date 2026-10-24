@@ -1,4 +1,11 @@
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
+
+// 生产适配器需要连接生命周期补丁（客户端断开时取消上游流）；幂等，可重复运行。
+try {
+  execFileSync(process.execPath, [fileURLToPath(new URL('./patch-vinext.mjs', import.meta.url))], { stdio: 'inherit' });
+} catch (error) {
+  console.error('vinext 生命周期补丁失败：', error.message);
+}
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
