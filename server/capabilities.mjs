@@ -5,6 +5,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { parse } from 'yaml';
 import { command } from './workspaces.mjs';
 import { parse as parseArguments } from 'shell-quote';
+import { SKILLS } from './roles.mjs';
+import { collectCandidates, recommend as scoreCandidates } from './skill-routing.mjs';
 
 function bounded(value, max = 2000) { return String(value || '').slice(0, max); }
 // 自维护 Skill 库（可通过 WORKBENCH_SKILL_HUB 覆盖为内部镜像）。
@@ -354,6 +356,55 @@ export class CapabilityService {
       configurationRequired: selected.requiredEnv.some(name => !overrides.envRefs?.[name]) ||
         (selected.requiredHeaders.length > 0 && !overrides.credentialId),
       diagnostics: selected.diagnostics, enabled: false }, connectionId);
+  }
+  /**
+   * 根据任务描述推荐可用的 Skill / 能力。
+   * 只做推荐：builtin 可直接绑到 skillIds；installed 可绑到 capabilityIds；
+   * hub 项需先走安装与审批。
+   */
+  async recommend(query, { limit = 8, includeHub = true } = {}) {
+    const installed = this.list().map((row) => ({
+      id: row.id,
+      // 已安装的 Hub 技能保留原始技能名作为身份键，避免与目录条目重复。
+      skillId: Array.isArray(row.skills) && row.skills[0]?.name ? row.skills[0].name : row.id,
+      title: row.name,
+      name: row.name,
+      description: row.description || '',
+      category: row.kind,
+      categoryLabel: row.kind === 'mcp' ? 'MCP' : row.kind === 'plugin' ? 'Plugin' : 'Skill',
+      enabled: row.enabled !== false,
+      kind: row.kind,
+      installed: true,
+      installUrl: row.sourceUrl || null,
+    }));
+    const builtin = SKILLS.map((skill) => ({
+      id: skill.id,
+      title: skill.name,
+      name: skill.name,
+      description: skill.name,
+      category: 'builtin',
+      categoryLabel: '内置 Skill',
+      builtin: true,
+    }));
+    let hub = [];
+    if (includeHub) {
+      try {
+        const catalog = await this.hubCatalog();
+        hub = catalog.skills.map((skill) => ({
+          id: skill.id,
+          title: skill.title,
+          name: skill.name,
+          description: skill.description,
+          category: skill.category,
+          categoryLabel: skill.categoryLabel,
+          installUrl: skill.installUrl,
+        }));
+      } catch {
+        // Hub 不可达时只基于本地候选推荐。
+      }
+    }
+    const candidates = collectCandidates({ builtin, installed, hub });
+    return scoreCandidates(query, candidates, { limit });
   }
   save(input, id, options = {}) {
     const old = id ? this.store.records.get('capabilities', id) : null;

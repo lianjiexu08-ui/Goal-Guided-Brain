@@ -1599,6 +1599,10 @@ export function createPlatform({
       }
     }
     if (collection === 'capabilities') {
+      if (method === 'GET' && id === 'recommend') {
+        const limit = Math.min(20, Math.max(1, Number(query.get('limit')) || 8));
+        return ok({ items: await capabilities.recommend(query.get('q') || '', { limit }) });
+      }
       if (method === 'GET' && id === 'search')
         return ok(
           await capabilities.search(query.get('source'), query.get('q')),

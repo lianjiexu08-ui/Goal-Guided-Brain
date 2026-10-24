@@ -46,6 +46,7 @@ const decisionQuestion = {
 const tools = [
   { name: 'list_capabilities', description: '查看当前助手本次执行已绑定的 Skill、MCP 和 Plugin 能力；只读，不会授予新权限。', inputSchema: objectSchema() },
   { name: 'list_capability_catalog', description: '查看当前工作台已启用的 Skill、MCP 和 Plugin 目录及稳定 ID；只读，用于设计 Team Charter，不会自动授予权限。', inputSchema: objectSchema() },
+  { name: 'recommend_skills', description: '根据任务描述推荐可用的 Skill（内置、已安装与自维护库）。只做推荐，不安装不授权；用于规划 Team Charter 时选择要绑定的能力。', inputSchema: objectSchema({ query: string, limit: { type: 'integer', minimum: 1, maximum: 20 } }, ['query']) },
   { name: 'evaluate_decision', description: '使用已配置的 TypeSafe System One 后端，对当前状态执行结构化判断；这是可选决策能力，不会替代普通模型或直接执行外部操作。', inputSchema: objectSchema({
     state: jsonValue,
     model: string,
@@ -162,6 +163,12 @@ export function createOrchestrationServer({ control, token, capabilities }) {
               } : { id, name: id, kind: 'unknown', enabled: false, tools: [] };
             }),
           };
+          break;
+        }
+        case 'recommend_skills': {
+          if (!capabilities) throw new Error('能力推荐服务不可用。');
+          const limit = Number.isSafeInteger(input.limit) ? Math.min(20, Math.max(1, input.limit)) : 8;
+          response = { items: await capabilities.recommend(input.query, { limit }) };
           break;
         }
         case 'list_capability_catalog': {
