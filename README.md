@@ -146,6 +146,10 @@ CLI 支持：
   - `ggb task <taskId>`：查看任务详情，含自动验证结论与**变更影响**（风险等级、原因、文件统计）。
   - `ggb task ack <taskId>`：确认高风险变更的影响面（未确认前不能验收）。
   - `ggb task accept|reject <taskId> [--note]`：验收或退回复核。
+  - `ggb team watch <id>`：订阅服务端 SSE 事件流（消息与任务状态实时推送，不轮询）；`team run --watch` 也走同一流。
+  - `ggb context list|share <teamId>`：查看或发布跨团队共享上下文（支持 `--key/--title/--content/--kind/--revision`）。
+  - `ggb models [--json]`：列出供应商、协议、上下文窗口与凭据状态；自定义供应商写入 `~/.ggb/models.json`（可用 `GGB_MODELS_FILE` 指定）。
+  - 每次对话结束会在终端底部输出状态行：`模型 · in/out tokens · 上下文占用 · 耗时`（写 stderr，不污染 stdout）。
   - 通用：`--api` 指定工作台地址（默认 `http://127.0.0.1:3089`），开启认证时用 `--password` 或环境变量 `GGB_PASSWORD` 登录。
 
 网页中的普通模型选择器不会把 TypeSafe 当作聊天模型；TypeSafe 只通过 `ggb decide`、管理页探测和编排 MCP 的 `evaluate_decision` 使用。

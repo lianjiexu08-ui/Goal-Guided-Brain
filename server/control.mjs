@@ -757,8 +757,14 @@ export class ControlPlane {
       candidate.status === 'active' && candidate.recruitment?.phase === 'confirmed' && this.sharedContextAllowed(team, candidate));
   }
   // 当前团队可见的共享上下文条目：本团队 + 双向协作团队的条目。
+  // 同时支持实例（运行中的智能体）与所有者（CLI/界面）两种调用方式。
   readSharedContext(principal) {
     const { team } = this.currentTeam(principal);
+    return this.readTeamContext(team.id);
+  }
+  readTeamContext(teamId) {
+    const team = this.store.teamSpace(teamId);
+    if (!team) throw fail('团队空间不存在。', 404);
     const visible = new Set([team.id, ...this.sharedContextTeams(team).map(candidate => candidate.id)]);
     const items = this.records.list('shared-context')
       .filter(entry => visible.has(entry.teamId))
@@ -771,6 +777,11 @@ export class ControlPlane {
   shareContext(body, principal) {
     this.ensureCurrent(principal);
     const { team } = this.currentTeam(principal);
+    return this.shareTeamContext(team.id, body, { actor: principal.type === 'instance' ? principal.taskId : 'owner', taskId: principal.type === 'instance' ? principal.taskId : null });
+  }
+  shareTeamContext(teamId, body, { actor = 'owner', taskId = null } = {}) {
+    const team = this.store.teamSpace(teamId);
+    if (!team) throw fail('团队空间不存在。', 404);
     if (team.recruitment?.phase !== 'confirmed') throw fail('团队尚未完成招募，不能发布共享上下文。', 409);
     if (!this.sharedContextTeams(team).length) throw fail('当前没有双向协作的团队可共享上下文。', 409);
     const key = required(body.key, '共享键', 160).trim();
@@ -784,8 +795,8 @@ export class ControlPlane {
     const saved = this.records.save('shared-context', {
       teamId: team.id, key, title, content: String(content).slice(0, 50000),
       kind: ['decision', 'finding', 'status', 'artifact', 'note'].includes(body.kind) ? body.kind : 'note',
-      taskId: principal.type === 'instance' ? principal.taskId : null,
-      authorRole: principal.agentId || 'owner',
+      taskId,
+      authorRole: actor,
     }, id, body.expectedRevision);
     return saved;
   }

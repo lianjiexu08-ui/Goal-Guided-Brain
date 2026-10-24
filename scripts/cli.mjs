@@ -9,27 +9,75 @@ import { execFileSync } from 'node:child_process';
 
 const PRESETS = {
   deepseek: {
-    label: 'DeepSeek', protocol: 'chat', baseUrl: 'https://api.deepseek.com',
-    model: 'deepseek-chat', keys: ['DEEPSEEK_API_KEY'],
+    label: 'DeepSeek', contextWindow: 128000, protocol: 'chat', baseUrl: 'https://api.deepseek.com',
+    model: 'deepseek-chat', keys: ['DEEPSEEK_API_KEY'], models: ['deepseek-chat', 'deepseek-reasoner'],
   },
   kimi: {
     label: 'Kimi', protocol: 'chat', baseUrl: 'https://api.moonshot.cn/v1',
-    model: 'moonshot-v1-8k', keys: ['KIMI_API_KEY', 'MOONSHOT_API_KEY'],
+    model: 'moonshot-v1-8k', keys: ['KIMI_API_KEY', 'MOONSHOT_API_KEY'], models: ['moonshot-v1-8k', 'moonshot-v1-32k'],
   },
   gemini: {
-    label: 'Gemini', protocol: 'chat', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    model: 'gemini-2.5-flash', keys: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'],
+    label: 'Gemini', contextWindow: 1048576, protocol: 'chat', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    model: 'gemini-2.5-flash', keys: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'], models: ['gemini-2.5-flash', 'gemini-2.5-pro'],
   },
   claude: {
-    label: 'Claude', protocol: 'anthropic', baseUrl: 'https://api.anthropic.com',
-    model: 'claude-sonnet-4-5', keys: ['ANTHROPIC_API_KEY'],
+    label: 'Claude', contextWindow: 200000, protocol: 'anthropic', baseUrl: 'https://api.anthropic.com',
+    model: 'claude-sonnet-4-5', keys: ['ANTHROPIC_API_KEY'], models: ['claude-sonnet-4-5', 'claude-opus-4-1'],
   },
   codex: {
-    label: 'Codex/OpenAI', protocol: 'responses', baseUrl: 'https://api.openai.com/v1',
-    model: 'gpt-5-codex', keys: ['CODEX_API_KEY', 'OPENAI_API_KEY'],
+    label: 'Codex/OpenAI', contextWindow: 400000, protocol: 'responses', baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-5-codex', keys: ['CODEX_API_KEY', 'OPENAI_API_KEY'], models: ['gpt-5-codex', 'gpt-5'],
+  },
+  openai: {
+    label: 'OpenAI Chat', contextWindow: 400000, protocol: 'chat', baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-4.1', keys: ['OPENAI_API_KEY'], models: ['gpt-4.1', 'gpt-4.1-mini'],
+  },
+  xai: {
+    label: 'xAI Grok', contextWindow: 256000, protocol: 'chat', baseUrl: 'https://api.x.ai/v1',
+    model: 'grok-4', keys: ['XAI_API_KEY'], models: ['grok-4', 'grok-3'],
+  },
+  mistral: {
+    label: 'Mistral', contextWindow: 128000, protocol: 'chat', baseUrl: 'https://api.mistral.ai/v1',
+    model: 'mistral-large-latest', keys: ['MISTRAL_API_KEY'], models: ['mistral-large-latest'],
+  },
+  groq: {
+    label: 'Groq', contextWindow: 128000, protocol: 'chat', baseUrl: 'https://api.groq.com/openai/v1',
+    model: 'llama-3.3-70b-versatile', keys: ['GROQ_API_KEY'], models: ['llama-3.3-70b-versatile'],
+  },
+  cerebras: {
+    label: 'Cerebras', protocol: 'chat', baseUrl: 'https://api.cerebras.ai/v1',
+    model: 'llama-3.3-70b', keys: ['CEREBRAS_API_KEY'], models: ['llama-3.3-70b'],
+  },
+  openrouter: {
+    label: 'OpenRouter', protocol: 'chat', baseUrl: 'https://openrouter.ai/api/v1',
+    model: 'anthropic/claude-sonnet-4.5', keys: ['OPENROUTER_API_KEY'], models: [],
+  },
+  together: {
+    label: 'Together', protocol: 'chat', baseUrl: 'https://api.together.xyz/v1',
+    model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', keys: ['TOGETHER_API_KEY'], models: [],
+  },
+  fireworks: {
+    label: 'Fireworks', protocol: 'chat', baseUrl: 'https://api.fireworks.ai/inference/v1',
+    model: 'accounts/fireworks/models/llama-v3p3-70b-instruct', keys: ['FIREWORKS_API_KEY'], models: [],
+  },
+  qwen: {
+    label: 'Qwen/DashScope', contextWindow: 128000, protocol: 'chat', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    model: 'qwen-plus', keys: ['DASHSCOPE_API_KEY', 'QWEN_API_KEY'], models: ['qwen-plus', 'qwen-max'],
+  },
+  zhipu: {
+    label: 'Zhipu/GLM', contextWindow: 128000, protocol: 'chat', baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    model: 'glm-4.6', keys: ['ZHIPU_API_KEY', 'ZAI_API_KEY'], models: ['glm-4.6', 'glm-4.5'],
+  },
+  ollama: {
+    label: 'Ollama (本地)', contextWindow: 32768, protocol: 'chat', baseUrl: 'http://127.0.0.1:11434/v1',
+    model: 'qwen2.5-coder:7b', keys: ['OLLAMA_API_KEY'], keyOptional: true, models: [],
+  },
+  lmstudio: {
+    label: 'LM Studio (本地)', contextWindow: 32768, protocol: 'chat', baseUrl: 'http://127.0.0.1:1234/v1',
+    model: 'local-model', keys: ['LMSTUDIO_API_KEY'], keyOptional: true, models: [],
   },
 };
-const PROVIDER_ALIASES = { gpt: 'codex', openai: 'codex' };
+const PROVIDER_ALIASES = { gpt: 'codex', moonshot: 'kimi', glm: 'zhipu' };
 const CLI_NAME = 'ggb';
 
 const usage = `用法：
@@ -45,6 +93,9 @@ const usage = `用法：
   ggb team list | create | run <id> "目标" [--watch] | status <id> | reviews <id> | review --approve <opId>
   ggb skill recommend "任务描述" | install <技能ID> | list
   ggb task <id> | ack <id> | accept <id> | reject <id> --note "需改什么"
+  ggb team watch <id>            # 订阅实时事件流（不再轮询）
+  ggb context list|share <teamId> ...   # 查看或发布跨团队共享上下文
+  ggb models                     # 供应商与模型目录（含自定义 models.json）
 
 支持预设：${Object.keys(PRESETS).join('、')}（gpt/openai 是 Codex/OpenAI 别名）；TypeSafe 通过 decide 命令作为可选结构化决策后端。
 密钥从对应环境变量读取，也可用 --api-key 临时传入（不会写入磁盘）。
@@ -188,7 +239,8 @@ async function doctor(args) {
 const teamUsage = `用法：
   ggb team list
   ggb team create --name 团队名 --goal 目标 [--no-review] [--type development|product|operations|project|custom]
-  ggb team run <teamId> "要达成的目标" [--watch] [--interval 秒]
+  ggb team run <teamId> "要达成的目标" [--watch]
+  ggb team watch <teamId>
   ggb team status <teamId>
   ggb team reviews <teamId>
   ggb team review --approve|--reject <operationId> [--reason 说明]
@@ -201,6 +253,10 @@ const teamUsage = `用法：
   ggb task ack <taskId> [--note 说明]
   ggb task accept <taskId> [--note 说明]
   ggb task reject <taskId> --note 需要改什么
+
+  ggb context list <teamId>
+  ggb context share <teamId> --key <key> --title <标题> --content "内容" [--kind note|decision|finding|status|artifact] [--revision N]
+  ggb models [--json]
 通用：--api 指定工作台地址（默认 http://127.0.0.1:3089），--password 或 GGB_PASSWORD 登录。`;
 
 function teamIdArg(args) { return args.find(value => !value.startsWith('--') && value !== 'team'); }
@@ -323,6 +379,154 @@ async function taskCommand(args) {
   if (result.delivery) console.log(`交付状态：${result.delivery.deliveryStatus}`);
 }
 
+async function modelsCommand(args) {
+  const presets = allPresets();
+  const rows = Object.entries(presets).map(([id, preset]) => ({
+    id,
+    label: preset.label,
+    protocol: preset.protocol,
+    model: preset.model,
+    models: preset.models || [],
+    contextWindow: Number(preset.contextWindow) || 128000,
+    baseUrl: preset.baseUrl,
+    configured: Boolean(pickKey(preset, '')),
+    custom: Boolean(preset.custom),
+    keys: preset.keys || [],
+  }));
+  if (has(args, '--json')) return console.log(JSON.stringify({ file: modelsFile(), providers: rows }, null, 2));
+  console.log(`自定义供应商文件：${modelsFile()}`);
+  console.log('（写入 { "providers": { "<id>": { "baseUrl": "...", "api": "openai-completions", "apiKey": "$ENV_NAME", "models": [{ "id": "...", "contextWindow": 128000 }] } } }）\n');
+  for (const row of rows) {
+    const env = row.keys.length ? row.keys.join('|') : row.custom ? '自定义' : '-';
+    console.log(
+      `${row.configured ? '✓' : '·'} ${row.id.padEnd(12)} ${row.label.padEnd(16)} ${row.protocol.padEnd(10)}` +
+      ` ctx ${(String(Math.round(row.contextWindow / 1000)) + 'k').padEnd(6)} ${env}`,
+    );
+    if (row.models.length) console.log(`    ${row.models.slice(0, 4).join(', ')}`);
+  }
+  console.log('\n用法：ggb run --provider <id> --model <model> "..."');
+}
+
+async function contextCommand(args) {
+  const sub = args[0];
+  if (!sub || sub === 'help' || sub === '--help' || sub === '-h') return console.log(teamUsage);
+  const teamId = args[1] && !args[1].startsWith('--') ? args[1] : '';
+  if (!teamId) throw new Error(`context ${sub} 需要团队 ID。`);
+  if (sub === 'list' || sub === 'show') {
+    const data = await workbenchFetch(args, `teams/${teamId}/context`);
+    const items = data.items || [];
+    if (has(args, '--json')) return console.log(JSON.stringify(items, null, 2));
+    if (!items.length) return console.log('还没有共享上下文。用 ggb context share 发布一条。');
+    for (const item of items) {
+      console.log(`[${item.kind}] ${item.key}  ${item.title}  · ${item.teamName}${item.own ? '（本团队）' : ''}  rev${item.revision}`);
+      console.log(String(item.content || '').split('\n').slice(0, 6).map(line => `    ${line}`).join('\n'));
+    }
+    return;
+  }
+  if (sub === 'share') {
+    const key = valueAfter(args, '--key', '');
+    const title = valueAfter(args, '--title', '');
+    let content = valueAfter(args, '--content', '');
+    if (!content) content = await readStdin();
+    if (!key || !title || !content) throw new Error('用法：ggb context share <teamId> --key k --title t --content "..."（或通过 stdin 传内容）');
+    const kind = valueAfter(args, '--kind', 'note');
+    const body = { key, title, content, kind };
+    const revision = valueAfter(args, '--revision', '');
+    if (revision) body.expectedRevision = Number(revision);
+    const saved = await workbenchFetch(args, `teams/${teamId}/context`, { method: 'POST', body });
+    if (has(args, '--json')) return console.log(JSON.stringify(saved, null, 2));
+    console.log(`已共享：${saved.key}（${saved.title}）rev${saved.revision}`);
+    return;
+  }
+  throw new Error(`未知 context 子命令“${sub}”。\n\n${teamUsage}`);
+}
+
+/**
+ * 订阅团队 SSE 事件流。返回一个中止函数。
+ * 事件：hello / message / task
+ */
+async function streamTeam(args, teamId, onEvent, { signal } = {}) {
+  const base = workbenchBase(args);
+  const cookie = fs.existsSync(cookieFile()) ? fs.readFileSync(cookieFile(), 'utf8').trim() : '';
+  const request = (authCookie) => fetch(`${base}/api/teams/${teamId}/stream`, {
+    headers: { Accept: 'text/event-stream', ...(authCookie ? { Cookie: authCookie } : {}) },
+    signal,
+  });
+  let response = await request(cookie);
+  if (response.status === 401) {
+    const password = valueAfter(args, '--password', process.env.GGB_PASSWORD || '');
+    if (!password) throw new Error('工作台需要登录。请用 --password 或 GGB_PASSWORD 提供密码。');
+    const login = await fetch(`${base}/api/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }),
+    });
+    if (!login.ok) throw new Error(`工作台登录失败（HTTP ${login.status}）。`);
+    const sessionCookie = (login.headers.get('set-cookie') || '').split(';')[0];
+    fs.mkdirSync(sessionDir(), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(cookieFile(), sessionCookie, { mode: 0o600 });
+    response = await request(sessionCookie);
+  }
+  if (!response.ok) throw new Error(`事件流连接失败（HTTP ${response.status}）。`);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value || new Uint8Array(), { stream: true });
+    const blocks = buffer.split(/\r?\n\r?\n/);
+    buffer = blocks.pop() || '';
+    for (const block of blocks) {
+      let type = 'message';
+      const data = [];
+      for (const line of block.split(/\r?\n/)) {
+        if (line.startsWith('event:')) type = line.slice(6).trim();
+        else if (line.startsWith('data:')) data.push(line.slice(5).trim());
+      }
+      if (!data.length) continue;
+      try { onEvent(type, JSON.parse(data.join('\n'))); } catch { /* 忽略坏帧 */ }
+    }
+  }
+}
+
+async function teamWatch(args) {
+  const id = args[1] && !args[1].startsWith('--') ? args[1] : '';
+  if (!id) throw new Error('team watch 需要团队 ID。');
+  const controller = new AbortController();
+  const stop = () => { controller.abort(); };
+  process.once('SIGINT', stop);
+  console.log(`订阅团队事件流（Ctrl-C 退出）：${id}`);
+  let tasks = 0;
+  let messages = 0;
+  try {
+    await streamTeam(args, id, (type, data) => {
+      if (type === 'hello') {
+        tasks = data.tasks || 0;
+        messages = data.messages || 0;
+        console.log(`已连接：${data.name}  阶段 ${data.phase || '-'}  消息 ${messages}  任务 ${tasks}`);
+        return;
+      }
+      if (type === 'message') {
+        messages += 1;
+        const who = data.senderType === 'owner' ? '你' : data.senderType === 'system' ? '系统' : data.senderType === 'team' ? `团队(${data.fromTeamId || data.senderId || ''})` : 'PM';
+        console.log(`\n[${fmtTime(data.createdAt)}] ${who}: ${String(data.content || '').slice(0, 500)}`);
+      }
+      if (type === 'task') {
+        const risk = data.impactRisk && data.impactRisk !== 'unknown'
+          ? ` 影响:${data.impactRisk}${data.impactAcknowledged ? '(已确认)' : ''}`
+          : '';
+        const verify = data.verificationStatus ? ` 验证:${data.verificationStatus}` : '';
+        console.log(`\n[任务] ${data.title || data.id}  ${data.status}  交付:${data.deliveryStatus || '-'}${verify}${risk}`);
+        console.log(`       ggb task ${data.id}`);
+      }
+    }, { signal: controller.signal });
+  } catch (error) {
+    if (!/abort/i.test(String(error?.name || ''))) throw error;
+  } finally {
+    process.removeListener('SIGINT', stop);
+    console.log('\n已断开事件流。');
+  }
+}
+
 async function skillCommand(args) {
   const sub = args[0];
   if (!sub || sub === 'help' || sub === '--help' || sub === '-h') return console.log(teamUsage);
@@ -426,30 +630,35 @@ async function teamRun(args) {
     console.log(`查看进展：ggb team status ${id}`);
     return;
   }
-  const intervalMs = Math.max(1, Number(valueAfter(args, '--interval', '4')) || 4) * 1000;
-  console.log('持续跟踪中（Ctrl-C 退出）…');
-  let lastMessageCount = -1;
-  let lastTaskSignature = '';
-  for (;;) {
-    await new Promise(resolve => setTimeout(resolve, intervalMs));
-    let team;
-    try { team = await workbenchFetch(args, `teams/${id}`); } catch { continue; }
-    const messages = team.messages || [];
-    if (messages.length !== lastMessageCount) {
-      for (const message of messages.slice(Math.max(0, lastMessageCount))) {
-        if (message.senderType === 'owner') continue;
-        const who = message.senderType === 'system' ? '[系统]' : message.senderType === 'team' ? '[协作]' : '[PM]';
-        console.log(`${who} ${String(message.content || '').slice(0, 300)}`);
+  console.log('订阅事件流（Ctrl-C 退出）…');
+  const controller = new AbortController();
+  const stop = () => controller.abort();
+  process.once('SIGINT', stop);
+  let handled = 0;
+  try {
+    await streamTeam(args, id, (type, data) => {
+      if (type === 'hello') return;
+      if (type === 'message') {
+        if (data.senderType === 'owner') return;
+        handled += 1;
+        const who = data.senderType === 'system' ? '[系统]' : data.senderType === 'team' ? '[协作]' : '[PM]';
+        console.log(`${who} ${String(data.content || '').slice(0, 500)}`);
       }
-      lastMessageCount = messages.length;
-    }
-    const tasks = team.tasks || [];
-    const signature = tasks.map(task => `${task.id}:${task.status}`).join(',');
-    if (signature !== lastTaskSignature) {
-      const done = tasks.filter(task => ['completed', 'failed', 'cancelled'].includes(task.status)).length;
-      console.log(`[任务] 共 ${tasks.length} 个，完成 ${done} 个；阶段 ${team.recruitment?.phase || ''}`);
-      lastTaskSignature = signature;
-    }
+      if (type === 'task') {
+        const verify = data.verificationStatus ? ` 验证:${data.verificationStatus}` : '';
+        // 没有 Git 基准时影响为 unknown，属于正常情况，不展示以免噪音。
+        const risk = data.impactRisk && data.impactRisk !== 'unknown'
+          ? ` 影响:${data.impactRisk}${data.impactAcknowledged ? '(已确认)' : ''}`
+          : '';
+        console.log(`[任务] ${data.title || data.id}  ${data.status}  交付:${data.deliveryStatus || '-'}${verify}${risk}`);
+        console.log(`       ggb task ${data.id}`);
+      }
+    }, { signal: controller.signal });
+  } catch (error) {
+    if (!/abort/i.test(String(error?.name || ''))) throw error;
+  } finally {
+    process.removeListener('SIGINT', stop);
+    console.log(`\n已断开事件流（处理 ${handled} 条新消息）。`);
   }
 }
 
@@ -461,15 +670,69 @@ async function team(args) {
   if (sub === 'run') return teamRun(args);
   if (sub === 'status') return teamStatus(args);
   if (sub === 'reviews') return teamReviews(args);
+  if (sub === 'watch') return teamWatch(args);
   if (sub === 'review') return teamReview(args);
   throw new Error(`未知 team 子命令“${sub}”。\n\n${teamUsage}`);
 }
 
+// ---- 自定义供应商（参考 pi 的 models.json 叠加方式） ----
+// 位置：$GGB_MODELS_FILE 或 ~/.ggb/models.json
+// 形状：{ providers: { id: { baseUrl, api, apiKey, models: [{ id, name, contextWindow }] } } }
+// api: openai-completions | openai-responses | anthropic-messages | deepseek
+const PROTOCOL_MAP = {
+  'openai-completions': 'chat',
+  'openai-responses': 'responses',
+  'anthropic-messages': 'anthropic',
+  deepseek: 'chat',
+  chat: 'chat',
+  responses: 'responses',
+  anthropic: 'anthropic',
+};
+function modelsFile() {
+  return process.env.GGB_MODELS_FILE || path.join(os.homedir(), '.ggb', 'models.json');
+}
+function loadCustomProviders() {
+  const file = modelsFile();
+  let raw;
+  try { raw = fs.readFileSync(file, 'utf8'); } catch { return {}; }
+  let data;
+  try { data = JSON.parse(raw); } catch (error) { throw new Error(`${file} 不是有效 JSON：${error.message}`); }
+  const providers = data?.providers;
+  if (!providers || typeof providers !== 'object' || Array.isArray(providers)) return {};
+  const merged = {};
+  for (const [id, entry] of Object.entries(providers)) {
+    if (!/^[a-z0-9][a-z0-9-]{0,40}$/.test(id)) throw new Error(`供应商 ID 无效：${id}`);
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw new Error(`供应商 ${id} 配置无效。`);
+    if (typeof entry.baseUrl !== 'string' || !/^https?:\/\//.test(entry.baseUrl)) throw new Error(`供应商 ${id} 需要合法 baseUrl。`);
+    const protocol = PROTOCOL_MAP[entry.api || 'openai-completions'];
+    if (!protocol) throw new Error(`供应商 ${id} 的 api 不受支持：${entry.api}`);
+    const models = (Array.isArray(entry.models) ? entry.models : []).map((model) =>
+      typeof model === 'string' ? { id: model } : model).filter((model) => model && typeof model.id === 'string');
+    merged[id] = {
+      label: typeof entry.label === 'string' && entry.label.trim() ? entry.label.trim() : id,
+      protocol,
+      baseUrl: entry.baseUrl.replace(/\/$/, ''),
+      model: models[0]?.id || entry.model || '',
+      models: models.map((model) => model.id),
+      contextWindow: Number(models[0]?.contextWindow) || Number(entry.contextWindow) || 128000,
+      keys: [],
+      apiKey: typeof entry.apiKey === 'string' ? entry.apiKey : '',
+      keyOptional: entry.apiKey === '' || entry.keyOptional === true,
+      custom: true,
+      file,
+    };
+  }
+  return merged;
+}
+function allPresets() {
+  return { ...PRESETS, ...loadCustomProviders() };
+}
 function presetFor(name) {
   const requested = String(name || '').trim().toLowerCase();
   const canonical = PROVIDER_ALIASES[requested] || requested;
-  const preset = PRESETS[canonical];
-  if (!preset) throw new Error(`未知供应商“${name}”，可选：${Object.keys(PRESETS).join('、')}（gpt/openai 为 Codex/OpenAI 别名）`);
+  const presets = allPresets();
+  const preset = presets[canonical];
+  if (!preset) throw new Error(`未知供应商“${name}”，可选：${Object.keys(presets).join('、')}（gpt 为 Codex 别名）。自定义供应商写入 ${modelsFile()}`);
   return { name: canonical, preset };
 }
 
@@ -591,9 +854,19 @@ function prepareSession(input) {
   return input;
 }
 
+function expandSecret(value) {
+  if (typeof value !== 'string') return '';
+  // 与 pi 一致：支持 $NAME / ${NAME} 环境变量插值，密钥不落盘。
+  return value.replace(/\$\{([A-Z_][A-Z0-9_]*)\}|\$([A-Z_][A-Z0-9_]*)/g, (_, a, b) => process.env[a || b] || '');
+}
 function pickKey(preset, explicit) {
   if (explicit) return explicit;
-  for (const name of preset.keys) if (process.env[name]) return process.env[name];
+  if (preset.apiKey) {
+    const expanded = expandSecret(preset.apiKey);
+    if (expanded) return expanded;
+  }
+  for (const name of preset.keys || []) if (process.env[name]) return process.env[name];
+  if (preset.keyOptional) return 'local';
   return '';
 }
 
@@ -701,14 +974,53 @@ function requestBody(input, prompt, history = []) {
   };
   return {
     model: input.model, stream: input.stream,
+    // OpenAI 兼容接口默认不在流式响应里返回 usage，显式要求。
+    ...(input.stream ? { stream_options: { include_usage: true } } : {}),
     messages: [...(input.system ? [{ role: 'system', content: input.system }] : []), ...messages],
   };
+}
+
+const dim = (text) => process.stderr.isTTY ? `\u001b[2m${text}\u001b[0m` : text;
+const fmtTokens = (value) => {
+  const n = Number(value) || 0;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+};
+/**
+ * 终端底部的状态行：模型、用量、上下文占用、耗时。
+ * 写到 stderr，保持 stdout 可被管道消费。
+ */
+function statusLine(input, { usage, elapsedMs, note } = {}) {
+  const contextWindow = Number(input.preset.contextWindow) || 128000;
+  const parts = [`${input.providerName}/${input.model}`];
+  if (usage && (usage.inputTokens || usage.outputTokens)) {
+    const percent = contextWindow ? Math.min(100, (usage.inputTokens / contextWindow) * 100) : 0;
+    parts.push(`in ${fmtTokens(usage.inputTokens)} / out ${fmtTokens(usage.outputTokens)}`);
+    parts.push(`上下文 ${fmtTokens(usage.inputTokens)}/${fmtTokens(contextWindow)} (${percent > 0 && percent < 1 ? '<1' : percent.toFixed(0)}%)`);
+  }
+  if (Number.isFinite(elapsedMs)) parts.push(`${(elapsedMs / 1000).toFixed(1)}s`);
+  if (note) parts.push(note);
+  process.stderr.write(dim(`· ${parts.join(' · ')}`) + '\n');
+}
+function absorbUsage(input, data, state) {
+  if (!data || typeof data !== 'object') return;
+  const pick = (usage) => {
+    if (!usage || typeof usage !== 'object') return;
+    const inputTokens = Number(usage.prompt_tokens ?? usage.input_tokens ?? 0) || 0;
+    const outputTokens = Number(usage.completion_tokens ?? usage.output_tokens ?? 0) || 0;
+    if (inputTokens || outputTokens) state.usage = { inputTokens, outputTokens };
+  };
+  pick(data.usage);
+  pick(data.message?.usage);
+  pick(data.response?.usage);
 }
 
 function emitEvent(input, event, state) {
   if (!event || event === '[DONE]') return;
   let data;
   try { data = JSON.parse(event); } catch { return; }
+  absorbUsage(input, data, state);
   let text = '';
   if (input.preset.protocol === 'anthropic') {
     if (data.type === 'content_block_delta') text = data.delta?.text || '';
@@ -719,7 +1031,8 @@ function emitEvent(input, event, state) {
 }
 
 async function run(input, prompt, history = []) {
-  if (!input.apiKey) throw new Error(`未找到 ${input.preset.label} 密钥，请设置 ${input.preset.keys.join(' 或 ')}`);
+  if (!input.apiKey) throw new Error(`未找到 ${input.preset.label} 密钥，请设置 ${(input.preset.keys || []).join(' 或 ') || '自定义供应商的 apiKey'}`);
+  const startedAt = Date.now();
   const response = await fetch(endpoint(input), {
     method: 'POST', headers: headers(input.preset, input.apiKey), body: JSON.stringify(requestBody(input, prompt, history)),
     signal: AbortSignal.timeout(180000),
@@ -730,10 +1043,11 @@ async function run(input, prompt, history = []) {
     try { detail = JSON.stringify(JSON.parse(raw)); } catch {}
     throw new Error(`${input.preset.label} 返回 HTTP ${response.status}: ${detail.slice(0, 500)}`);
   }
-  const state = { text: '' };
+  const state = { text: '', usage: null };
   if (!input.stream) {
     const raw = await response.text();
     let data; try { data = JSON.parse(raw); } catch { throw new Error('供应商返回了无效 JSON。'); }
+    absorbUsage(input, data, state);
     if (input.preset.protocol === 'anthropic') state.text = (data.content || []).filter(x => x.type === 'text').map(x => x.text).join('');
     else if (input.preset.protocol === 'responses') state.text = data.output_text || (data.output || []).flatMap(x => x.content || []).filter(x => x.type === 'output_text').map(x => x.text).join('');
     else state.text = data.choices?.[0]?.message?.content || '';
@@ -758,10 +1072,17 @@ async function run(input, prompt, history = []) {
       emitEvent(input, event, state);
     }
   }
-  if (input.json) process.stdout.write(`${JSON.stringify({ type: 'turn_end', sessionId: input.sessionId, provider: input.providerName, model: input.model, text: redactSession(state.text, input) })}\n`);
+  const elapsedMs = Date.now() - startedAt;
+  if (input.json) process.stdout.write(`${JSON.stringify({
+    type: 'turn_end', sessionId: input.sessionId, provider: input.providerName, model: input.model,
+    text: redactSession(state.text, input),
+    ...(state.usage ? { usage: state.usage, contextWindow: Number(input.preset.contextWindow) || 128000 } : {}),
+    elapsedMs,
+  })}\n`);
   else if (input.stream) process.stdout.write('\n');
   else process.stdout.write(`${state.text}\n`);
-  return state.text;
+  if (!input.json) statusLine(input, { usage: state.usage, elapsedMs });
+  return { text: state.text, usage: state.usage, elapsedMs };
 }
 
 async function interactiveChat(input) {
@@ -830,10 +1151,12 @@ async function interactiveChat(input) {
         text: redactSession(prompt, input),
       });
       try {
-        const text = await run(input, prompt, input.history);
+        const turn = await run(input, prompt, input.history);
         appendSession(input.sessionFile, {
           type: 'response', sessionId: input.sessionId, at: new Date().toISOString(),
-          text: redactSession(text, input),
+          text: redactSession(turn.text, input),
+          ...(turn.usage ? { usage: turn.usage } : {}),
+          elapsedMs: turn.elapsedMs,
         });
         input.history = historyFromSession(parseSession(input.sessionFile).entries);
         console.log();
@@ -864,6 +1187,8 @@ async function main() {
   if (command === 'team') return team(args);
   if (command === 'task') return taskCommand(args);
   if (command === 'skill') return skillCommand(args);
+  if (command === 'models') return modelsCommand(args);
+  if (command === 'context') return contextCommand(args);
   if (command !== 'run' && command !== 'chat') throw new Error(`未知命令“${command}”。\n\n${usage}`);
   const input = parseInput(args);
   if (command === 'chat') return interactiveChat(input);
@@ -876,10 +1201,12 @@ async function main() {
     text: redactSession(prompt, input),
   });
   try {
-    const text = await run(input, prompt, input.history);
+    const turn = await run(input, prompt, input.history);
     appendSession(input.sessionFile, {
       type: 'response', sessionId: input.sessionId, at: new Date().toISOString(),
-      text: redactSession(text, input),
+      text: redactSession(turn.text, input),
+      ...(turn.usage ? { usage: turn.usage } : {}),
+      elapsedMs: turn.elapsedMs,
     });
   } catch (error) {
     appendSession(input.sessionFile, {

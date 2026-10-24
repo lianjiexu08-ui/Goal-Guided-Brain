@@ -632,6 +632,92 @@ export function createWorkbench({
               capabilityApprovals: body.capabilityApprovals,
             }, authorization.principal));
           }
+          if (parts[3] === 'context' && !parts[4]) {
+            if (req.method === 'GET') return send(200, platform.control.readTeamContext(space.id));
+            if (req.method === 'POST') return send(201, platform.control.shareTeamContext(space.id, body, { actor: 'owner' }));
+          }
+          if (req.method === 'GET' && parts[3] === 'stream') {
+            // SSE：服务端做差量推送，CLI 侧无需轮询。
+            res.writeHead(200, {
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-store',
+              Connection: 'keep-alive',
+              'X-Accel-Buffering': 'no',
+            });
+            const sendEvent = (type, data) => {
+              res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+            };
+            let closed = false;
+            // 记录库按 createdAt DESC 返回，推送前要按时间升序，否则客户端看到倒序消息。
+            const chronological = (items) => [...items].sort((a, b) =>
+              String(a.createdAt || '').localeCompare(String(b.createdAt || '')) ||
+              String(a.id).localeCompare(String(b.id)));
+            const seenMessages = new Set(
+              store.teamMessages(space.id).map((message) => message.id),
+            );
+            const taskState = new Map(
+              store.tasks()
+                .filter((task) => {
+                  const meta = store.records.get('task-meta', task.id) || {};
+                  return (meta.spaceId || meta.teamId) === space.id;
+                })
+                .map((task) => [task.id, `${task.status}:${task.updatedAt}`]),
+            );
+            sendEvent('hello', {
+              teamId: space.id,
+              name: space.name,
+              phase: space.recruitment?.phase || null,
+              messages: seenMessages.size,
+              tasks: taskState.size,
+            });
+            const tick = () => {
+              if (closed) return;
+              try {
+                for (const message of chronological(store.teamMessages(space.id))) {
+                  if (seenMessages.has(message.id)) continue;
+                  seenMessages.add(message.id);
+                  sendEvent('message', message);
+                }
+                const tasks = store.tasks().filter((task) => {
+                  const meta = store.records.get('task-meta', task.id) || {};
+                  return (meta.spaceId || meta.teamId) === space.id;
+                });
+                for (const task of tasks) {
+                  const signature = `${task.status}:${task.updatedAt}`;
+                  if (taskState.get(task.id) === signature) continue;
+                  taskState.set(task.id, signature);
+                  const delivery = store.taskDelivery(task);
+                  sendEvent('task', {
+                    id: task.id,
+                    title: task.title,
+                    status: task.status,
+                    deliveryStatus: delivery.deliveryStatus,
+                    verificationStatus: delivery.acceptanceStatus,
+                    impactRisk: delivery.impact?.risk || null,
+                    impactAcknowledged: delivery.impactAcknowledged,
+                  });
+                }
+              } catch {
+                /* 单次读取失败不终止流 */
+              }
+            };
+            const interval = setInterval(tick, 800);
+            interval.unref?.();
+            const keepAlive = setInterval(() => {
+              if (!closed) res.write(': keep-alive\n\n');
+            }, 15000);
+            keepAlive.unref?.();
+            const cleanup = () => {
+              if (closed) return;
+              closed = true;
+              clearInterval(interval);
+              clearInterval(keepAlive);
+              res.end();
+            };
+            req.once('close', cleanup);
+            res.once('close', cleanup);
+            return;
+          }
           if (req.method === 'GET' && parts[3] === 'collaborators') {
             if (space.recruitment?.phase !== 'confirmed' || space.collaboration?.enabled === false) return send(200, []);
             const allowed = Array.isArray(space.collaboration?.allowedTeamIds)

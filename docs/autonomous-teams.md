@@ -229,3 +229,46 @@ Node 的 `test` 会带 `CI=1`，避免 watch 模式挂住。monorepo 只跑根�
 - `autoRecommend: false` 可关闭
 
 自动填充不会绕过确认：确认时仍会执行既有的能力风险逐项确认。
+
+## 终端优先：多厂商、事件流与状态行
+
+CLI 是主要操作面，补齐了以下能力。
+
+### 多厂商与自定义供应商
+
+内置 17 个供应商预设（DeepSeek、Kimi、Gemini、Claude、OpenAI Responses/Chat、xAI、Mistral、Groq、Cerebras、OpenRouter、Together、Fireworks、Qwen、Zhipu、Ollama、LM Studio），可用 `ggb models` 查看。
+
+自定义供应商写入 `~/.ggb/models.json`（或 `GGB_MODELS_FILE`），参考 pi 的叠加方式：
+
+```json
+{
+  "providers": {
+    "my-gateway": {
+      "label": "自建网关",
+      "baseUrl": "https://gateway.example/v1",
+      "api": "openai-completions",
+      "apiKey": "$MY_GATEWAY_KEY",
+      "models": [{ "id": "house-model", "contextWindow": 64000 }]
+    }
+  }
+}
+```
+
+- `api` 支持 `openai-completions` / `openai-responses` / `anthropic-messages` / `deepseek`
+- `apiKey` 支持 `$NAME` / `${NAME}` 环境变量插值，密钥不落盘
+- 凭据优先级：`--api-key` → 供应商 `apiKey`（展开后）→ 各环境变量；本地供应商（Ollama / LM Studio）允许无密钥
+
+### 实时事件流
+
+`GET /api/teams/:id/stream` 提供 SSE：连接后先发 `hello`，随后按时间**升序**推送 `message` 与 `task`（含交付、验证、影响状态）事件。
+`ggb team watch <id>` 和 `ggb team run <id> --watch` 都订阅这条流，不再轮询。
+
+### 底部状态行
+
+每轮对话结束向 **stderr** 输出一行：
+
+```text
+· openai/gpt-4.1 · in 3.5k / out 820 · 上下文 3.5k/400.0k (<1%) · 0.0s
+```
+
+stdout 保持干净，可直接管道；`--json` 时 `turn_end` 事件包含 `usage`、`contextWindow` 与 `elapsedMs`。
