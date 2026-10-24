@@ -6,6 +6,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const PRESETS = {
   deepseek: {
@@ -96,6 +97,9 @@ const usage = `用法：
   ggb team watch <id>            # 订阅实时事件流（不再轮询）
   ggb context list|share <teamId> ...   # 查看或发布跨团队共享上下文
   ggb models                     # 供应商与模型目录（含自定义 models.json）
+  ggb rpc                        # JSONL 机器协议（prompt/follow_up/set_model/abort）
+  ggb events <taskId> | --team <id> [--once] [--json]
+  ggb node --control-url https://… --workspace 名称=/绝对路径
   ggb login <providerId>         # 把 API Key 写入加密凭据库，并在工作台启用供应商
   ggb logout <providerId>        # 移除该供应商的凭据与配置
 
@@ -657,6 +661,209 @@ async function teamWatch(args) {
   }
 }
 
+function rpcWrite(event) {
+  process.stdout.write(`${JSON.stringify(event)}\n`);
+}
+
+function rpcModel(input, providerName, model) {
+  const selected = presetFor(providerName || input.providerName);
+  const previous = input.providerName;
+  input.providerName = selected.name;
+  input.preset = selected.preset;
+  input.providerExplicit = true;
+  input.model = model || selected.preset.model;
+  input.modelExplicit = true;
+  if (!input.baseUrlExplicit) input.baseUrl = selected.preset.baseUrl;
+  if (!input.apiKeyExplicit) input.apiKey = pickKey(selected.preset, '');
+  return { provider: input.providerName, model: input.model, providerChanged: previous !== input.providerName };
+}
+
+/** JSONL 机器协议：stdin 每行一个消息，stdout 每行一个事件。支持 prompt/follow_up/set_model/abort/session/ping。 */
+async function rpc(args) {
+  if (process.stdout.isTTY)
+    console.error(`${CLI_NAME} rpc：等待 stdin JSONL 输入。`);
+  const input = parseInput(args);
+  input.rpc = true;
+  input.stream = true;
+  input.json = false;
+  prepareSession(input);
+  if (!input.apiKey)
+    throw new Error(`未找到 ${input.preset.label} 密钥，请设置 ${(input.preset.keys || []).join(' 或 ') || '自定义供应商的 apiKey'}`);
+  rpcWrite({ type: 'session_start', sessionId: input.sessionId, provider: input.providerName, model: input.model });
+
+  const queue = [];
+  let active = null;
+  let draining = false;
+  let closed = false;
+  let resolveDone;
+  const done = new Promise((resolve) => { resolveDone = resolve; });
+
+  const processMessage = async (message) => {
+    const type = String(message?.type || '').trim();
+    if (type === 'ping') {
+      rpcWrite({ type: 'ready', sessionId: input.sessionId, provider: input.providerName, model: input.model });
+      return;
+    }
+    if (type === 'set_model') {
+      try {
+        const changed = rpcModel(input, message.provider || message.name, message.model);
+        appendSession(input.sessionFile, { type: 'model_change', sessionId: input.sessionId, at: new Date().toISOString(), provider: input.providerName, model: input.model });
+        rpcWrite({ type: 'model_changed', sessionId: input.sessionId, ...changed });
+      } catch (error) {
+        rpcWrite({ type: 'error', sessionId: input.sessionId, code: 'MODEL_INVALID', message: error.message });
+      }
+      return;
+    }
+    if (type === 'session') {
+      rpcWrite({ type: 'session', sessionId: input.sessionId, file: input.sessionFile, provider: input.providerName, model: input.model });
+      return;
+    }
+    if (type === 'abort') {
+      if (active) active.controller.abort();
+      else rpcWrite({ type: 'aborted', sessionId: input.sessionId, id: message.id || null, reason: '当前没有执行中的轮次。' });
+      return;
+    }
+    if (!['prompt', 'follow_up'].includes(type)) {
+      rpcWrite({ type: 'error', sessionId: input.sessionId, code: 'INVALID_MESSAGE', message: '消息类型必须是 prompt、follow_up、set_model、abort、session 或 ping。' });
+      return;
+    }
+    const prompt = String(message.text ?? message.prompt ?? '').trim();
+    if (!prompt || prompt.length > 32000) {
+      rpcWrite({ type: 'error', sessionId: input.sessionId, code: 'INVALID_PROMPT', message: 'prompt 不能为空且不能超过 32000 字符。', id: message.id || null });
+      return;
+    }
+    const id = String(message.id || randomUUID());
+    const controller = new AbortController();
+    active = { id, controller };
+    input.abortSignal = controller.signal;
+    input.emitText = (text) => rpcWrite({ type: 'text_delta', sessionId: input.sessionId, id, text: redactSession(text, input) });
+    rpcWrite({ type: 'turn_start', sessionId: input.sessionId, id, kind: type, provider: input.providerName, model: input.model });
+    appendSession(input.sessionFile, { type: 'prompt', sessionId: input.sessionId, at: new Date().toISOString(), text: redactSession(prompt, input) });
+    try {
+      const turn = await run(input, prompt, input.history);
+      appendSession(input.sessionFile, { type: 'response', sessionId: input.sessionId, at: new Date().toISOString(), text: redactSession(turn.text, input) });
+      input.history = historyFromSession(parseSession(input.sessionFile).entries);
+      rpcWrite({ type: 'turn_end', sessionId: input.sessionId, id, provider: input.providerName, model: input.model, text: redactSession(turn.text, input) });
+    } catch (error) {
+      const aborted = controller.signal.aborted || error?.name === 'AbortError';
+      if (aborted)
+        rpcWrite({ type: 'aborted', sessionId: input.sessionId, id, reason: '轮次已中止。' });
+      else {
+        appendSession(input.sessionFile, { type: 'error', sessionId: input.sessionId, at: new Date().toISOString(), message: redactSession(error.message, input) });
+        rpcWrite({ type: 'error', sessionId: input.sessionId, id, code: 'TURN_FAILED', message: redactSession(error.message, input) });
+      }
+    } finally {
+      input.emitText = null;
+      input.abortSignal = null;
+      active = null;
+    }
+  };
+
+  const drain = async () => {
+    if (draining) return;
+    draining = true;
+    try {
+      while (queue.length) await processMessage(queue.shift());
+    } finally {
+      draining = false;
+      if (closed && !queue.length) resolveDone();
+    }
+  };
+  const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+  rl.on('line', (line) => {
+    if (!line.trim()) return;
+    let message;
+    try { message = JSON.parse(line); } catch {
+      rpcWrite({ type: 'error', sessionId: input.sessionId, code: 'INVALID_JSON', message: '每行必须是有效 JSON。' });
+      return;
+    }
+    if (message?.type === 'abort' && active) { active.controller.abort(); return; }
+    queue.push(message);
+    void drain();
+  });
+  rl.on('close', () => { closed = true; if (!draining && !queue.length) resolveDone(); });
+  await done;
+}
+
+/** 订阅任务/团队事件流。任务流用工作台的 task 事件；团队流复用 team stream 端点。 */
+async function events(args) {
+  const teamId = valueAfter(args, '--team', '');
+  const taskId = args.find((value, index) => index === 0 && !value.startsWith('--')) || '';
+  if ((!taskId || taskId.startsWith('--')) && !teamId)
+    throw new Error('请提供任务 ID，或使用 --team 指定团队 ID，例如：ggb events <task-id>。');
+  const controller = new AbortController();
+  const onSigint = () => controller.abort();
+  process.once('SIGINT', onSigint);
+  const once = has(args, '--once');
+  const print = (item) => {
+    if (has(args, '--json')) process.stdout.write(`${JSON.stringify(item)}\n`);
+    else process.stdout.write(`[${item.at || item.createdAt || '-'}] ${item.type || 'event'} ${item.status || ''} ${String(item.title || item.content || '').slice(0, 120)}\n`);
+  };
+  try {
+    if (teamId) {
+      // 团队流：复用 hello/message/task 事件。
+      await streamTeam(args, teamId, (type, data) => {
+        if (type === 'hello') {
+          if (once) controller.abort();
+          return;
+        }
+        print({ ...data, type: type === 'task' ? 'task' : 'message', at: data.createdAt || data.updatedAt });
+      }, { signal: controller.signal });
+      return;
+    }
+    // 任务流：轮询任务详情的增量（工作台任务详情已含事件、验证与影响）。
+    let last = null;
+    for (;;) {
+      if (controller.signal.aborted) break;
+      const task = await workbenchFetch(args, `tasks/${taskId}`);
+      const signature = `${task.status}:${task.updatedAt}`;
+      if (signature !== last) {
+        last = signature;
+        print({ ...task, type: 'task', at: task.updatedAt });
+        for (const event of (task.events || []).slice(-5))
+          print({ ...event, type: event.type || 'event' });
+        if (once) break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  } catch (error) {
+    if (error?.name !== 'AbortError') throw error;
+  } finally {
+    process.removeListener('SIGINT', onSigint);
+  }
+}
+
+function runNode(args) {
+  if (has(args, '--help') || has(args, '-h')) {
+    console.log([
+      '用法：ggb node --control-url https://workbench.example.com --workspace 名称=/绝对路径',
+      '  --config <path>        节点配置文件（JSON）',
+      '  --pair <code>          配对码',
+      '  --name <名称>          节点名称',
+      '  --data-dir <path>      数据目录',
+      '  --print-config         打印解析后的配置',
+    ].join('\n'));
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [fileURLToPath(new URL('./node.mjs', import.meta.url)), ...args], {
+      stdio: 'inherit', windowsHide: false,
+    });
+    const forward = (signal) => { if (!child.killed) child.kill(signal); };
+    const onSigint = () => forward('SIGINT');
+    const onSigterm = () => forward('SIGTERM');
+    process.once('SIGINT', onSigint);
+    process.once('SIGTERM', onSigterm);
+    child.once('error', (error) => { process.removeListener('SIGINT', onSigint); reject(error); });
+    child.once('close', (code, signal) => {
+      process.removeListener('SIGINT', onSigint);
+      process.removeListener('SIGTERM', onSigterm);
+      process.exitCode = code ?? (signal ? 1 : 0);
+      resolve();
+    });
+  });
+}
+
 async function skillCommand(args) {
   const sub = args[0];
   if (!sub || sub === 'help' || sub === '--help' || sub === '-h') return console.log(teamUsage);
@@ -1157,15 +1364,18 @@ function emitEvent(input, event, state) {
   } else if (input.preset.protocol === 'responses') {
     if (data.type === 'response.output_text.delta') text = data.delta || '';
   } else text = data.choices?.[0]?.delta?.content || '';
-  if (text) { state.text += text; if (!input.json) process.stdout.write(text); }
+  // rpc 模式下 stdout 是 JSONL 事件流，原始文本只能通过 text_delta 事件输出。
+  if (text) { state.text += text; if (!input.json && !input.rpc) process.stdout.write(text); }
 }
 
 async function run(input, prompt, history = []) {
   if (!input.apiKey) throw new Error(`未找到 ${input.preset.label} 密钥，请设置 ${(input.preset.keys || []).join(' 或 ') || '自定义供应商的 apiKey'}`);
   const startedAt = Date.now();
+  const timeout = AbortSignal.timeout(180000);
   const response = await fetch(endpoint(input), {
     method: 'POST', headers: headers(input.preset, input.apiKey), body: JSON.stringify(requestBody(input, prompt, history)),
-    signal: AbortSignal.timeout(180000),
+    // rpc 模式可传入 abortSignal，与超时信号合并。
+    signal: input.abortSignal ? AbortSignal.any([input.abortSignal, timeout]) : timeout,
   });
   if (!response.ok) {
     const raw = await response.text();
@@ -1174,6 +1384,7 @@ async function run(input, prompt, history = []) {
     throw new Error(`${input.preset.label} 返回 HTTP ${response.status}: ${detail.slice(0, 500)}`);
   }
   const state = { text: '', usage: null };
+  const emitDelta = (text) => { if (text && input.emitText) input.emitText(text); };
   if (!input.stream) {
     const raw = await response.text();
     let data; try { data = JSON.parse(raw); } catch { throw new Error('供应商返回了无效 JSON。'); }
@@ -1181,6 +1392,7 @@ async function run(input, prompt, history = []) {
     if (input.preset.protocol === 'anthropic') state.text = (data.content || []).filter(x => x.type === 'text').map(x => x.text).join('');
     else if (input.preset.protocol === 'responses') state.text = data.output_text || (data.output || []).flatMap(x => x.content || []).filter(x => x.type === 'output_text').map(x => x.text).join('');
     else state.text = data.choices?.[0]?.message?.content || '';
+    emitDelta(state.text);
   } else {
     if (!response.body) throw new Error('供应商没有返回可读取的流。');
     const reader = response.body.getReader();
@@ -1193,13 +1405,17 @@ async function run(input, prompt, history = []) {
       buffer = events.pop() || '';
       for (const chunk of events) {
         const event = chunk.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trim()).join('');
+        const before = state.text;
         emitEvent(input, event, state);
+        emitDelta(state.text.slice(before.length));
       }
       if (done) break;
     }
     if (buffer.trim()) {
       const event = buffer.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trim()).join('');
+      const before = state.text;
       emitEvent(input, event, state);
+      emitDelta(state.text.slice(before.length));
     }
   }
   const elapsedMs = Date.now() - startedAt;
@@ -1209,9 +1425,9 @@ async function run(input, prompt, history = []) {
     ...(state.usage ? { usage: state.usage, contextWindow: Number(input.preset.contextWindow) || 128000 } : {}),
     elapsedMs,
   })}\n`);
-  else if (input.stream) process.stdout.write('\n');
+  else if (input.stream) { if (!input.rpc) process.stdout.write('\n'); }
   else process.stdout.write(`${state.text}\n`);
-  if (!input.json) statusLine(input, { usage: state.usage, elapsedMs });
+  if (!input.json && !input.rpc) statusLine(input, { usage: state.usage, elapsedMs });
   return { text: state.text, usage: state.usage, elapsedMs };
 }
 
@@ -1319,6 +1535,9 @@ async function main() {
   if (command === 'skill') return skillCommand(args);
   if (command === 'models') return modelsCommand(args);
   if (command === 'login') return loginCommand(args);
+  if (command === 'rpc') return rpc(args);
+  if (command === 'events') return events(args);
+  if (command === 'node') return runNode(args);
   if (command === 'logout') return logoutCommand(args);
   if (command === 'context') return contextCommand(args);
   if (command !== 'run' && command !== 'chat') throw new Error(`未知命令“${command}”。\n\n${usage}`);
