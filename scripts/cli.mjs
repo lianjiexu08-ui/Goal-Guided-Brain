@@ -135,6 +135,43 @@ function doctorCheck(id, label, status, detail) {
 // 本地 loopback 且未开启 WORKBENCH_REQUIRE_AUTH 时无需登录；否则用 --password 或 GGB_PASSWORD 登录后缓存 cookie。
 const workbenchBase = args => String(valueAfter(args, '--api', process.env.GGB_API_URL || 'http://127.0.0.1:3089')).replace(/\/$/, '');
 const cookieFile = () => path.join(sessionDir(), '.workbench-session');
+// 工作台未运行时自动拉起一个（后台常驻），用户不需要先手动 npm start。
+const autoStarted = new Set();
+async function ensureWorkbench(args) {
+  if (has(args, '--no-autostart') || process.env.GGB_NO_AUTOSTART === '1') return false;
+  const base = workbenchBase(args);
+  if (autoStarted.has(base)) return false;
+  const serverPath = fileURLToPath(new URL('../server/index.mjs', import.meta.url));
+  let port = 3089;
+  try { port = new URL(base).port || 3089; } catch {}
+  const dataDir = process.env.WORKBENCH_DATA_DIR || path.join(os.homedir(), '.dsh-workbench');
+  console.error(`· 工作台未运行，正在自动启动（数据目录 ${dataDir}）…`);
+  const logFile = path.join(dataDir, 'autostart.log');
+  fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  const out = fs.openSync(logFile, 'a');
+  const child = spawn(process.execPath, [serverPath], {
+    detached: true,
+    stdio: ['ignore', out, out],
+    env: { ...process.env, WORKBENCH_API_PORT: String(port), WORKBENCH_DATA_DIR: dataDir },
+  });
+  child.unref();
+  fs.closeSync(out);
+  autoStarted.add(base);
+  // 等健康检查就绪（最多 20 秒）。
+  for (let index = 0; index < 60; index += 1) {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    try {
+      const health = await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(1500) });
+      if (health.ok) {
+        console.error(`· 工作台已就绪：${base}`);
+        return true;
+      }
+    } catch {}
+    if (child.exitCode !== null) throw new Error(`工作台自动启动失败（退出码 ${child.exitCode}）。常见原因：端口 ${port} 被占用。`);
+  }
+  throw new Error(`工作台自动启动超时（${base}）。请手动运行 npm start 查看具体错误。`);
+}
+
 async function workbenchFetch(args, route, { method = 'GET', body } = {}) {
   const base = workbenchBase(args);
   const url = `${base}/api/${String(route).replace(/^\//, '')}`;
@@ -147,8 +184,14 @@ async function workbenchFetch(args, route, { method = 'GET', body } = {}) {
   let response;
   try {
     response = await attempt(cookie);
-  } catch (error) {
-    throw new Error(`无法连接工作台 ${base}。请先在工作台目录运行 npm start，或用 --api 指定地址。\n原始错误：${error.message}`);
+  } catch {
+    // 连接失败 → 自动拉起工作台再重试一次。
+    await ensureWorkbench(args).catch(() => {});
+    try {
+      response = await attempt(cookie);
+    } catch (retryError) {
+      throw new Error(`无法连接工作台 ${base}（自动启动失败或被禁用：GGB_NO_AUTOSTART=1）。\n原始错误：${retryError.message}`);
+    }
   }
   if (response.status === 401) {
     const password = valueAfter(args, '--password', process.env.GGB_PASSWORD || '');
@@ -1507,7 +1550,11 @@ async function interactiveChat(input, args = []) {
   console.log(`${CLI_NAME} · ${input.providerName}/${input.model} · 会话 ${input.sessionId}`);
   console.log('输入 /help 查看命令，/exit 退出。');
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, historySize: 1000 });
-  const ask = () => new Promise(resolve => rl.question('你 › ', resolve));
+  const ask = () => new Promise(resolve => {
+    // stdin 先于异步命令处理结束时 readline 已关闭，安静退出而不是报错。
+    if (rl.closed) return resolve('/exit');
+    rl.question('你 › ', resolve);
+  });
   try {
     for (;;) {
       const value = (await ask()).trim();
