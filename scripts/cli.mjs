@@ -1934,32 +1934,23 @@ function attachSlashMenu(rl, getContext) {
 
 async function home(input, args) {
   prepareSession(input);
-  const homeCommands = [
-    { name: '/help', title: '命令列表', description: '', source: 'command' },
-    { name: '/login', title: '登录模型供应商', description: '密钥入加密凭据库', source: 'command' },
-    { name: '/logout', title: '移除供应商', description: '', source: 'command' },
-    { name: '/models', title: '供应商与模型目录', description: '', source: 'command' },
-    { name: '/tasks', title: '查看团队任务', description: '/tasks [序号]', source: 'command' },
-    { name: '/new', title: '创建新团队', description: '', source: 'command' },
-    { name: '/exit', title: '退出', description: '', source: 'command' },
-  ];
-  const homeSkills = () => slashCatalog(args);
+  const HOME_COMMANDS = ['/', '/help', '/login ', '/logout ', '/models', '/tasks ', '/new', '/exit'];
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
     completer: line => {
       if (!line.startsWith('/')) return [[], line];
-      const skills = slashMenu.cache || [];
-      const hits = slashMatches(line, homeCommands, skills).map(item => item.name);
-      return [hits.length ? hits : homeCommands.map(item => item.name), line];
+      const hits = HOME_COMMANDS.filter(cmd => cmd.startsWith(line));
+      return [hits.length ? hits : HOME_COMMANDS, line];
     },
   });
   attachSlashMenu(rl, () => ({
     line: rl.line || '',
-    contextCommands: homeCommands,
+    contextCommands: HOME_COMMANDS.map(name => ({ name, title: '', description: '', source: 'command' })),
     skills: slashMenu.cache || [],
   }));
-  void homeSkills();
+  void slashCatalog(args).catch(() => {});
+
   const homeLineQueue = [];
   let homeNotifyLine = null;
   rl.on('line', line => {
@@ -1972,161 +1963,151 @@ async function home(input, args) {
     process.stdout.write(label);
     return await new Promise(resolve => { homeNotifyLine = resolve; });
   };
+
+  let rendered = false;
+  const renderHome = (teams, modelReady) => {
+    console.log('');
+    console.log(`Goal-Guided Brain · ${modelReady ? '模型已配置' : '模型未配置：ggb login <供应商>'}`);
+    if (teams.length) {
+      console.log('团队：');
+      teams.forEach((team, index) => {
+        const phase = team.recruitment?.phase === 'confirmed' ? '就绪' : team.recruitment?.phase || '-';
+        const members = team.recruitment?.phase === 'confirmed' ? (team.memberRoleIds || []).length : 1;
+        console.log(`  ${index + 1}. ${team.name}  [${phase}]  成员${members}  ${team.status}`);
+      });
+    } else {
+      console.log('还没有团队。输入 n 创建。');
+    }
+    console.log('序号 → 派活 · /help 命令 · c → 对话 · n → 建团队 · r → 刷新 · q → 退出');
+    rendered = true;
+  };
+
   try {
+    let cachedTeams = null;
+    let cachedModelReady = null;
     for (;;) {
-      // 拉取状态（失败不阻塞首页）
-      let teams = [];
-      let providers = [];
-      let workbenchOk = true;
-      try {
-        teams = await workbenchFetch(args, 'teams');
-        providers = await workbenchFetch(args, 'providers');
-      } catch {
-        await ensureWorkbench(args).catch(() => {});
+      // 只在首次或刷新时渲染完整面板
+      if (!rendered) {
+        let teams = [];
+        let providers = [];
         try {
-          teams = await workbenchFetch(args, 'teams');
-          providers = await workbenchFetch(args, 'providers');
-        } catch { workbenchOk = false; }
+          [teams, providers] = await Promise.all([
+            workbenchFetch(args, 'teams'),
+            workbenchFetch(args, 'providers'),
+          ]);
+        } catch {
+          await ensureWorkbench(args).catch(() => {});
+          try {
+            [teams, providers] = await Promise.all([
+              workbenchFetch(args, 'teams'),
+              workbenchFetch(args, 'providers'),
+            ]);
+          } catch {}
+        }
+        cachedTeams = teams;
+        const envKey = Boolean(pickKey(input.preset, ''));
+        cachedModelReady = envKey || (providers || []).some(item => item.enabled !== false && item.protocol !== 'typesafe-system-one');
+        renderHome(cachedTeams, cachedModelReady);
       }
-      const envKey = Boolean(pickKey(input.preset, ''));
-      const enabledProvider = (providers || []).find(item => item.enabled !== false && (item.protocol !== 'typesafe-system-one'));
-      const modelReady = envKey || Boolean(enabledProvider);
-      console.log('');
-      console.log(`Goal-Guided Brain · ${workbenchOk ? '工作台运行中' : '工作台未连接'} · 模型${modelReady ? '已配置' : '未配置'}`);
-      if (!modelReady) console.log(`  未配置模型：运行 ggb login <供应商>（如 ggb login deepseek），或设置对应环境变量。`);
-      console.log('');
-      void slashCatalog(args).catch(() => {}); // 后台预热技能目录供斜杠补全
-      if (!workbenchOk) {
-        console.log('无法连接工作台，仅可使用纯模型对话。');
-      } else if (!teams.length) {
-        console.log('还没有团队。输入 n 创建第一个团队，或继续用纯模型对话。');
-      } else {
-        console.log('团队：');
-        teams.forEach((team, index) => {
-          const phase = team.recruitment?.phase === 'confirmed' ? '就绪' : team.recruitment?.phase || '-';
-          const members = team.recruitment?.phase === 'confirmed' ? (team.memberRoleIds || []).length : 1;
-          console.log(`  ${index + 1}. ${team.name}  [${phase}]  成员${members}  ${team.status}`);
-        });
-      }
-      console.log('');
-      console.log('序号 → 进入派活 · / 命令列表 · c → 纯模型对话 · q → 退出');
       const answer = (await readLine('ggb › ')).trim();
       if (!answer) continue;
       if (answer === 'q' || answer === 'quit' || answer === '/exit' || answer === '/q') break;
-      if (answer === 'r' || answer === 'refresh') continue;
-      if (answer.startsWith('/') && !['help', 'login', 'logout', 'models', 'tasks', 'new', 'exit', 'q'].includes(answer.slice(1).split(/\s+/)[0])) {
-        const skillId = answer.slice(1).split(/\s+/)[0];
-        let skills = slashMenu.cache || [];
-        if (!skills.length && slashCatalogInFlight) {
-          skills = await Promise.race([slashCatalogInFlight.catch(() => []), new Promise(resolve => setTimeout(() => resolve([]), 15000))]);
-        }
-        const skill = skills.find(item => item.id === skillId);
-        if (skill) {
-          const skillArgs = answer.slice(1 + skillId.length).trim();
-          if (skill.source === 'hub') {
-            console.log(`「${skill.title}」尚未安装。安装：ggb skill install ${skill.id}\n`);
-            continue;
-          }
-          if (!teams.length) { console.log('先创建团队（n）再使用技能派活。\n'); continue; }
-          console.log(`使用技能「${skill.title}」。输入团队序号：`);
-          const pick = (await readLine('ggb › ')).trim();
-          const team = teams[Number(pick) - 1];
-          if (!team || team.recruitment?.phase !== 'confirmed') { console.log('未选择有效团队。\n'); continue; }
-          input.teamId = team.id;
-          input.pendingPrompt = `请使用 ${skill.id} 技能（${skill.title}）处理：${skillArgs || '见团队上下文'}`;
-          await interactiveChat(input, args);
-          continue;
-        }
-      }
+      if (answer === 'r' || answer === 'refresh') { rendered = false; continue; }
       if (answer.startsWith('/')) {
         const [cmd, ...rest] = answer.slice(1).split(/\s+/).filter(Boolean);
         const arg = rest.join(' ');
         if (cmd === 'help' || answer === '/') {
           console.log([
-            '首页命令：',
             '  /help                本列表',
-            '  /login <供应商>      登录模型供应商（密钥入加密凭据库）',
+            '  /login <供应商>      登录模型供应商',
+            '  /logout <供应商>     移除供应商',
             '  /models              供应商与模型目录',
             '  /tasks [序号]        查看团队任务',
             '  /new                 创建新团队',
             '  /exit | /q           退出',
-            '输入团队序号进入派活会话；c 进入纯模型对话。',
-          ].join('\n') + '\n');
+          ].join('\n'));
           continue;
         }
         if (cmd === 'login') {
-          try { await loginCommand([arg, '--api', workbenchBase(args)].filter(Boolean)); } catch (error) { console.error(`${CLI_NAME}: ${error.message}\n`); }
+          try { await loginCommand([arg, '--api', workbenchBase(args)].filter(Boolean)); } catch (error) { console.error(`${CLI_NAME}: ${error.message}`); }
+          rendered = false; // 模型状态可能变了
           continue;
         }
         if (cmd === 'logout') {
-          try { await logoutCommand([arg]); } catch (error) { console.error(`${CLI_NAME}: ${error.message}\n`); }
+          try { await logoutCommand([arg]); } catch (error) { console.error(`${CLI_NAME}: ${error.message}`); }
+          rendered = false;
           continue;
         }
         if (cmd === 'models') {
-          try { await modelsCommand(args); } catch (error) { console.error(`${CLI_NAME}: ${error.message}\n`); }
+          try { await modelsCommand(args); } catch (error) { console.error(`${CLI_NAME}: ${error.message}`); }
           continue;
         }
         if (cmd === 'tasks') {
-          const target = teams[Number(arg) - 1];
+          const target = cachedTeams?.[Number(arg) - 1];
           const teamId = target?.id || arg;
-          if (!teamId) { console.log('用法：/tasks [团队序号]\n'); continue; }
+          if (!teamId) { console.log('用法：/tasks [团队序号]'); continue; }
           try {
             const detail = await workbenchFetch(args, `teams/${teamId}`);
             const tasks = (detail.tasks || []).slice(0, 8);
-            if (!tasks.length) console.log('该团队还没有任务。\n');
+            if (!tasks.length) console.log('该团队还没有任务。');
             for (const task of tasks) {
               const title = String(task.title || task.id).replace(/\s+/g, ' ').slice(0, 50);
               console.log(`[${task.status}] ${title}\n    ggb task ${task.id}`);
             }
-            console.log('');
-          } catch (error) { console.error(`${CLI_NAME}: ${error.message}\n`); }
+          } catch (error) { console.error(`${CLI_NAME}: ${error.message}`); }
           continue;
         }
-        if (!slashMenu.cache) {
-          console.log('技能目录加载中，请重试。可用命令：/help /login /models /tasks /new /exit\n');
-        } else {
-          console.log([
-            `未知命令 /${cmd}。可用：`,
-            '  /help  /login <供应商>  /logout <供应商>  /models  /tasks [序号]  /new  /exit',
-          ].join('\n') + '\n');
+        // /<skill-id> → 技能调用或安装提示（用缓存，不阻塞交互循环）
+        const skills = slashMenu.cache || [];
+        const skill = skills.find(item => item.id === cmd);
+        if (skill) {
+          if (skill.source !== 'builtin') {
+            console.log(`「${skill.title}」尚未安装。安装：ggb skill install ${skill.id}`);
+            continue;
+          }
         }
+        console.log(`未知命令 /${cmd}。/help 查看可用命令。`);
         continue;
       }
       if (answer === 'c' || answer === 'chat') {
-        if (!pickKey(input.preset, '') && !(await workbenchFetch(args, 'providers').catch(() => [])).some(item => item.enabled !== false)) {
-          console.log(`未配置模型。先运行 ggb login ${input.providerName}，或设置 ${(input.preset.keys || []).join('/') || 'API Key'}。\n`);
+        const hasProvider = (await workbenchFetch(args, 'providers').catch(() => [])).some(item => item.enabled !== false);
+        if (!hasProvider && !pickKey(input.preset, '')) {
+          console.log('未配置模型。先运行 ggb login <供应商>。');
           continue;
         }
         await interactiveChat(input, args);
+        rendered = false; // 回来后刷新
         continue;
       }
       if (answer === 'n' || answer === 'new') {
         const name = (await readLine('团队名称 › ')).trim();
         const goal = (await readLine('团队目标 › ')).trim();
-        if (!name || !goal) { console.log('需要名称与目标。\n'); continue; }
+        if (!name || !goal) { console.log('需要名称与目标。'); continue; }
         try {
           const saved = await workbenchFetch(args, 'teams', { method: 'POST', body: {
             name, goal, purpose: goal, pmRoleId: 'project_manager', memberRoleIds: ['project_manager'],
             requireReview: false,
             collaboration: { enabled: true, autoHandoff: true, sharedBoard: true, allowedTeamIds: [] },
           } });
-          console.log(`已创建「${saved.name}」。\n`);
-        } catch (error) { console.error(`${CLI_NAME}: ${error.message}\n`); }
+          console.log(`已创建「${saved.name}」。`);
+        } catch (error) { console.error(`${CLI_NAME}: ${error.message}`); }
+        rendered = false;
         continue;
       }
       const index = Number(answer);
-      if (Number.isInteger(index) && index >= 1 && index <= teams.length) {
-        const team = teams[index - 1];
+      if (Number.isInteger(index) && index >= 1 && cachedTeams?.length && index <= cachedTeams.length) {
+        const team = cachedTeams[index - 1];
         if (team.recruitment?.phase !== 'confirmed') {
-          console.log(`团队「${team.name}」尚未完成招募（${team.recruitment?.phase || '-'}），请先在网页或招募流程中确认。\n`);
+          console.log(`团队「${team.name}」尚未完成招募。`);
           continue;
         }
         input.teamId = team.id;
-        console.log(`已进入团队「${team.name}」。直接输入目标即可派活，/exit 返回首页。\n`);
+        console.log(`已进入「${team.name}」。输入目标派活，/exit 返回首页。`);
         await interactiveChat(input, args);
+        rendered = false;
         continue;
       }
-      console.log(`无法理解「${answer}」。输入序号派活，/ 查看命令，c 纯模型对话，q 退出。`);
+      console.log(`? ${answer} — 输入序号 / 查看命令 / q 退出`);
     }
   } finally {
     rl.close();
