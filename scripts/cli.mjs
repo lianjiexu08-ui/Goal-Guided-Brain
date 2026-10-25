@@ -2004,7 +2004,24 @@ async function interactiveChat(input, args = []) {
         continue;
       }
       if (value === '/session') {
-        console.log(`会话：${input.sessionId}\n文件：${input.sessionFile}\n模型：${input.providerName}/${input.model}\n`);
+        const parsed = parseSession(input.sessionFile);
+        const prompts = parsed.entries.filter(entry => entry.type === 'prompt').length;
+        const responses = parsed.entries.filter(entry => entry.type === 'response').length;
+        const usage = parsed.entries.reduce((sum, entry) => {
+          if (!entry.usage) return sum;
+          return { input: sum.input + (entry.usage.inputTokens || 0), output: sum.output + (entry.usage.outputTokens || 0) };
+        }, { input: 0, output: 0 });
+        const contextWindow = Number(input.preset.contextWindow) || 128000;
+        const fileBytes = fs.existsSync(input.sessionFile) ? fs.statSync(input.sessionFile).size : 0;
+        console.log([
+          `会话：${input.sessionId}`,
+          `文件：${input.sessionFile} (${(fileBytes / 1024).toFixed(1)} KB)`,
+          `模型：${input.providerName}/${input.model}`,
+          `轮次：${prompts} 问 / ${responses} 答`,
+          ...(usage.input || usage.output ? [`Token：in ${fmtTokens(usage.input)} / out ${fmtTokens(usage.output)}`] : []),
+          `上下文窗口：${fmtTokens(contextWindow)}`,
+          ...(input.teamId ? [`团队：${input.teamId}`] : []),
+        ].join('\n') + '\n');
         continue;
       }
       if (value === '/team' || value.startsWith('/team ')) {
@@ -2051,6 +2068,73 @@ async function interactiveChat(input, args = []) {
         } catch (error) {
           console.error(`${CLI_NAME}: ${error.message}\n`);
         }
+        continue;
+      }
+      if (value === '/copy') {
+        const lastResponse = [...input.history].reverse().find(turn => turn.response);
+        if (!lastResponse) { console.log('还没有可复制的回答。\n'); continue; }
+        const { execFileSync: efs } = await import('node:child_process');
+        try {
+          const copier = process.platform === 'darwin' ? 'pbcopy' : process.platform === 'linux' ? (fs.existsSync('/usr/bin/xclip') ? 'xclip' : 'xsel') : null;
+          if (!copier) throw new Error('不支持的平台');
+          efs(copier, copier === 'pbcopy' ? [] : ['-selection', 'clipboard'], { input: lastResponse.response, stdio: ['pipe', 'ignore', 'ignore'] });
+          console.log(`已复制最后一条回答（${lastResponse.response.length} 字符）。\n`);
+        } catch (error) {
+          console.log(`复制失败：${error.message}\n`);
+        }
+        continue;
+      }
+      if (value === '/compact') {
+        if (input.teamId) { console.log('团队会话由工作台管理上下文，无需手动压缩。\n'); continue; }
+        if (!input.history.length) { console.log('会话为空，无需压缩。\n'); continue; }
+        requireModelKey();
+        const keepRecent = 4;
+        const older = input.history.slice(0, -keepRecent);
+        if (older.length < 2) { console.log(`最近 ${Math.min(keepRecent, input.history.length)} 轮已占会话主体，无需压缩。\n`); continue; }
+        console.log(`正在压缩 ${older.length} 轮历史…`);
+        try {
+          const summaryPrompt = `请将以下对话历史压缩为简洁摘要（保留关键决定、结论和未完成事项，不超过 300 字）：\n\n` +
+            older.map(turn => `用户：${turn.prompt}\n助手：${turn.response}`).join('\n\n');
+          const summary = await run(input, summaryPrompt, []);
+          input.history = [
+            { prompt: '[历史摘要]', response: summary.text },
+            ...input.history.slice(-keepRecent),
+          ];
+          appendSession(input.sessionFile, {
+            type: 'compact', sessionId: input.sessionId, at: new Date().toISOString(),
+            compacted: older.length, summary: redactSession(summary.text, input),
+          });
+          console.log(`已压缩 ${older.length} 轮为摘要。保留最近 ${keepRecent} 轮。\n`);
+        } catch (error) {
+          console.error(`${CLI_NAME}: 压缩失败：${error.message}\n`);
+        }
+        continue;
+      }
+      if (value === '/resume') {
+        const files = sessionDir() && fs.existsSync(sessionDir())
+          ? fs.readdirSync(sessionDir()).filter(file => file.endsWith('.jsonl')).sort((a, b) => {
+              const sa = fs.statSync(path.join(sessionDir(), a));
+              const sb = fs.statSync(path.join(sessionDir(), b));
+              return sb.mtimeMs - sa.mtimeMs;
+            })
+          : [];
+        if (!files.length) { console.log('没有历史会话。\n'); continue; }
+        console.log('可用会话（最近优先）：');
+        files.slice(0, 10).forEach((file, index) => {
+          const parsed = parseSession(path.join(sessionDir(), file));
+          const prompts = parsed.entries.filter(entry => entry.type === 'prompt').length;
+          const firstPrompt = parsed.entries.find(entry => entry.type === 'prompt');
+          const preview = firstPrompt ? String(firstPrompt.text || '').slice(0, 40) : file;
+          console.log(`  ${index + 1}. ${path.basename(file, '.jsonl').slice(0, 12)}  ${prompts} 轮  ${preview}`);
+        });
+        const pick = (await new Promise(resolve => rl.question('输入序号继续（回车取消）› ', resolve))).trim();
+        const pickIndex = Number(pick);
+        if (!Number.isInteger(pickIndex) || pickIndex < 1 || pickIndex > Math.min(10, files.length)) { console.log('已取消。\n'); continue; }
+        const chosen = files[pickIndex - 1];
+        input.session = path.basename(chosen, '.jsonl');
+        input.continueSession = true;
+        prepareSession(input);
+        console.log(`已切换到会话 ${input.sessionId}（${input.history.length} 轮历史）。\n`);
         continue;
       }
       if (value === '/new') {
