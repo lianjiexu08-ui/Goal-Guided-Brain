@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createWorkbench } from '../server/index.mjs';
 import { createServer } from 'node:http';
 
@@ -80,7 +80,7 @@ function fakeProvider(t) {
 
 test('chat /compact 压缩历史并写入 compact 事件', async t => {
   const pbase = await fakeProvider(t);
-  const { base, env, sessionDir } = await start(t);
+  const { env, sessionDir } = await start(t);
   const sessionFile = path.join(sessionDir, 'compact-test.jsonl');
   // 手动写几轮历史
   for (let turn = 1; turn <= 6; turn += 1) {
@@ -88,7 +88,7 @@ test('chat /compact 压缩历史并写入 compact 事件', async t => {
     fs.appendFileSync(sessionFile, JSON.stringify({ type: 'response', sessionId: 'compact-test', at: new Date().toISOString(), text: `回答 ${turn}` }) + '\n');
   }
   // 用 rpc 模式发 /compact（rpc 不需要 TTY）
-  const result = await runCli([
+  await runCli([
     'rpc', '--provider', 'openai', '--base-url', pbase, '--api-key', 'k', '--session', 'compact-test',
   ], { env, input: [
     JSON.stringify({ type: 'ping' }),
@@ -101,7 +101,7 @@ test('chat /compact 压缩历史并写入 compact 事件', async t => {
 });
 
 test('chat /session 统计输出轮次和文件大小', async t => {
-  const { sessionDir } = await start(t);
+  const { env, sessionDir } = await start(t);
   const sessionFile = path.join(sessionDir, 'sess-stat.jsonl');
   for (let turn = 1; turn <= 3; turn += 1) {
     fs.appendFileSync(sessionFile, JSON.stringify({ type: 'prompt', sessionId: 'sess-stat', at: new Date().toISOString(), text: `问题 ${turn}` }) + '\n');
@@ -132,7 +132,7 @@ test('chat /copy 复制最后回答到剪贴板', async t => {
 });
 
 test('chat /resume 从会话列表选择并恢复', async t => {
-  const { env, sessionDir } = await start(t);
+  const { sessionDir } = await start(t);
   // 写两个会话文件
   const s1 = path.join(sessionDir, 'resume-a.jsonl');
   const s2 = path.join(sessionDir, 'resume-b.jsonl');
@@ -152,14 +152,14 @@ test('chat /resume 从会话列表选择并恢复', async t => {
 
 test('rpc turn_end 包含 usage 和 elapsedMs（token 计量）', async t => {
   const pbase = await fakeProvider(t);
-  const { env, sessionDir } = await start(t);
+  const { env } = await start(t);
   const result = await runCli([
     'rpc', '--provider', 'openai', '--base-url', pbase, '--api-key', 'k', '--session', 'usage-test',
   ], { env, input: [
     JSON.stringify({ type: 'prompt', id: 'p1', text: '计算' }),
     '',
   ].join('\n') });
-  const events = result.stdout.trim().split('\n').map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  const events = (result.stdout || '').trim().trim().split('\n').map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
   const turnEnd = events.find(event => event.type === 'turn_end');
   assert.ok(turnEnd, '应有 turn_end');
   assert.ok(turnEnd.usage && turnEnd.usage.inputTokens > 0, 'usage 应包含 token 数');
