@@ -117,3 +117,40 @@ test('入站校验：webhook HMAC 与 QQ token', t => {
   assert.equal(service.verifyInbound(records.get('integrations', qq.id), { headers: { authorization: 'Bearer tok' } }).ok, true);
   assert.equal(service.verifyInbound(records.get('integrations', qq.id), { headers: { authorization: 'Bearer nope' } }).ok, false);
 });
+
+test('飞书与钉钉机器人出站', async t => {
+  const { records } = setup(t);
+  const { calls, impl } = fakeFetch(t, (url) => ({
+    ok: true, status: 200,
+    json: async () => (/feishu/.test(url) ? { code: 0 } : { errcode: 0 }),
+  }));
+  const service = new IntegrationService({ records, fetchImpl: impl });
+  service.save({ type: 'feishu-bot', name: '飞书群', config: { url: 'https://open.feishu.cn/open-apis/bot/v2/hook/xxx' }, events: ['task.completed'] });
+  service.save({ type: 'dingtalk-bot', name: '钉钉群', config: { url: 'https://oapi.dingtalk.com/robot/send?access_token=x', secret: 'SEC' }, events: ['task.completed'] });
+  const results = await service.dispatch('task.completed', { title: '交付完成', status: 'completed' });
+  assert.ok(results.every(result => result.ok));
+  const feishu = calls.find(call => /feishu/.test(call.url));
+  assert.equal(feishu.body.msg_type, 'text');
+  assert.ok(feishu.body.content.text.includes('交付完成'));
+  const dingtalk = calls.find(call => /dingtalk/.test(call.url));
+  assert.ok(/timestamp=\d+&sign=/.test(dingtalk.url), '钉钉签名参数已附加');
+  assert.equal(dingtalk.body.msgtype, 'text');
+});
+
+test('bridge 渠道：仅入站可不配 URL，Bearer token 校验', async t => {
+  const { records } = setup(t);
+  const service = new IntegrationService({ records, fetchImpl: async () => ({ ok: true, status: 200 }) });
+  // 仅入站的桥：不配 URL 也能创建。
+  const bridge = service.save({ type: 'bridge', name: '微信桥', config: { accessToken: 'wx-token', teamId: 'team-1' } });
+  assert.equal(bridge.type, 'bridge');
+  const headers = { authorization: 'Bearer wx-token' };
+  assert.equal(service.verifyInbound(records.get('integrations', bridge.id), { headers }).ok, true);
+  assert.equal(service.verifyInbound(records.get('integrations', bridge.id), { headers: { authorization: 'Bearer wrong' } }).ok, false);
+  // 配了 URL 时出站走 JSON 信封。
+  const { calls, impl } = fakeFetch(t, () => ({ ok: true, status: 200 }));
+  const outbound = new IntegrationService({ records, fetchImpl: impl });
+  outbound.save({ type: 'bridge', name: '双向往返', config: { url: 'http://bridge.local/push', accessToken: 't' } });
+  await outbound.dispatch('task.completed', { title: 'x' });
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer t');
+  assert.equal(calls[0].body.event, 'task.completed');
+});

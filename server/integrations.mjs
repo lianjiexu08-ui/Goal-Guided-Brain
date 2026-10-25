@@ -16,7 +16,7 @@
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-const INTEGRATION_TYPES = new Set(['webhook', 'wecom-bot', 'qq-onebot']);
+const INTEGRATION_TYPES = new Set(['webhook', 'wecom-bot', 'qq-onebot', 'feishu-bot', 'dingtalk-bot', 'bridge']);
 const DEFAULT_EVENTS = ['attention', 'task.completed'];
 const ALLOWED_EVENTS = new Set(['attention', 'task.completed', 'verification.failed']);
 const MAX_DELIVERY_LOG = 500;
@@ -83,6 +83,49 @@ export class IntegrationService {
       const result = await response.json().catch(() => ({}));
       return { ok: response.ok && result?.status !== 'failed', status: response.status, error: result?.status === 'failed' ? 'OneBot 返回 failed' : null };
       } });
+    // 飞书自定义机器人：POST {"msg_type":"text"}，url 为完整 webhook 地址。
+    this.registerChannel('feishu-bot', { send: async (payload, integration) => {
+      const url = integration.config?.url;
+      if (!url || !/open\.feishu\.cn|webhook/.test(url)) return { ok: false, error: '缺少有效的飞书机器人 webhook URL。' };
+      const response = await this.fetchImpl(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ msg_type: 'text', content: { text: this.renderText(payload) } }),
+      });
+      const result = await response.json().catch(() => ({}));
+      const ok = response.ok && (result?.code === 0 || result?.StatusCode === 0);
+      return { ok, status: response.status, error: ok ? null : `飞书返回 ${result?.code ?? result?.StatusCode ?? response.status}` };
+      } });
+    // 钉钉自定义机器人：POST {"msgtype":"text"}；配置 secret 时自动加时间戳签名。
+    this.registerChannel('dingtalk-bot', { send: async (payload, integration) => {
+      let url = integration.config?.url;
+      if (!url || !/oapi\.dingtalk\.com|robot\/send/.test(url)) return { ok: false, error: '缺少有效的钉钉机器人 webhook URL。' };
+      const secret = integration.config?.secret;
+      if (secret) {
+        const timestamp = Date.now();
+        const sign = createHmac('sha256', secret).update(`${timestamp}\n${secret}`).digest('base64');
+        url = `${url}${url.includes('?') ? '&' : '?'}timestamp=${timestamp}&sign=${encodeURIComponent(sign)}`;
+      }
+      const response = await this.fetchImpl(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ msgtype: 'text', text: { content: this.renderText(payload) } }),
+      });
+      const result = await response.json().catch(() => ({}));
+      const ok = response.ok && result?.errcode === 0;
+      return { ok, status: response.status, error: ok ? null : `钉钉返回 ${result?.errcode ?? response.status}` };
+      } });
+    // 通用桥接渠道：为 QQ/个人微信等无原生 webhook 的平台预留标准入口。
+    // 外部桥（NapCat、wechaty、WeChatFerry 等二开桥）用 Bearer token 调入站接口，
+    // 出站则用与 webhook 相同的 JSON 信封 POST 到 config.url（可选）。
+    this.registerChannel('bridge', { send: async (payload, integration) => {
+      const url = integration.config?.url;
+      if (!url) return { ok: false, error: '桥接渠道未配置出站 URL；仅入站时可留空。' };
+      const headers = { 'Content-Type': 'application/json' };
+      if (integration.config?.accessToken) headers.Authorization = `Bearer ${integration.config.accessToken}`;
+      const response = await this.fetchImpl(url, { method: 'POST', headers, body: JSON.stringify(payload) });
+      return { ok: response.ok, status: response.status, error: response.ok ? null : `HTTP ${response.status}` };
+      } });
   }
 
   registerChannel(type, adapter) {
@@ -139,7 +182,8 @@ export class IntegrationService {
       qqTargetId: text(rawConfig.qqTargetId, 40) || previous?.config?.qqTargetId || '',
       teamId: text(rawConfig.teamId, 160) || previous?.config?.teamId || '',
     };
-    if (!config.url) throw new Error('集成需要配置 URL（webhook / 机器人地址 / OneBot 地址）。');
+    if (!config.url && type !== 'bridge')
+      throw new Error('集成需要配置 URL（webhook / 机器人地址 / OneBot 地址）；桥接渠道可仅入站。');
     const record = {
       type, name, config,
       events: events.length ? events : [...DEFAULT_EVENTS],
@@ -237,7 +281,7 @@ export class IntegrationService {
       const expected = createHmac('sha256', secret).update(String(rawBody)).digest('hex');
       return safeEqual(String(signature), expected) ? { ok: true } : { ok: false, reason: '签名校验失败。' };
     }
-    if (integration.type === 'qq-onebot') {
+    if (integration.type === 'qq-onebot' || integration.type === 'bridge') {
       const token = integration.config?.accessToken;
       if (!token) return { ok: false, reason: '该集成未配置 access token，入站已禁用。' };
       const provided = String(headers.authorization || headers.Authorization || '').replace(/^Bearer\s+/i, '');
