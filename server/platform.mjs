@@ -294,11 +294,12 @@ export function createPlatform({
     const contextTeamId = meta.teamId || meta.spaceId || null;
     let skillGuidance = '';
     let enrichment = '';
-    if (meta.autoSkills !== false && task.prompt && workspace) {
+    if (meta.autoSkills !== false && task.prompt) {
       try {
+        const ws = records.get('workspaces', task.id);
         enrichment = enrichTaskContext({
           prompt: task.prompt,
-          workspace: workspace && fs.existsSync(workspace) ? workspace : null,
+          workspace: ws?.path || null,
         });
       } catch {}
     }
@@ -307,7 +308,7 @@ export function createPlatform({
         // 收集本地可用 Skill：内置角色 Skill + 已安装能力
         const localSkills = [];
         for (const skill of SKILLS) {
-          const skillDir = path.join(repo, 'roles', skill.role, 'skills', skill.id);
+          const skillDir = path.join(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), 'roles', skill.role, 'skills', skill.id);
           if (!fs.existsSync(path.join(skillDir, 'SKILL.md'))) continue;
           const text = fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8');
           const descMatch = text.match(/^description:\s*(.+)$/m);
