@@ -1086,6 +1086,67 @@ export class ControlPlane {
       return p && (normalized === p || normalized.includes(p));
     });
   }
+  // 提交执行计划（plan-then-execute）：改动前先记录目标、步骤、风险与验证方式，作为可审计事件。
+  recordExecutionPlan(input = {}, principal) {
+    this.ensureCurrent(principal);
+    const taskId = principal.type === 'instance' ? principal.taskId : input.taskId;
+    this.authorizeTask(principal, taskId);
+    const plan = {
+      goal: String(input.goal || '').slice(0, 2000),
+      steps: (Array.isArray(input.steps) ? input.steps : []).slice(0, 20).map(step => String(step).slice(0, 500)),
+      risks: (Array.isArray(input.risks) ? input.risks : []).slice(0, 10).map(risk => String(risk).slice(0, 300)),
+      verification: String(input.verification || '').slice(0, 1000),
+    };
+    if (!plan.goal) throw fail('执行计划需要目标。', 400);
+    if (!plan.steps.length) throw fail('执行计划需要至少一个步骤。', 400);
+    const seq = this.records.list('task-events').filter(item => item.taskId === taskId && item.type === 'plan/submitted').length + 1;
+    const planId = `plan:${taskId}:${seq}`;
+    this.records.save('task-events', { taskId, type: 'plan/submitted', data: plan, at: new Date().toISOString() }, planId);
+    return { recorded: true, planId, plan };
+  }
+  // 多样本并行：为同一目标在隔离目录创建 N 个并行样本任务，由 PM 比较后择优。
+  // Token 不限时，因此不主动取消落选样本；select_sample 只记录选择与理由。
+  spawnSampleTasks(input = {}, principal) {
+    this.ensureCurrent(principal);
+    if (principal.type !== 'instance') throw fail('只有执行实例可以创建样本任务。', 403);
+    const taskId = principal.taskId;
+    this.authorizeTask(principal, taskId);
+    const prompt = required(input.prompt, '样本任务提示', 32000);
+    const count = Math.min(Math.max(Number.isSafeInteger(input.count) ? input.count : 2, 2), 3);
+    const title = String(input.title || '并行样本任务').slice(0, 160);
+    const sampleGroup = `sample:${taskId}:${Date.now()}`;
+    const originTask = this.store.task(taskId);
+    const role = input.role ? required(String(input.role), '助手', 150) : required(originTask?.role, '助手', 150);
+    const samples = [];
+    for (let index = 0; index < count; index++) {
+      const job = this.createJob({
+        role,
+        prompt,
+        title: `${title} [样本 ${index + 1}/${count}]`,
+        workspaceMode: 'isolated',
+      }, principal);
+      const meta = this.records.get('task-meta', job.taskId);
+      if (meta)
+        this.records.save('task-meta', { ...meta, sampleGroup, sampleIndex: index + 1, sampleTotal: count }, job.taskId);
+      samples.push({ taskId: job.taskId, jobId: job.id, sampleIndex: index + 1 });
+    }
+    this.records.save('task-events', { taskId, type: 'samples/spawned', data: { sampleGroup, count, samples }, at: new Date().toISOString() }, `samples:${taskId}:${sampleGroup}`);
+    return { sampleGroup, count, samples };
+  }
+  // 选择优胜样本：记录选择与理由，并在源任务动态留痕；落选样本保留为证据。
+  selectSample(input = {}, principal) {
+    this.ensureCurrent(principal);
+    if (principal.type !== 'instance') throw fail('只有执行实例可以选择样本。', 403);
+    const selected = this.records.get('task-meta', String(input.taskId || ''));
+    if (!selected?.sampleGroup) throw fail('目标任务不是样本任务。', 404);
+    const originTaskId = principal.taskId;
+    const data = { sampleGroup: selected.sampleGroup, selectedTaskId: selected.taskId ?? input.taskId, rationale: String(input.rationale || '').slice(0, 2000), at: new Date().toISOString() };
+    this.records.save('task-events', { taskId: originTaskId, type: 'sample/selected', data, at: data.at }, `sample-selected:${selected.sampleGroup}`);
+    const siblings = this.records.list('task-meta').filter(meta => meta.sampleGroup === selected.sampleGroup && meta.id !== data.selectedTaskId);
+    for (const sibling of siblings)
+      this.records.save('task-events', { taskId: sibling.id, type: 'sample/not-selected', data: { sampleGroup: selected.sampleGroup, selectedTaskId: data.selectedTaskId }, at: data.at }, `sample-not-selected:${sibling.id}:${selected.sampleGroup}`);
+    return { recorded: true, ...data, siblingCount: siblings.length };
+  }
   // 计算复核轮应路由到的供应商/模型：优先团队 review 配置；否则自动选一个与发起实例不同的启用供应商，实现跨供应商独立复核。
   reviewerRoute(operation) {
     const team = this.teamForTask(operation.taskId);
@@ -1113,12 +1174,20 @@ export class ControlPlane {
     const team = this.teamForTask(operation.taskId);
     if (!this.isHighRiskAction(operation.action, team)) return { required: false, canExecute: true, stages: [] };
     const reviews = this.records.list('reviews').filter(review => review.operationId === operation.id);
-    const reviewer = reviews.find(review => review.stage === 'reviewer');
     const owner = reviews.find(review => review.stage === 'owner');
     const requireOwner = team?.review?.requireOwnerApproval !== false;
+    // 评审面板：配置 review.reviewerPanel 时，每个面板成员一个独立复核轮（各自不同供应商/模型）；
+    // 未配置时保持单一 reviewer 轮，向后兼容。
+    const panel = Array.isArray(team?.review?.reviewerPanel) ? team.review.reviewerPanel.slice(0, 3) : [];
+    const reviewerStages = panel.length
+      ? panel.map((entry, index) => {
+          const stage = `reviewer:${entry?.providerId || index}`;
+          return { stage, route: entry || null, record: reviews.find(review => review.stage === stage) || null };
+        })
+      : [{ stage: 'reviewer', record: reviews.find(review => review.stage === 'reviewer') || null }];
     const stages = [
       { stage: 'pm', record: reviews.find(review => review.stage === 'pm') || null },
-      { stage: 'reviewer', record: reviewer || null },
+      ...reviewerStages,
       ...(requireOwner ? [{ stage: 'owner', record: owner || null }] : []),
     ];
     if (stages.some(slot => slot.record?.decision === 'reject')) return { required: true, canExecute: false, rejected: true, stages };
@@ -1150,30 +1219,50 @@ export class ControlPlane {
     const reviewTask = this.spawnReviewer(operation, principal);
     return { ...operation, canExecute: false, review: { ...state, reviewTaskId: reviewTask?.taskId || null } };
   }
-  // 为高风险操作创建一个路由到不同供应商的复核任务。无多个供应商或团队未确认时跳过。
+  // 为高风险操作创建复核任务。配置了 review.reviewerPanel 时按面板成员逐个派发，
+  // 否则派发单个跨供应商复核任务。无多个供应商或团队未确认时跳过。
   spawnReviewer(operation, principal) {
     try {
-      const route = this.reviewerRoute(operation);
-      if (!route?.distinct || !route.providerId) return null;
       const team = this.teamForTask(operation.taskId);
       if (!team || team.recruitment?.phase !== 'confirmed') return null;
       const originMeta = this.records.get('task-meta', operation.taskId) || {};
       if (!originMeta.jobId) return null;
-      const reviewerRole = team.memberRoleIds.find(id => id !== team.pmRoleId) || team.pmRoleId;
-      const job = this.createJob({
-        role: reviewerRole,
-        prompt: `请独立复核一个高风险操作，并给出 approve 或 reject 结论与理由。操作：${operation.title}\n类型：${operation.action}\n意图：${operation.intent}\n复核完成后请回报结论（不直接执行该操作）。`,
-        title: `高风险操作复核：${operation.title}`,
-        providerIds: [route.providerId],
-        model: route.model || undefined,
-      }, principal);
-      this.records.save('reviews', { operationId: operation.id, taskId: operation.taskId, groupId: operation.groupId, stage: 'reviewer-dispatch',
-        decision: 'approve', reviewer: 'system', rationale: `复核任务已派发至供应商 ${route.providerName || route.providerId}${route.model ? `（模型 ${route.model}）` : ''}。`,
-        reviewTaskId: job.taskId, createdAt: new Date().toISOString() }, `review:${operation.id}:dispatch`);
+      const panel = Array.isArray(team?.review?.reviewerPanel) ? team.review.reviewerPanel.slice(0, 3) : [];
+      if (panel.length) {
+        const dispatched = [];
+        for (const entry of panel) {
+          const route = entry?.providerId
+            ? { providerId: entry.providerId, model: entry.model || null, providerName: this.records.get('providers', entry.providerId)?.name || entry.providerId }
+            : this.reviewerRoute(operation);
+          if (!route?.providerId) continue;
+          const stage = `reviewer:${entry?.providerId || dispatched.length}`;
+          const job = this.dispatchReviewerTask(operation, principal, route, team, stage);
+          if (job) dispatched.push({ stage, taskId: job.taskId, providerId: route.providerId });
+        }
+        return dispatched.length ? { taskId: dispatched[0].taskId, panel: dispatched } : null;
+      }
+      const route = this.reviewerRoute(operation);
+      if (!route?.distinct || !route.providerId) return null;
+      const job = this.dispatchReviewerTask(operation, principal, route, team, 'reviewer');
       return job;
     } catch {
       return null;
     }
+  }
+  // 派发单个复核任务并写入派发记录。
+  dispatchReviewerTask(operation, principal, route, team, stage) {
+    const reviewerRole = team.memberRoleIds.find(id => id !== team.pmRoleId) || team.pmRoleId;
+    const job = this.createJob({
+      role: reviewerRole,
+      prompt: `请独立复核一个高风险操作，并给出 approve 或 reject 结论与理由。操作：${operation.title}\n类型：${operation.action}\n意图：${operation.intent}\n复核完成后请回报结论（不直接执行该操作）。`,
+      title: `高风险操作复核：${operation.title}`,
+      providerIds: [route.providerId],
+      model: route.model || undefined,
+    }, principal);
+    this.records.save('reviews', { operationId: operation.id, taskId: operation.taskId, groupId: operation.groupId, stage: `${stage}-dispatch`,
+      decision: 'approve', reviewer: 'system', rationale: `复核任务已派发至供应商 ${route.providerName || route.providerId}${route.model ? `（模型 ${route.model}）` : ''}。`,
+      reviewTaskId: job.taskId, createdAt: new Date().toISOString() }, `review:${operation.id}:${stage}-dispatch`);
+    return job;
   }
   // 提交一轮评审决定。复核轮要求与发起实例不同主体；所有者轮必须由 owner 执行。
   submitReview(operationId, { decision, rationale } = {}, principal = { type: 'owner' }) {
@@ -1188,7 +1277,7 @@ export class ControlPlane {
     if (!pending) throw fail('该操作评审已完成。', 409);
     const stage = pending.stage;
     if (stage === 'owner' && principal.type !== 'owner') throw fail('所有者确认必须由用户本人完成。', 403);
-    if (stage === 'reviewer' && principal.type === 'instance' && principal.taskId === operation.taskId)
+    if (stage.startsWith('reviewer') && principal.type === 'instance' && principal.taskId === operation.taskId)
       throw fail('复核轮必须由与发起实例不同的主体完成。', 403);
     const reviewer = principal.type === 'instance' ? `instance:${principal.taskId}` : 'owner';
     this.records.save('reviews', { operationId, taskId: operation.taskId, groupId: operation.groupId, stage,

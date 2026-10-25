@@ -213,7 +213,7 @@ export class ProviderService {
   }
   select(
     assistant = {},
-    { exclude = [], modelOverride = '', exactModel = false, allowWithoutTools = false } = {},
+    { exclude = [], excludeModels = [], modelOverride = '', exactModel = false, allowWithoutTools = false } = {},
   ) {
     const all = this.list();
     if (!all.length) return null;
@@ -258,6 +258,7 @@ export class ProviderService {
         (!exactModel || !requestedModel || item.id === requestedModel) &&
         (!needsTools || item.tools) &&
         (!assistant.requiresVision || item.vision) &&
+        !excludeModels.includes(item.id) &&
         item.contextWindow >= (assistant.requiredContextWindow ?? 1),
       );
       return {
@@ -285,6 +286,7 @@ export class ProviderService {
           (!exactModel || !requestedModel || item.id === requestedModel) &&
           (!needsTools || item.tools) &&
           (!assistant.requiresVision || item.vision) &&
+          !excludeModels.includes(item.id) &&
           item.contextWindow >= (assistant.requiredContextWindow ?? 1),
       );
       if (!model) {

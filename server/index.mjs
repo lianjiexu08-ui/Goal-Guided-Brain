@@ -368,6 +368,7 @@ export function createWorkbench({
       )
         return send(415, { error: '请求需要 JSON 内容。' });
       let body = {};
+      let rawBodyText = '';
       if (!['GET', 'HEAD'].includes(req.method)) {
         let text = '';
         const bodyLimit = parts[1] === 'attachments' ? 15_000_000 : 512_000;
@@ -376,6 +377,7 @@ export function createWorkbench({
           if (text.length > bodyLimit)
             return send(413, { error: '请求内容过大。' });
         }
+        rawBodyText = text;
         if (text) body = JSON.parse(text);
         if (!body || typeof body !== 'object' || Array.isArray(body))
           throw new Error('请求格式不正确。');
@@ -396,6 +398,22 @@ export function createWorkbench({
         return send(authResponse.status, authResponse.body);
       }
       if (parts[1] === 'mcp') return mcp(req, res, body);
+      // 集成入站：外部渠道回调，不经过工作台登录态，用每个集成的密钥自行校验。
+      if (parts[1] === 'integrations' && parts[2] && parts[3] === 'inbound') {
+        try {
+          const headers = Object.fromEntries(
+            Object.entries(req.headers).map(([key, value]) => [key.toLowerCase(), Array.isArray(value) ? value.join(',') : String(value || '')]),
+          );
+          const result = await platform.ingestInbound(parts[2], {
+            rawBody: rawBodyText,
+            headers,
+            text: typeof body?.text === 'string' ? body.text : '',
+          });
+          return send(200, result);
+        } catch (error) {
+          return send(error.status || 500, { error: error.message });
+        }
+      }
       if (parts[1] === 'capability-mcp' && parts[2])
         return platform.gateway.handle(req, res, body, parts[2]);
       if (platform.control.isMachineRequest(options)) {
@@ -1024,6 +1042,30 @@ export function createWorkbench({
         if (req.method === 'DELETE')
           return send(200, { ok: store.deleteKnowledge(parts[2]) });
       }
+      // 集成出口配置（owner）：Webhook / 企业微信 / QQ OneBot。
+      if (parts[1] === 'integrations') {
+        if (!parts[2]) {
+          if (req.method === 'GET') return send(200, { items: platform.integrations.list() });
+          if (req.method === 'POST') return send(201, platform.integrations.save(body));
+        } else if (!parts[3]) {
+          if (req.method === 'GET') {
+            const item = platform.integrations.get(parts[2]);
+            return item ? send(200, item) : send(404, { error: '集成不存在。' });
+          }
+          if (req.method === 'PUT') return send(200, platform.integrations.save(body, parts[2]));
+          if (req.method === 'DELETE') return send(200, { ok: platform.integrations.remove(parts[2]) });
+        } else if (parts[3] === 'test' && req.method === 'POST') {
+          const raw = store.records.get('integrations', parts[2]);
+          if (!raw) return send(404, { error: '集成不存在。' });
+          const outcome = await platform.integrations.deliver(raw, {
+            event: 'test', at: new Date().toISOString(),
+            data: { title: 'GGB 测试消息', detail: '如果你看到这条消息，说明集成出站链路正常。' },
+          });
+          return send(200, outcome);
+        } else if (parts[3] === 'deliveries' && req.method === 'GET') {
+          return send(200, { items: platform.integrations.deliveries(parts[2], { limit: Number(url.searchParams.get('limit')) || 50 }) });
+        }
+      }
       if (req.method === 'POST' && parts[1] === 'tasks' && !parts[2])
         return send(
           201,
@@ -1053,11 +1095,33 @@ export function createWorkbench({
               : undefined,
           }),
         );
+      if (
+        req.method === 'GET' &&
+        parts[1] === 'tasks' &&
+        parts[2] &&
+        parts[3] === 'session'
+      ) {
+        const task = store.task(parts[2]);
+        if (!task) return send(404, { error: '任务不存在。' });
+        const entries = store.records
+          .list('session-entries')
+          .filter((entry) => entry.taskId === task.id)
+          .sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')));
+        return send(200, { taskId: task.id, count: entries.length, entries });
+      }
       if (req.method === 'POST' && parts[1] === 'tasks' && parts[2]) {
         const task = store.task(parts[2]);
         if (!task) return send(404, { error: '任务不存在。' });
         if (parts[3] === 'cancel') {
           return send(200, await platform.stopTask(task.id));
+        }
+        if (parts[3] === 'steer' && req.method === 'POST') {
+          const queued = platform.steerTask(task.id, body.text || body.message || '');
+          if (!queued) return send(409, { error: '任务当前没有运行中的执行实例，无法插话；请直接发送新消息。' });
+          return send(200, queued);
+        }
+        if (parts[3] === 'fork' && req.method === 'POST') {
+          return send(201, platform.forkTask(task.id, { uptoEntryId: body.uptoEntryId, title: body.title }));
         }
         if (parts[3] === 'retry') {
           if (
@@ -1069,6 +1133,12 @@ export function createWorkbench({
           const previousMeta = store.records.get('task-meta', task.id) || {};
           if (store.records.get('jobs', previousMeta.jobId)?.budgetExceeded)
             throw new Error('请先调整任务组预算，再恢复执行。');
+          // 质量级联：若上次尝试因验证循环额度用尽记录了 routing/escalate，重试时排除当时模型，
+          // 让路由选择更强候选；升级原因保留在原任务事件中可追溯。
+          const escalated = store.records
+            .list('task-events')
+            .some((item) => item.taskId === task.id && item.type === 'routing/escalate');
+          const previousModel = store.records.get('runtime-snapshots', task.id)?.route?.model || null;
           const retry = newTask({
             ...previousMeta,
             providerIds:
@@ -1088,6 +1158,7 @@ export function createWorkbench({
             // instance on the replacement so the task detail can show the
             // lineage and old results remain immutable for review.
             sourceTaskId: task.id,
+            excludeModels: escalated && previousModel ? [previousModel] : undefined,
             attachmentIds: previousMeta.attachmentIds,
             contextExtra: `继续执行 ${task.id}。先核验已有成果与外部操作，再完成未完成部分。\n失败原因：${task.error || '未提供'}\n已有结果：${task.result || '无'}`,
           });

@@ -601,6 +601,12 @@ export class Store {
         ? [...new Set(reviewInput.highRiskActions.filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim().slice(0, 100)).slice(0, 64))]
         : null,
       requireOwnerApproval: reviewInput.requireOwnerApproval !== false,
+      reviewerPanel: Array.isArray(reviewInput.reviewerPanel)
+        ? reviewInput.reviewerPanel.slice(0, 3).map(entry => ({
+            providerId: entry && typeof entry.providerId === 'string' ? entry.providerId.trim().slice(0, 160) : null,
+            model: entry && typeof entry.model === 'string' ? entry.model.trim().slice(0, 160) : null,
+          }))
+        : null,
     };
     const recruitmentInput = input.recruitment ?? existing?.recruitment ?? {};
     const recruitmentPhase = ['discovery', 'proposed', 'confirmed'].includes(recruitmentInput.phase)

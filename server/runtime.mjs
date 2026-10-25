@@ -316,6 +316,8 @@ export class DshRun {
     attachments = [],
     maxDurationMinutes = 30,
     env = {},
+    verifyLoop = null,
+    sessionLog = null,
   }) {
     this.task = task;
     this.config = config;
@@ -331,6 +333,11 @@ export class DshRun {
     this.route = route;
     this.capabilityPatch = capabilityPatch;
     this.contextExtra = contextExtra;
+    this.verifyHook = typeof verifyLoop === 'function' ? verifyLoop : null;
+    this.verifyTurns = 0;
+    this.verifyRetrying = false;
+    this.sessionLog = typeof sessionLog === 'function' ? sessionLog : null;
+    this.lastEntryId = null;
     this.attachments = Array.isArray(attachments) ? attachments : [];
     if (
       !Number.isFinite(maxDurationMinutes) ||
@@ -458,7 +465,7 @@ export class DshRun {
           buffer = buffer.slice(at + 1);
           if (!line.trim()) continue;
           try {
-            this.message(JSON.parse(line));
+            void this.message(JSON.parse(line));
           } catch {
             this.onLog(redact(line.slice(0, 1000), this.secrets));
           }
@@ -534,7 +541,7 @@ export class DshRun {
       );
     });
   }
-  message(frame) {
+  async message(frame) {
     if (frame.id !== undefined) {
       const p = this.pending.get(frame.id);
       if (p) {
@@ -565,6 +572,7 @@ export class DshRun {
                 )
               : value;
       this.onEvent(scrub({ ...e, taskId: this.task.id }));
+      this.recordSessionEntry(e);
       if (e.type === 'turn/start') {
         this.sawTurn = true;
         this.onLog('开始处理任务。');
@@ -620,7 +628,32 @@ export class DshRun {
         }).catch((error) => this.finish('failed', error.message));
         return;
       }
-      if (reason?.kind === 'completed') this.finish('completed', '');
+      if (reason?.kind === 'completed') {
+        // 验证驱动循环（verify-loop）：轮次完成后先跑本地验证门禁；
+        // 未通过且还有重试额度时，把失败报告发回同一会话继续修复，而不是直接结束。
+        if (this.verifyHook && !this.verifyRetrying) {
+          this.verifyRetrying = true;
+          try {
+            const verdict = await this.verifyHook(this);
+            if (verdict?.retry) {
+              this.verifyTurns++;
+              this.sawTurn = false;
+              this.finalReason = null;
+              this.verifyRetrying = false;
+              this.onLog(`验证未通过，开始第 ${this.verifyTurns} 轮修复。`);
+              await this.request('session/prompt', {
+                sessionId: this.task.id,
+                contentBlocks: [{ type: 'text', text: verdict.prompt }],
+              });
+              return;
+            }
+          } catch (error) {
+            this.onLog(`验证循环检查失败，按当前结果结束：${error.message}`);
+          }
+          this.verifyRetrying = false;
+        }
+        this.finish('completed', '');
+      }
       else
         this.finish(
           'failed',
@@ -631,6 +664,48 @@ export class DshRun {
   }
   cancel() {
     this.finish('cancelled', '用户已停止任务。已有文件修改不会自动回滚。');
+  }
+  /** 追加式会话树：把运行事件映射为 session-entries 记录，供恢复、分支和审计使用。 */
+  recordSessionEntry(e) {
+    if (!this.sessionLog) return;
+    const d = e.data || e;
+    const typeMap = {
+      'turn/start': 'turn_start',
+      'turn/end': 'turn_end',
+      'assistant/message': 'message',
+      'tool/call': 'tool_call',
+      'tool/result': 'tool_result',
+      'verify/retry': 'verification',
+      'verify-loop/check': 'verification',
+    };
+    const type = typeMap[e.type];
+    if (!type) return;
+    let data;
+    if (type === 'message') {
+      const content = d.message?.content || [];
+      const textPart = Array.isArray(content)
+        ? content.filter((b) => b.type === 'text').map((b) => b.text).join('\n')
+        : String(content);
+      data = { text: String(textPart).slice(0, 8000) };
+    } else if (type === 'tool_call') {
+      data = { name: d.name, arguments: d.arguments };
+    } else if (type === 'tool_result') {
+      data = { name: d.name, error: d.error || null, output: typeof d.output === 'string' ? d.output.slice(0, 8000) : d.output };
+    } else {
+      data = { status: d.status, turn: d.turn, reason: d.reason };
+    }
+    const entry = {
+      id: randomUUID(),
+      parentId: this.lastEntryId,
+      taskId: this.task.id,
+      type,
+      data,
+      at: new Date().toISOString(),
+    };
+    this.lastEntryId = entry.id;
+    try {
+      this.sessionLog(entry);
+    } catch {}
   }
   enqueue(text) {
     if (this.done || this.finishing)
