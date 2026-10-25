@@ -244,3 +244,53 @@ export function collectCandidates({ builtin = [], installed = [], hub = [] }) {
   for (const item of installed) add(item, 'installed');
   return [...merged.values()];
 }
+
+
+/**
+ * 同步版本：仅用本地已注册的 Skill 和已安装能力做推荐。
+ * 适用于热路径（如 contextFor），不发起网络请求。
+ * hubCatalog 的异步版本见 CapabilityService.recommend。
+ */
+const LOCAL_ALIAS = {
+  测试: ['test', 'quality'], 代码: ['code', 'engineering'], 审查: ['review'],
+  修复: ['bug', 'fix'], 部署: ['deploy', 'operations'], 安全: ['security'],
+  文档: ['writing', 'docs'], 数据: ['data'], 设计: ['design'],
+  迁移: ['migration'], 性能: ['performance'], 重构: ['refactor'],
+  发布: ['release'], 监控: ['observability', 'monitoring'],
+};
+
+export function recommendLocalSkills(queryText, skills, { limit = 3 } = {}) {
+  if (!queryText || !skills?.length) return [];
+  const text = queryText.toLowerCase();
+  const scored = [];
+  for (const skill of skills) {
+    const haystack = `${skill.id || ''} ${skill.title || skill.name || ''} ${skill.description || ''}`.toLowerCase();
+    let score = 0;
+    // 关键词匹配
+    for (const word of text.match(/[a-z0-9]+/g) || []) {
+      if (haystack.includes(word)) score += 2;
+    }
+    // 中文 2-gram
+    const cjkRuns = text.match(/[\u4e00-\u9fff]+/g) || [];
+    for (const run of cjkRuns) {
+      const chars = Array.from(run);
+      for (let size = 2; size <= Math.min(3, chars.length); size++) {
+        for (let i = 0; i + size <= chars.length; i++) {
+          if (haystack.includes(chars.slice(i, i + size).join(''))) score += 1;
+        }
+      }
+      if (chars.length <= 4 && haystack.includes(run)) score += 3;
+    }
+    // 别名展开
+    for (const [key, expansions] of Object.entries(LOCAL_ALIAS)) {
+      if (text.includes(key)) {
+        for (const exp of expansions) {
+          if (haystack.includes(exp)) score += 3;
+        }
+      }
+    }
+    if (score > 0) scored.push({ skill, score });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, limit).map(entry => entry.skill);
+}

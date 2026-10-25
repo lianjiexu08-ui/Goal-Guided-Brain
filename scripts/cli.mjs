@@ -84,6 +84,7 @@ const CLI_NAME = 'ggb';
 
 const usage = `用法：
   ggb                            # 进入工作台首页（选团队派活）
+  ggb deliver "目标描述"          # 一键交付管道（自动团队+技能+派活+验证）
   ggb providers
   ggb doctor [--api-url http://127.0.0.1:3089/api/health] [--ui-url http://127.0.0.1:3088/] [--json]
   ggb run --provider gemini --model gemini-2.5-flash "解释这段代码"
@@ -664,6 +665,183 @@ async function logoutCommand(args) {
   for (const entry of leftover)
     await workbenchFetch(args, `credentials/${entry.id}`, { method: 'DELETE' }).catch(() => {});
   console.log(`已移除 ${preset.label} 的凭据与供应商配置（${matches.length} 个供应商，${leftover.length} 份残留凭据）。`);
+}
+
+const deliverUsage = `用法：
+  ggb deliver "实现用户登录，JWT 认证" [--workspace /项目路径] [--team <id>]
+  ggb deliver "修复登录超时 bug" --watch
+
+自动完成：工作台启动 → 团队创建/复用 → 技能推荐安装 → 派活 → 实时进展 → 结果报告
+选项：
+  --workspace /path   项目目录（默认当前目录）
+  --team <id>         指定团队（默认自动创建）
+  --no-review         关闭招募审核（默认自治模式）
+  --watch             实时输出进展（默认等待完成后报告）
+  --timeout 秒        最长等待时间（默认 600 秒 / 10 分钟）`;
+
+async function deliver(args) {
+  const goal = args.filter(arg => !arg.startsWith('--') && arg !== valueAfter(args, '--workspace', '\0') && arg !== valueAfter(args, '--team', '\0') && arg !== valueAfter(args, '--timeout', '\0')).join(' ').trim();
+  if (!goal) { console.log(deliverUsage); return; }
+
+  const workspace = valueAfter(args, '--workspace', process.cwd());
+  const teamId = valueAfter(args, '--team', '');
+  const watch = has(args, '--watch');
+  const timeoutSec = Number(valueAfter(args, '--timeout', '600')) || 600;
+
+  console.error(`\x1b[1m≡ GGB 交付管道\x1b[0m`);
+  console.error(`  目标：${goal}`);
+  console.error(`  目录：${workspace}\n`);
+
+  // Step 1: 确保工作台运行
+  console.error('\x1b[1m[1/5]\x1b[0m 检查工作台…');
+  const teams = await workbenchFetch(args, 'teams').catch(async () => {
+    await ensureWorkbench(args).catch(() => {});
+    return workbenchFetch(args, 'teams');
+  });
+  console.error(`  ✓ 工作台运行中，${teams.length} 个团队`);
+
+  // Step 2: 找到或创建团队
+  console.error('\x1b[1m[2/5]\x1b[0m 准备团队…');
+  let team;
+  if (teamId) {
+    team = teams.find(t => t.id === teamId);
+    if (!team) throw new Error(`团队 ${teamId} 不存在。`);
+    console.error(`  ✓ 使用已有团队「${team.name}」`);
+  } else {
+    // 找一个已确认且 active 的团队（优先开发类）
+    team = teams.find(t => t.recruitment?.phase === 'confirmed' && t.status === 'active' && (t.teamType === 'development' || t.teamType === 'project'));
+    if (!team) team = teams.find(t => t.recruitment?.phase === 'confirmed' && t.status === 'active');
+    if (team) {
+      console.error(`  ✓ 复用团队「${team.name}」`);
+    } else {
+      const teamName = goal.slice(0, 20).replace(/[\\/]/g, '') || '交付团队';
+      team = await workbenchFetch(args, 'teams', { method: 'POST', body: {
+        name: teamName, goal, purpose: goal,
+        pmRoleId: 'project_manager', memberRoleIds: ['project_manager'],
+        requireReview: false,
+        ...(workspace ? { workspace } : {}),
+        collaboration: { enabled: true, autoHandoff: true, sharedBoard: true, allowedTeamIds: [] },
+      } });
+      console.error(`  ✓ 创建团队「${team.name}」(${team.id})`);
+    }
+  }
+
+  // Step 3: 推荐并安装相关 Skill
+  console.error('\x1b[1m[3/5]\x1b[0m 推荐相关技能…');
+  try {
+    const recs = await workbenchFetch(args, `capabilities/recommend?q=${encodeURIComponent(goal)}&limit=5`);
+    const hubRecs = (recs.items || []).filter(item => item.source === 'hub');
+    if (hubRecs.length) {
+      console.error(`  发现 ${hubRecs.length} 个相关 Hub 技能，自动安装…`);
+      for (const rec of hubRecs.slice(0, 3)) {
+        try {
+          const installed = await workbenchFetch(args, 'capabilities/install', {
+            method: 'POST',
+            body: { source: 'git', sourceUrl: rec.installUrl || rec.sourceUrl },
+          });
+          // 低风险直接启用
+          if (installed.kind === 'skill') {
+            const risk = installed.risk || {};
+            if (!risk.requiresReview) {
+              await workbenchFetch(args, `capabilities/${installed.id}/enable`, { method: 'POST', body: { confirmed: true } }).catch(() => {});
+              console.error(`  ✓ 已安装并启用：${rec.title}`);
+            } else {
+              console.error(`  ⚠ ${rec.title} 需要人工确认（中/高风险），已安装未启用`);
+            }
+          }
+        } catch (installError) {
+          console.error(`  ⚠ 安装 ${rec.title} 失败：${installError.message}`);
+        }
+      }
+    } else {
+      console.error('  没有发现直接相关的 Hub 技能，使用内置能力。');
+    }
+  } catch (error) {
+    console.error(`  ⚠ 技能推荐失败：${error.message}`);
+  }
+
+  // Step 4: 派活
+  console.error(`\x1b[1m[4/5]\x1b[0m 派活给团队…`);
+  let messageResult;
+  try {
+    messageResult = await workbenchFetch(args, `teams/${team.id}/messages`, {
+      method: 'POST',
+      body: { clientMessageId: `deliver-${randomUUID()}`, content: goal },
+    });
+  } catch (error) {
+    if (/模型|供应商|API Key|credential/i.test(error.message)) {
+      console.error(`\n  ✗ 未配置模型。请先运行：`);
+      console.error(`    ggb login deepseek    # 或其他供应商`);
+      console.error(`  或设置环境变量 DEEPSEEK_API_KEY 等。`);
+      process.exitCode = 1;
+      return;
+    }
+    throw error;
+  }
+  const taskId = messageResult.taskId;
+  console.error(`  ✓ 已派活（任务 ${taskId || '异步'}）`);
+
+  // Step 5: 跟踪进展
+  if (watch || !taskId) {
+    console.error(`\x1b[1m[5/5]\x1b[0m 实时跟踪（Ctrl-C 退出，任务不会中断）…\n`);
+    const controller = new AbortController();
+    process.once('SIGINT', () => controller.abort());
+    try {
+      await streamTeam(args, team.id, (type, data) => {
+        if (type === 'hello') return;
+        if (type === 'message') {
+          if (data.senderType === 'owner') return;
+          const who = data.senderType === 'system' ? '[系统]' : data.senderType === 'team' ? '[协作]' : '[PM]';
+          console.log(`${who} ${String(data.content || '').slice(0, 400)}`);
+        }
+        if (type === 'task') {
+          const verify = data.verificationStatus ? ` 验证:${data.verificationStatus}` : '';
+          const risk = data.impactRisk && data.impactRisk !== 'unknown' ? ` 影响:${data.impactRisk}` : '';
+          const failedMark = data.status === 'failed' ? `  ✗ ${String(data.error || '').slice(0, 160)}` : '';
+          console.log(`[任务] ${String(data.title || '').slice(0, 60)}  ${data.status}${verify}${risk}${failedMark}`);
+          if (data.id) console.log(`       ggb task ${data.id}`);
+        }
+      }, { signal: controller.signal });
+    } catch (error) {
+      if (!/abort/i.test(String(error?.name || ''))) throw error;
+    }
+  } else {
+    console.error(`\x1b[1m[5/5]\x1b[0m 等待完成（最长 ${timeoutSec} 秒）…`);
+    const deadline = Date.now() + timeoutSec * 1000;
+    let lastStatus = '';
+    while (Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      try {
+        const tasks = await workbenchFetch(args, `teams/${team.id}`);
+        const teamTasks = (tasks.tasks || []).filter(task =>
+          Math.abs(new Date(task.createdAt) - new Date(messageResult.createdAt || 0)) < 60000
+        );
+        const current = teamTasks[0];
+        if (!current) continue;
+        const signature = `${current.status}:${current.verificationStatus || ''}`;
+        if (signature === lastStatus) continue;
+        lastStatus = signature;
+        console.error(`  状态：${current.status}  验证：${current.verificationStatus || '-'}  交付：${current.deliveryStatus || '-'}`);
+        if (['completed', 'failed', 'cancelled'].includes(current.status)) break;
+      } catch { continue; }
+    }
+    // 最终报告
+    try {
+      const detail = await workbenchFetch(args, `teams/${team.id}`);
+      const teamTasks = (detail.tasks || []).filter(task =>
+        Math.abs(new Date(task.createdAt) - new Date(messageResult.createdAt || 0)) < 60000
+      );
+      const current = teamTasks[0];
+      if (current) {
+        console.log(`\n\x1b[1m=== 交付结果 ===\x1b[0m`);
+        console.log(`状态：${current.status}  交付：${current.deliveryStatus || '-'}  验证：${current.verificationStatus || '-'}`);
+        if (current.result) console.log(`结果：${String(current.result).slice(0, 500)}`);
+        if (current.id) console.log(`详情：ggb task ${current.id}`);
+        if (current.deliveryStatus === 'awaiting-owner')
+          console.log(`验收：ggb task accept ${current.id}`);
+      }
+    } catch {}
+  }
 }
 
 async function modelsCommand(args) {
@@ -2283,6 +2461,7 @@ async function main() {
   if (command === 'events') return events(args);
   if (command === 'node') return runNode(args);
   if (command === 'logout') return logoutCommand(args);
+  if (command === 'deliver') return deliver(args);
   if (command === 'context') return contextCommand(args);
   if (command !== 'run' && command !== 'chat') throw new Error(`未知命令“${command}”。\n\n${usage}`);
   const input = parseInput(args);
