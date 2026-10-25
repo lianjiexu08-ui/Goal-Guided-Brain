@@ -121,7 +121,6 @@ test('chat /session 统计输出轮次和文件大小', async t => {
 });
 
 test('chat /copy 复制最后回答到剪贴板', async t => {
-  const pbase = await fakeProvider(t);
   const { sessionDir } = await start(t);
   const sessionFile = path.join(sessionDir, 'copy-test.jsonl');
   fs.appendFileSync(sessionFile, JSON.stringify({ type: 'prompt', sessionId: 'copy-test', at: new Date().toISOString(), text: '问题' }) + '\n');
