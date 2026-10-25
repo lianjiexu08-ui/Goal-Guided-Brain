@@ -1508,6 +1508,18 @@ function requestBody(input, prompt, history = []) {
 }
 
 const dim = (text) => process.stderr.isTTY ? `\u001b[2m${text}\u001b[0m` : text;
+/**
+ * 持久底部状态栏：利用 ANSI 滚动区域把底部固定行数保留为状态显示。
+ * setStatus 更新内容；clearStatus 退出时清除。
+ * 仅在 TTY 下激活；非 TTY 时所有方法变为 no-op（保持管道安全）。
+ */
+const status = {
+  active: false,
+  content: '',
+  init() { this.active = process.stdout.isTTY === true; },
+  setContent(text) { this.content = text; },
+  clear() { this.active = false; },
+};
 const fmtTokens = (value) => {
   const n = Number(value) || 0;
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -1919,6 +1931,23 @@ async function interactiveChat(input, args = []) {
       throw new Error(`未找到 ${input.preset.label} 密钥，请设置 ${input.preset.keys.join(' 或 ')}，或先运行 ggb login ${input.providerName}`);
   };
   console.log(`${CLI_NAME} · ${input.providerName}/${input.model} · 会话 ${input.sessionId}`);
+  // 持久状态栏：模型、Token 用量、上下文占用
+  const totalUsage = { inputTokens: 0, outputTokens: 0 };
+  const contextWindow = Number(input.preset.contextWindow) || 128000;
+  const updateFooter = (turn) => {
+    if (turn?.usage) {
+      totalUsage.inputTokens += turn.usage.inputTokens || 0;
+      totalUsage.outputTokens += turn.usage.outputTokens || 0;
+    }
+    const parts = [`${input.providerName}/${input.model}`];
+    if (totalUsage.inputTokens || totalUsage.outputTokens)
+      parts.push(`in ${fmtTokens(totalUsage.inputTokens)} / out ${fmtTokens(totalUsage.outputTokens)}`);
+    const pct = contextWindow ? Math.min(100, (totalUsage.inputTokens / contextWindow) * 100) : 0;
+    parts.push(`ctx ${fmtTokens(totalUsage.inputTokens)}/${fmtTokens(contextWindow)} (${pct > 0 && pct < 1 ? '<1' : pct.toFixed(0)}%)`);
+    if (input.teamId) parts.push(`团队 ${input.teamId.slice(0, 8)}`);
+    console.log(dim(`· ${parts.join(' · ')}`));
+  };
+  updateFooter(null);
   console.log('输入 /help 查看命令，/exit 退出。');
   const chatCommands = [
     { name: '/help', title: '命令列表', description: '', source: 'command' },
@@ -1963,7 +1992,7 @@ async function interactiveChat(input, args = []) {
     for (;;) {
       const value = (await ask()).trim();
       if (!value) continue;
-      if (value === '/exit' || value === '/quit') break;
+      if (value === '/exit' || value === '/quit') { status.clear(); break; }
       if (value === '/help') {
         console.log([
           '/new 新建会话   /model [供应商/]模型 切换模型   /session 查看会话',
@@ -2196,6 +2225,7 @@ async function interactiveChat(input, args = []) {
       try {
         requireModelKey();
         const turn = await run(input, prompt, input.history);
+        if (turn.usage) updateFooter(turn);
         appendSession(input.sessionFile, {
           type: 'response', sessionId: input.sessionId, at: new Date().toISOString(),
           text: redactSession(turn.text, input),
