@@ -904,7 +904,10 @@ async function rpc(args) {
       const turn = await run(input, prompt, input.history);
       appendSession(input.sessionFile, { type: 'response', sessionId: input.sessionId, at: new Date().toISOString(), text: redactSession(turn.text, input) });
       input.history = historyFromSession(parseSession(input.sessionFile).entries);
-      rpcWrite({ type: 'turn_end', sessionId: input.sessionId, id, provider: input.providerName, model: input.model, text: redactSession(turn.text, input) });
+      rpcWrite({ type: 'turn_end', sessionId: input.sessionId, id, provider: input.providerName, model: input.model,
+        text: redactSession(turn.text, input),
+        ...(turn.usage ? { usage: turn.usage, contextWindow: Number(input.preset.contextWindow) || 128000 } : {}),
+        elapsedMs: turn.elapsedMs });
     } catch (error) {
       const aborted = controller.signal.aborted || error?.name === 'AbortError';
       if (aborted)
