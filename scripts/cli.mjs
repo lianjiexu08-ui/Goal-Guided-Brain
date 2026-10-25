@@ -100,6 +100,7 @@ const usage = `用法：
   ggb team watch <id>            # 订阅实时事件流（不再轮询）
   ggb context list|share <teamId> ...   # 查看或发布跨团队共享上下文
   ggb models                     # 供应商与模型目录（含自定义 models.json）
+  ggb usage [--teamId id] [--since ISO]  # 模型用量报告（token/成本/延迟/验证）
   ggb rpc                        # JSONL 机器协议（prompt/follow_up/set_model/abort）
   ggb events <taskId> | --team <id> [--once] [--json]
   ggb node --control-url https://… --workspace 名称=/绝对路径
@@ -842,6 +843,38 @@ async function deliver(args) {
       }
     } catch {}
   }
+}
+
+function fmtCost(cost) {
+  if (cost === null || cost === undefined) return '未知';
+  return `$${Number(cost).toFixed(4)}`;
+}
+
+async function usageCommand(args) {
+  const params = new URLSearchParams();
+  for (const key of ['teamId', 'roleId', 'providerId', 'model']) {
+    const value = valueAfter(args, `--${key}`, '');
+    if (value) params.set(key, value);
+  }
+  const since = valueAfter(args, '--since', '');
+  if (since) params.set('since', since);
+  const data = await workbenchFetch(args, `metrics/models?${params.toString()}`);
+  if (has(args, '--json')) return console.log(JSON.stringify(data, null, 2));
+  const t = data.totals || {};
+  console.log(`\x1b[1m模型用量报告\x1b[0m  (${data.generatedAt || ''})`);
+  console.log(`任务：${t.logicalTasks || 0}  完成：${t.completed || 0}  失败：${t.failed || 0}  待验收：${t.pending || 0}`);
+  console.log(`验证通过：${t.verificationPassed || 0}  已验收：${t.accepted || 0}  已退回：${t.rejected || 0}`);
+  console.log(`Token：in ${fmtTokens(t.inputTokens)} / out ${fmtTokens(t.outputTokens)} = ${fmtTokens(t.totalTokens)}`);
+  console.log(`成本：${fmtCost(t.cost)}  平均延迟：${t.avgLatencyMs ? (t.avgLatencyMs / 1000).toFixed(1) + 's' : '-'}  p50：${t.p50LatencyMs ? (t.p50LatencyMs / 1000).toFixed(1) + 's' : '-'}`);
+  console.log(`降级切换：${t.fallbacks || 0} 次`);
+  if ((data.items || []).length) {
+    console.log('\n按任务明细：');
+    for (const item of (data.items || []).slice(0, 20)) {
+      const dims = item.dimensions || {};
+      console.log(`  ${dims.teamName || '-'} | ${dims.model || '-'} | in ${fmtTokens(item.inputTokens)} / out ${fmtTokens(item.outputTokens)} | ${item.status || '-'}`);
+    }
+  }
+  console.log(`\n筛选：--teamId --roleId --providerId --model --since <ISO>`);
 }
 
 async function modelsCommand(args) {
@@ -2456,6 +2489,7 @@ async function main() {
   if (command === 'task') return taskCommand(args);
   if (command === 'skill') return skillCommand(args);
   if (command === 'models') return modelsCommand(args);
+  if (command === 'usage') return usageCommand(args);
   if (command === 'login') return loginCommand(args);
   if (command === 'rpc') return rpc(args);
   if (command === 'events') return events(args);
