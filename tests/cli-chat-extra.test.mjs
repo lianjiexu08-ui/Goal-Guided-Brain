@@ -101,7 +101,7 @@ test('chat /compact 压缩历史并写入 compact 事件', async t => {
 });
 
 test('chat /session 统计输出轮次和文件大小', async t => {
-  const { base, env, sessionDir } = await start(t);
+  const { sessionDir } = await start(t);
   const sessionFile = path.join(sessionDir, 'sess-stat.jsonl');
   for (let turn = 1; turn <= 3; turn += 1) {
     fs.appendFileSync(sessionFile, JSON.stringify({ type: 'prompt', sessionId: 'sess-stat', at: new Date().toISOString(), text: `问题 ${turn}` }) + '\n');
@@ -122,7 +122,7 @@ test('chat /session 统计输出轮次和文件大小', async t => {
 
 test('chat /copy 复制最后回答到剪贴板', async t => {
   const pbase = await fakeProvider(t);
-  const { env, sessionDir } = await start(t);
+  const { sessionDir } = await start(t);
   const sessionFile = path.join(sessionDir, 'copy-test.jsonl');
   fs.appendFileSync(sessionFile, JSON.stringify({ type: 'prompt', sessionId: 'copy-test', at: new Date().toISOString(), text: '问题' }) + '\n');
   fs.appendFileSync(sessionFile, JSON.stringify({ type: 'response', sessionId: 'copy-test', at: new Date().toISOString(), text: '要复制的回答内容' }) + '\n');
