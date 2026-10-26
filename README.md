@@ -1,5 +1,7 @@
 # Goal-Guided Brain
 
+[![CI](https://github.com/lianjiexu08-ui/Goal-Guided-Brain/actions/workflows/ci.yml/badge.svg)](https://github.com/lianjiexu08-ui/Goal-Guided-Brain/actions/workflows/ci.yml)
+
 > **把一个目标交给项目经理，让一支由多个模型驱动的智能体团队帮你推进到可验收交付。**
 
 Goal-Guided Brain（简称 **GGB**）是一个面向个人的多团队 AI 协作工作台。你从一个团队招募对话开始，说清楚想完成什么；项目经理会和你多轮澄清目标、交付物、约束和权限，再决定需要几个智能体、每个成员负责什么、使用哪个模型和哪些能力。确认方案后，团队可以持续拆解任务、跨团队协作、保存上下文，并把结果和验证证据带回给你。
