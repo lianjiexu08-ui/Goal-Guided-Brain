@@ -29,7 +29,7 @@ import { SKILLS } from './roles.mjs';
 import { enrichTaskContext } from './task-enrichment.mjs';
 import { analyzeImpact, summarizeImpact } from './impact-analysis.mjs';
 import { compactContext, branchSummary } from './compaction.mjs';
-import { readTeamMemory, appendTeamMemory } from './memory.mjs';
+import { readTeamMemory, appendTeamMemory, exportMemoryBundle } from './memory.mjs';
 import { IntegrationService } from './integrations.mjs';
 
 const nowIso = () => new Date().toISOString();
@@ -1220,11 +1220,14 @@ export function createPlatform({
     const integration = records.get('integrations', integrationId);
     if (!integration || !integration.enabled) throw Object.assign(new Error('集成不存在或已停用。'), { status: 404 });
     const rate = integrations.checkInboundRate(integrationId);
-    if (!rate.ok)
+    if (!rate.ok) {
+      integrations.logDelivery(integration, 'inbound', { ok: false, error: `限流：${rate.reason}` });
       throw Object.assign(new Error(rate.reason), { status: 429, retryAfterMs: rate.retryAfterMs });
+    }
     const verdict = integrations.verifyInbound(integration, { headers, rawBody });
     if (!verdict.ok) {
       integrations.noteInboundFailure(integrationId);
+      integrations.logDelivery(integration, 'inbound', { ok: false, error: verdict.reason });
       throw Object.assign(new Error(verdict.reason), { status: 401 });
     }
     let parsed = {};
@@ -1252,6 +1255,7 @@ export function createPlatform({
     });
     store.saveTeamSpace({ ...space, recruitment: { ...space.recruitment, sessionId: task.sessionId, turns: (space.recruitment?.turns || 0) + 1 } }, space.id);
     store.saveTeamMessage({ ...message, taskId: task.id }, message.id);
+    integrations.logDelivery(integration, 'inbound', { ok: true });
     try { recordEvent(task, { type: 'integration/inbound', data: { integrationId: integration.id, source } }); } catch {}
     return { messageId: message.id, taskId: task.id, sessionId: task.sessionId };
   }
@@ -2144,10 +2148,14 @@ export function createPlatform({
         const backup = backupDatabase(store.db, dataDir);
         if (fs.existsSync(vault.file))
           fs.copyFileSync(vault.file, `${backup.path}.vault.json`);
+        const memoryBundle = exportMemoryBundle(dataDir);
+        if (memoryBundle.files.length)
+          fs.writeFileSync(`${backup.path}.team-memory.json`, JSON.stringify(memoryBundle));
         return ok({
           filename: backup.filename,
           bytes: backup.bytes,
           hasVault: fs.existsSync(`${backup.path}.vault.json`),
+          hasTeamMemory: fs.existsSync(`${backup.path}.team-memory.json`),
         });
       }
     }

@@ -88,3 +88,44 @@ export function deleteTeamMemory(dataDir, teamId) {
     return false;
   }
 }
+
+const MEMORY_NAME_PATTERN = /^[a-zA-Z0-9_-]{1,128}\.md$/;
+
+/** 导出全部团队记忆为可 JSON 序列化的备份包（随数据库备份一起落盘）。 */
+export function exportMemoryBundle(dataDir) {
+  let names = [];
+  try {
+    names = fs.readdirSync(path.join(dataDir, 'team-memory')).filter(name => MEMORY_NAME_PATTERN.test(name));
+  } catch {
+    return { files: [] };
+  }
+  return {
+    files: names.map(name => ({
+      name,
+      content: fs.readFileSync(path.join(dataDir, 'team-memory', name), 'utf8'),
+    })),
+  };
+}
+
+/** 校验团队记忆备份包结构与体量。 */
+export function validateMemoryBundle(bundle) {
+  if (!bundle || !Array.isArray(bundle.files) || bundle.files.length > 512)
+    throw new Error('团队记忆备份格式无效。');
+  let bytes = 0;
+  for (const file of bundle.files) {
+    if (!file || !MEMORY_NAME_PATTERN.test(String(file.name || '')) || typeof file.content !== 'string')
+      throw new Error('团队记忆备份格式无效。');
+    bytes += Buffer.byteLength(file.content);
+  }
+  if (bytes > 16_000_000) throw new Error('团队记忆备份超过 16 MB 限制。');
+  return true;
+}
+
+/** 从备份包恢复团队记忆（覆盖同名文件）。返回恢复的文件数。 */
+export function restoreMemoryBundle(dataDir, bundle) {
+  validateMemoryBundle(bundle);
+  fs.mkdirSync(path.join(dataDir, 'team-memory'), { recursive: true });
+  for (const file of bundle.files)
+    writeTeamMemory(dataDir, file.name.replace(/\.md$/, ''), file.content);
+  return bundle.files.length;
+}

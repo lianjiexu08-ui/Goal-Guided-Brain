@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { lockControl } from '../server/persistence.mjs';
 import { backupDatabase } from '../server/migrations.mjs';
+import { validateMemoryBundle, restoreMemoryBundle, exportMemoryBundle } from '../server/memory.mjs';
 
 function validateDatabase(db) {
   db.exec('PRAGMA trusted_schema=OFF');
@@ -136,14 +137,19 @@ export function restoreBackup(
   const staging = path.join(directory, `.restore-${randomUUID()}`);
   const vaultFile = path.join(directory, 'vault.json');
   const companion = `${source}.vault.json`;
+  const memoryCompanion = `${source}.team-memory.json`;
+  const memoryDir = path.join(directory, 'team-memory');
   let sourceDb,
     currentDb,
     before = null,
-    vaultBackup = null;
+    vaultBackup = null,
+    memoryBackup = null;
   let originalDatabaseMoved = false,
     restoredDatabase = false,
     originalVaultMoved = false,
     restoredVault = false,
+    originalMemoryMoved = false,
+    restoredMemory = false,
     keepStaging = false,
     markerWritten = false;
   try {
@@ -152,6 +158,8 @@ export function restoreBackup(
     validateDatabase(sourceDb);
     const restoreVault = fs.existsSync(companion);
     if (restoreVault) validateCompanion(companion);
+    const restoreMemory = fs.existsSync(memoryCompanion);
+    if (restoreMemory) validateMemoryBundle(JSON.parse(fs.readFileSync(memoryCompanion, 'utf8')));
     fs.mkdirSync(staging, { mode: 0o700 });
     const candidate = backupDatabase(
       sourceDb,
@@ -162,6 +170,8 @@ export function restoreBackup(
     sourceDb = null;
     if (restoreVault)
       privateCopy(companion, path.join(staging, 'candidate.vault.json'));
+    if (restoreMemory)
+      privateCopy(memoryCompanion, path.join(staging, 'candidate.team-memory.json'));
     if (fs.existsSync(database)) {
       currentDb = new DatabaseSync(database);
       const checkpoint = currentDb
@@ -187,14 +197,28 @@ export function restoreBackup(
           );
       privateCopy(vaultFile, vaultBackup);
     }
+    // 恢复前把当前团队记忆导出为备份包，失败时可回滚。
+    if (fs.existsSync(memoryDir)) {
+      const currentMemory = exportMemoryBundle(directory);
+      if (currentMemory.files.length) {
+        const backupDir = path.join(directory, 'backups');
+        fs.mkdirSync(backupDir, { recursive: true, mode: 0o700 });
+        memoryBackup = before
+          ? `${before.path}.team-memory.json`
+          : path.join(backupDir, `${Date.now()}-before-restore-${randomUUID()}.team-memory.json`);
+        fs.writeFileSync(memoryBackup, JSON.stringify(currentMemory));
+      }
+    }
     writeMarker(
       marker,
       JSON.stringify({
         version: 1,
         source,
         sourceVault: restoreVault ? companion : null,
+        sourceMemory: restoreMemory ? memoryCompanion : null,
         beforeBackup: before?.path ?? null,
         vaultBackup,
+        memoryBackup,
         staging,
         startedAt: new Date().toISOString(),
         previousRecovery: previousMarker
@@ -223,12 +247,22 @@ export function restoreBackup(
       renameSync(path.join(staging, 'candidate.vault.json'), vaultFile);
       restoredVault = true;
     }
+    if (restoreMemory) {
+      if (fs.existsSync(memoryDir)) {
+        renameSync(memoryDir, path.join(staging, 'previous.team-memory'));
+        originalMemoryMoved = true;
+      }
+      restoreMemoryBundle(directory, JSON.parse(fs.readFileSync(memoryCompanion, 'utf8')));
+      restoredMemory = true;
+    }
     clearMarker(marker);
     return {
       database,
       beforeBackup: before?.path ?? null,
       vaultBackup,
       vaultRestored: restoreVault,
+      memoryRestored: restoreMemory,
+      memoryBackup,
       note: restoreVault
         ? '已恢复加密凭据备份，启动后使用该备份对应的口令解锁。'
         : '此备份不含凭据文件；现有凭据库已保留。数据库中的凭据引用可能需要重新关联。',
@@ -239,6 +273,13 @@ export function restoreBackup(
       if (restoredVault) fs.rmSync(vaultFile, { force: true });
       if (originalVaultMoved)
         renameSync(path.join(staging, 'previous.vault.json'), vaultFile);
+    } catch (failure) {
+      failures.push(failure.message);
+    }
+    try {
+      if (restoredMemory) fs.rmSync(memoryDir, { recursive: true, force: true });
+      if (originalMemoryMoved)
+        renameSync(path.join(staging, 'previous.team-memory'), memoryDir);
     } catch (failure) {
       failures.push(failure.message);
     }

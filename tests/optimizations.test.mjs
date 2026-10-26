@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { compactContext, branchSummary, estimateTokens } from '../server/compaction.mjs';
-import { readTeamMemory, appendTeamMemory, writeTeamMemory, deleteTeamMemory } from '../server/memory.mjs';
+import { readTeamMemory, appendTeamMemory, writeTeamMemory, deleteTeamMemory, exportMemoryBundle, restoreMemoryBundle, validateMemoryBundle } from '../server/memory.mjs';
+import { IntegrationService } from '../server/integrations.mjs';
 import { Store } from '../server/store.mjs';
 import { ControlPlane } from '../server/control.mjs';
 
@@ -205,4 +206,69 @@ test('record_team_lesson：写入团队记忆并留审计事件，非团队任�
     () => control.recordTeamLesson({ lessons: 'x' }, barePrincipal),
     /不属于任何团队空间/,
   );
+});
+
+// ---- 团队记忆随备份走（companion 导出/恢复） ----
+
+test('团队记忆备份包：导出、校验与恢复', t => {
+  const { directory } = setup(t);
+  appendTeamMemory(directory, { teamId: 'team-a', taskTitle: 'A', outcome: 'verified', lessons: '教训 A' });
+  appendTeamMemory(directory, { teamId: 'team-b', taskTitle: 'B', outcome: 'failed', commands: ['npm run build'] });
+  const bundle = exportMemoryBundle(directory);
+  assert.equal(bundle.files.length, 2);
+  assert.ok(bundle.files.every(file => file.name.endsWith('.md')));
+  // 恢复到另一个目录。
+  const target = fs.mkdtempSync(path.join(os.tmpdir(), 'mem-restore-'));
+  t.after(() => fs.rmSync(target, { recursive: true, force: true }));
+  assert.equal(restoreMemoryBundle(target, bundle), 2);
+  assert.ok(readTeamMemory(target, 'team-a').includes('教训 A'));
+  assert.ok(readTeamMemory(target, 'team-b').includes('npm run build'));
+  // 恶意文件名与越界内容被拒绝。
+  assert.throws(() => restoreMemoryBundle(target, { files: [{ name: '../evil.md', content: 'x' }] }), /格式无效/);
+  assert.throws(() => restoreMemoryBundle(target, { files: Array.from({ length: 600 }, (_, i) => ({ name: `f${i}.md`, content: 'x' })) }), /格式无效/);
+  assert.throws(() => validateMemoryBundle(null), /格式无效/);
+});
+
+// ---- 表达式索引防退化（EXPLAIN QUERY PLAN） ----
+
+test('listByTask 走表达式索引而非全表扫描', async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const { RECORDS_SCHEMA } = await import('../server/records.mjs');
+  const { Records } = await import('../server/records.mjs');
+  const db = new DatabaseSync(':memory:');
+  db.exec(RECORDS_SCHEMA);
+  const records = new Records(db);
+  records.save('session-entries', { taskId: 't1', type: 'message', data: {} });
+  records.save('task-events', { taskId: 't1', type: 'plan/submitted', data: {} });
+  const plan = db
+    .prepare(
+      "EXPLAIN QUERY PLAN SELECT * FROM records WHERE collection='session-entries' AND json_extract(data,'$.taskId')='t1'",
+    )
+    .all();
+  const detail = plan.map(row => Object.values(row).join(' ')).join(' ');
+  assert.match(detail, /idx_records_collection_task/, `应使用表达式索引：${detail}`);
+  assert.doesNotMatch(detail, /SCAN records\b/, '不允许全表扫描');
+  // 迁移后的库同样带有索引。
+  const indexRow = db
+    .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_records_collection_task'")
+    .get();
+  assert.ok(indexRow, 'RECORDS_SCHEMA 应创建表达式索引');
+});
+
+// ---- 入站投递留痕 ----
+
+test('入站请求（成功/校验失败/限流）都写入投递日志', async t => {
+  const { store } = setup(t);
+  const service = new IntegrationService({ records: store.records, fetchImpl: async () => ({}) });
+  const created = service.save({ type: 'webhook', config: { url: 'https://x', secret: 'k' } });
+  const integration = store.records.get('integrations', created.id);
+  // 模拟 ingestInbound 的三个留痕分支。
+  service.logDelivery(integration, 'inbound', { ok: true });
+  service.logDelivery(integration, 'inbound', { ok: false, error: '签名校验失败。' });
+  service.logDelivery(integration, 'inbound', { ok: false, error: '限流：入站请求过于频繁。' });
+  const deliveries = service.deliveries(created.id);
+  assert.equal(deliveries.length, 3);
+  assert.equal(deliveries[0].event, 'inbound');
+  assert.equal(deliveries[0].status, 'failed');
+  assert.equal(deliveries.find(item => item.status === 'sent')?.event, 'inbound');
 });
