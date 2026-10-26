@@ -56,6 +56,7 @@ export type ManagementState = {
   backups: Entity[];
   roles: Entity[];
   workflows: Entity[];
+  integrations: Entity[];
   vault: { initialized?: boolean; unlocked?: boolean; configured?: boolean };
 };
 

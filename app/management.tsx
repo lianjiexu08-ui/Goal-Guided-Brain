@@ -35,6 +35,7 @@ import {
   Search,
   Send,
   Server,
+  Share2,
   Terminal,
   Square,
   Trash2,
@@ -64,6 +65,7 @@ export const managementNavigation = [
   { id: 'resources', label: '资源与凭据', icon: Server },
   { id: 'nodes', label: '执行节点', icon: Network },
   { id: 'capabilities', label: '能力中心', icon: Plug },
+  { id: 'integrations', label: '集成出口', icon: Share2 },
   { id: 'schedules', label: '定时与监控', icon: Clock3 },
   { id: 'attention', label: '需要你处理', icon: Inbox },
   { id: 'backups', label: '备份与恢复', icon: Archive },
@@ -77,6 +79,7 @@ const labels: Record<string, string> = {
   jobs: '协作任务',
   messages: '消息',
   capabilities: '能力',
+  integrations: '集成出口',
   schedules: '定时任务',
   monitors: '监控规则',
   notifications: '通知',
@@ -584,11 +587,26 @@ function initialForm(
       nodeId: '',
     },
     workflows: { name: '', steps: [{ role, prompt: '' }] },
+    integrations: {
+      type: 'webhook',
+      name: '',
+      url: '',
+      secret: '',
+      accessToken: '',
+      qqTargetType: 'group',
+      qqTargetId: '',
+      teamId: '',
+      events: ['attention', 'task.completed'],
+      enabled: true,
+    },
   };
-  return {
+  const merged = {
     ...(defaults[collection] || { name: '' }),
     ...(initial ? structuredClone(initial) : {}),
   };
+  if (collection === 'integrations' && initial?.config && typeof initial.config === 'object')
+    Object.assign(merged, initial.config);
+  return merged;
 }
 
 function EntityEditor({
@@ -870,6 +888,27 @@ function EntityEditor({
                   name: txt(model, 'name').trim() || model.id,
                 }));
               }
+              if (collection === 'integrations') {
+                const type = txt(form, 'type') || 'webhook';
+                if (type !== 'bridge' && !txt(form, 'url'))
+                  throw new Error('请填写集成 URL（桥接渠道可留空，仅入站）');
+                const events = Array.isArray(form.events)
+                  ? (form.events as string[])
+                  : ['attention', 'task.completed'];
+                if (!events.length)
+                  throw new Error('请至少订阅一个事件');
+                body.type = type;
+                body.config = {
+                  url: txt(form, 'url'),
+                  secret: txt(form, 'secret'),
+                  accessToken: txt(form, 'accessToken'),
+                  qqTargetType: txt(form, 'qqTargetType') || 'group',
+                  qqTargetId: txt(form, 'qqTargetId'),
+                  teamId: txt(form, 'teamId'),
+                };
+                body.events = events;
+                body.enabled = form.enabled !== false;
+              }
               await onSave(body);
             } catch (err) {
               setError((err as Error).message);
@@ -884,6 +923,71 @@ function EntityEditor({
                 required: collection !== 'jobs',
                 max: 120,
               })}
+            {collection === 'integrations' && (
+              <>
+                {choice('type', '渠道类型', [
+                  { value: 'webhook', label: 'Webhook（通用 HTTP）' },
+                  { value: 'wecom-bot', label: '企业微信群机器人' },
+                  { value: 'qq-onebot', label: 'QQ OneBot（NapCat 等）' },
+                  { value: 'feishu-bot', label: '飞书机器人' },
+                  { value: 'dingtalk-bot', label: '钉钉机器人' },
+                  { value: 'bridge', label: '通用桥接（微信/QQ 桥）' },
+                ])}
+                {(
+                  input(
+                    'url',
+                    txt(form, 'type') === 'bridge'
+                      ? '出站 URL（可选，仅入站时留空）'
+                      : txt(form, 'type') === 'qq-onebot'
+                        ? 'OneBot 地址（如 http://127.0.0.1:3000）'
+                        : 'Webhook 地址',
+                    { required: txt(form, 'type') !== 'bridge', placeholder: 'https://' },
+                  )
+                )}
+                {txt(form, 'type') === 'qq-onebot' && (
+                  <>
+                    {choice('qqTargetType', '推送目标', [
+                      { value: 'group', label: '群聊' },
+                      { value: 'private', label: '私聊' },
+                    ])}
+                    {input('qqTargetId', '群号 / QQ 号', { required: true })}
+                    {input('accessToken', 'Access Token', { type: 'password' })}
+                  </>
+                )}
+                {txt(form, 'type') === 'webhook' &&
+                  input('secret', '签名密钥（HMAC，入站必填）', { type: 'password' })}
+                {txt(form, 'type') === 'dingtalk-bot' &&
+                  input('secret', '加签密钥（可选）', { type: 'password' })}
+                {txt(form, 'type') === 'bridge' &&
+                  input('accessToken', 'Access Token（入站校验）', { type: 'password', required: true })}
+                {input('teamId', '绑定团队空间 ID（入站消息送进该团队）', {
+                  placeholder: '留空则仅出站',
+                })}
+                <fieldset>
+                  <div className="manage-field-heading">订阅事件</div>
+                  {Object.entries(integrationEventLabels).map(([value, label]) => (
+                    <label key={value}>
+                      <input
+                        type="checkbox"
+                        checked={Array.isArray(form.events) && (form.events as string[]).includes(value)}
+                        onChange={(event) =>
+                          field(
+                            'events',
+                            event.target.checked
+                              ? [...(Array.isArray(form.events) ? (form.events as string[]) : []), value]
+                              : (Array.isArray(form.events) ? (form.events as string[]) : []).filter(
+                                  (item) => item !== value,
+                                ),
+                          )
+                        }
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </fieldset>
+                {toggle('enabled', '启用集成')}
+              </>
+            )}
             {collection === 'providers' && (
               <>
                 <div className="manage-columns">
@@ -1495,7 +1599,7 @@ function EntityEditor({
           )}
           <ErrorMessage error={error} />
           <div className="manage-form-footer">
-            {['credentials', 'resources'].includes(collection) && (
+            {['credentials', 'resources', 'integrations'].includes(collection) && (
               <button
                 type="button"
                 className="secondary-button"
@@ -1504,24 +1608,32 @@ function EntityEditor({
                   testing ||
                   (collection === 'credentials'
                     ? !form.value
-                    : form.kind === 'project'
-                      ? !form.path
-                      : !form.host)
+                    : collection === 'integrations'
+                      ? !initial?.id
+                      : form.kind === 'project'
+                        ? !form.path
+                        : !form.host)
                 }
                 onClick={async () => {
                   setTesting(true);
                   setTestResult(null);
                   setError('');
                   try {
-                    const endpoint = initial?.id
-                      ? `${collection}/${initial.id}/probe`
-                      : `${collection}/probe`;
+                    const endpoint = collection === 'integrations'
+                      ? `integrations/${initial?.id}/test`
+                      : initial?.id
+                        ? `${collection}/${initial.id}/probe`
+                        : `${collection}/probe`;
                     const res = await api<Record<string, unknown>>(
                       endpoint,
                       'POST',
-                      form,
+                      collection === 'integrations' ? {} : form,
                     );
-                    setTestResult(res);
+                    setTestResult(
+                      collection === 'integrations'
+                        ? { ok: res.ok === true, message: res.ok ? '测试消息已发送，请到渠道里查看' : typeof res.error === 'string' ? res.error : '发送失败' }
+                        : res,
+                    );
                   } catch (err) {
                     setTestResult({
                       ok: false,
@@ -1537,7 +1649,7 @@ function EntityEditor({
                 ) : (
                   <Activity size={16} />
                 )}
-                测试连通性
+                {collection === 'integrations' ? '发送测试消息' : '测试连通性'}
               </button>
             )}
             <button
@@ -1578,6 +1690,7 @@ const icons: Record<string, LucideIcon> = {
   messages: Mail,
   workflows: GitBranch,
   capabilities: Plug,
+  integrations: Share2,
   schedules: Clock3,
   monitors: Activity,
   attention: Inbox,
@@ -1591,7 +1704,22 @@ const canEdit = new Set([
   'monitors',
   'workflows',
   'capabilities',
+  'integrations',
 ]);
+
+const integrationTypeLabels: Record<string, string> = {
+  webhook: 'Webhook',
+  'wecom-bot': '企业微信群机器人',
+  'qq-onebot': 'QQ OneBot',
+  'feishu-bot': '飞书机器人',
+  'dingtalk-bot': '钉钉机器人',
+  bridge: '通用桥接',
+};
+const integrationEventLabels: Record<string, string> = {
+  attention: '待处理事项',
+  'verification.failed': '验证失败',
+  'task.completed': '任务完成/失败',
+};
 
 function description(collection: string, item: Entity, data: ManagementState) {
   const roleName = (id: string) =>
@@ -1646,6 +1774,19 @@ function description(collection: string, item: Entity, data: ManagementState) {
         txt(item, 'transport'),
         typeof item.boundAssistantCount === 'number' ? `${item.boundAssistantCount} 个助手` : '',
         typeof item.boundTeamCount === 'number' ? `${item.boundTeamCount} 个团队成员` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ');
+    case 'integrations':
+      return [
+        integrationTypeLabels[txt(item, 'type')] || txt(item, 'type'),
+        txt((item.config as Record<string, unknown>) || {}, 'url'),
+        Array.isArray(item.events)
+          ? (item.events as string[])
+              .map((event) => integrationEventLabels[event] || event)
+              .join(' / ')
+          : '',
+        item.enabled === false ? '已停用' : '',
       ]
         .filter(Boolean)
         .join(' · ');
