@@ -34,7 +34,7 @@ for (const failing of [false, true])
     else migrate(db, dir);
     assert.equal(
       db.prepare('PRAGMA user_version').get().user_version,
-      failing ? 0 : 1,
+      failing ? 0 : 2,
     );
     const backups = fs.readdirSync(path.join(dir, 'backups'));
     assert.equal(backups.length, 1);

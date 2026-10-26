@@ -39,7 +39,7 @@ test('old schema migration makes a consistent backup and preserves user records'
     assert.equal(f.store.task(task.id).prompt, 'Preserve this task');
     assert.equal(
       f.store.db.prepare('PRAGMA user_version').get().user_version,
-      1,
+      2,
     );
     const backup = fs
       .readdirSync(path.join(f.dataDir, 'backups'))

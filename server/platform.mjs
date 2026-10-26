@@ -601,8 +601,8 @@ export function createPlatform({
     const execution = records.get('executions', task.id);
     if (!execution || execution.status !== 'running') return;
     const recent = records
-      .list('task-events')
-      .filter((item) => item.taskId === task.id && item.type === 'tool/call')
+      .listByTask('task-events', task.id)
+      .filter((item) => item.type === 'tool/call')
       .slice(-LOOP_WINDOW);
     if (recent.length < LOOP_WINDOW) return;
     const signatures = recent.map((item) => eventSignature({ type: 'tool/call', data: item.data }));
@@ -1012,10 +1012,7 @@ export function createPlatform({
   function forkTask(taskId, { uptoEntryId, title } = {}, _principal = { type: 'owner' }) {
     const task = store.task(taskId);
     if (!task) throw new Error('源任务不存在。');
-    const entries = records
-      .list('session-entries')
-      .filter((entry) => entry.taskId === taskId)
-      .sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')));
+    const entries = records.listByTask('session-entries', taskId);
     if (!entries.length) throw new Error('源任务没有可分叉的会话记录。');
     let scoped = entries;
     if (uptoEntryId) {
@@ -2334,8 +2331,7 @@ export function createPlatform({
           executionWorkspace: records.get('workspaces', id),
           snapshot: records.get('runtime-snapshots', id),
           events: records
-            .list('task-events')
-            .filter((e) => e.taskId === id)
+            .listByTask('task-events', id)
             .slice(0, 100),
           usage: records.list('usage').filter((e) => e.taskId === id),
           artifacts,

@@ -29,8 +29,8 @@ export function measureUsage(records, taskId, event, derive) {
   const turn = event.data?.turn;
   if (turn === undefined) return null;
   const events = records
-    .list('task-events')
-    .filter((row) => row.taskId === taskId && row.data?.turn === turn)
+    .listByTask('task-events', taskId)
+    .filter((row) => row.data?.turn === turn)
     .reverse()
     .map((row) => ({ type: row.type, data: row.data }));
   if (event.type !== 'turn/end')

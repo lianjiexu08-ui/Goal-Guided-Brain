@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS records (
   PRIMARY KEY(collection,id)
 );
 CREATE INDEX IF NOT EXISTS idx_records_collection_updated ON records(collection,updatedAt);
+CREATE INDEX IF NOT EXISTS idx_records_collection_task ON records(collection, json_extract(data, '$.taskId'));
 `;
 
 export class Records {
@@ -43,13 +44,26 @@ export class Records {
         'SELECT * FROM records WHERE collection=? ORDER BY createdAt DESC,rowid DESC',
       )
       .all(collection)
-      .map((row) => ({
-        ...JSON.parse(row.data),
-        id: row.id,
-        revision: row.revision,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-      }));
+      .map((row) => this.parseRow(row));
+  }
+  // 按 data.taskId 定向查询（表达式索引 idx_records_collection_task），
+  // 供会话树/任务事件等增长最快的集合使用，避免全表扫描后 JS 过滤。
+  listByTask(collection, taskId) {
+    return this.db
+      .prepare(
+        "SELECT * FROM records WHERE collection=? AND json_extract(data,'$.taskId')=? ORDER BY createdAt DESC,rowid DESC",
+      )
+      .all(collection, taskId)
+      .map((row) => this.parseRow(row));
+  }
+  parseRow(row) {
+    return {
+      ...JSON.parse(row.data),
+      id: row.id,
+      revision: row.revision,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
   }
   save(collection, input, id = input.id || randomUUID(), expectedRevision) {
     const previous = this.get(collection, id);

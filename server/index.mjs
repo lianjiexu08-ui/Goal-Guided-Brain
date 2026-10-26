@@ -1104,8 +1104,7 @@ export function createWorkbench({
         const task = store.task(parts[2]);
         if (!task) return send(404, { error: '任务不存在。' });
         const entries = store.records
-          .list('session-entries')
-          .filter((entry) => entry.taskId === task.id)
+          .listByTask('session-entries', task.id)
           .sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')));
         return send(200, { taskId: task.id, count: entries.length, entries });
       }
@@ -1136,8 +1135,8 @@ export function createWorkbench({
           // 质量级联：若上次尝试因验证循环额度用尽记录了 routing/escalate，重试时排除当时模型，
           // 让路由选择更强候选；升级原因保留在原任务事件中可追溯。
           const escalated = store.records
-            .list('task-events')
-            .some((item) => item.taskId === task.id && item.type === 'routing/escalate');
+            .listByTask('task-events', task.id)
+            .some((item) => item.type === 'routing/escalate');
           const previousModel = store.records.get('runtime-snapshots', task.id)?.route?.model || null;
           const retry = newTask({
             ...previousMeta,

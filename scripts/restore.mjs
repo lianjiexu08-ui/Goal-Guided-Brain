@@ -12,7 +12,7 @@ function validateDatabase(db) {
   if (checks.length !== 1 || Object.values(checks[0])[0] !== 'ok')
     throw new Error('备份数据库完整性检查失败。');
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (![0, 1].includes(version))
+  if (![0, 1, 2].includes(version))
     throw new Error('备份数据库版本不受支持，请使用匹配版本的应用。');
   for (const [table, columns] of Object.entries({
     settings: ['id', 'data'],

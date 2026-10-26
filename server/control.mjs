@@ -1099,7 +1099,7 @@ export class ControlPlane {
     };
     if (!plan.goal) throw fail('执行计划需要目标。', 400);
     if (!plan.steps.length) throw fail('执行计划需要至少一个步骤。', 400);
-    const seq = this.records.list('task-events').filter(item => item.taskId === taskId && item.type === 'plan/submitted').length + 1;
+    const seq = this.records.listByTask('task-events', taskId).filter(item => item.type === 'plan/submitted').length + 1;
     const planId = `plan:${taskId}:${seq}`;
     this.records.save('task-events', { taskId, type: 'plan/submitted', data: plan, at: new Date().toISOString() }, planId);
     return { recorded: true, planId, plan };
