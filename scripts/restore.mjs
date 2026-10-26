@@ -79,7 +79,8 @@ function validateCompanion(filename) {
 function privateCopy(source, destination) {
   fs.copyFileSync(source, destination);
   fs.chmodSync(destination, 0o600);
-  const fd = fs.openSync(destination, 'r');
+  // Windows 对只读句柄 fsync 会 EPERM；用可写句柄保证落盘语义一致。
+  const fd = fs.openSync(destination, process.platform === 'win32' ? 'r+' : 'r');
   try {
     fs.fsyncSync(fd);
   } finally {
@@ -87,6 +88,8 @@ function privateCopy(source, destination) {
   }
 }
 function syncDirectory(dirname) {
+  // Windows 无法打开目录句柄做 fsync；NTFS 上元数据落盘由系统保证。
+  if (process.platform === 'win32') return;
   const directory = fs.openSync(dirname, 'r');
   try {
     fs.fsyncSync(directory);

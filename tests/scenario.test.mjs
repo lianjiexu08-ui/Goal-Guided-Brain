@@ -359,7 +359,12 @@ test(
     assert.equal(resumedRun.options.route.providerId, alternate.id);
     assert.equal(resumedRun.options.route.protocol, 'anthropic-messages');
     assert.match(resumedRun.prompt, new RegExp(checkpoint.id));
-    assert.ok(resumedRun.prompt.includes(draftPath));
+    // 上下文以 JSON 嵌入路径；Windows 反斜杠在 JSON 里会被转义，两种形式都应接受。
+    assert.ok(
+      resumedRun.prompt.includes(draftPath) ||
+        resumedRun.prompt.includes(JSON.stringify(draftPath).slice(1, -1)),
+      `恢复上下文应引用草稿路径：${draftPath}`,
+    );
     const finalFrontPath = path.join(
       resumedRun.options.task.workspace,
       'frontend.mjs',

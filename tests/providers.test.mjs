@@ -31,7 +31,11 @@ test('vault encrypts credentials and restores with correct passphrase only', asy
     assert.ok(
       !fs.readFileSync(vault.file, 'utf8').includes('credential-value'),
     );
-    assert.equal(fs.statSync(vault.file).mode & 0o777, 0o600);
+    // NTFS 不支持 POSIX mode 位；Windows 上只验证文件保持可写，严格 0600 在 POSIX 上验证。
+    if (process.platform === 'win32')
+      assert.ok(fs.statSync(vault.file).mode & 0o200, '凭据文件应保持可写');
+    else
+      assert.equal(fs.statSync(vault.file).mode & 0o777, 0o600);
     vault.lock();
     assert.throws(() => vault.get(entry.id), /解锁/);
     assert.deepEqual(vault.list(), []);

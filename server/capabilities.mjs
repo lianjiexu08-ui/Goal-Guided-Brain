@@ -360,7 +360,13 @@ export class CapabilityService {
     const connectionId = `plugin-mcp-${createHash('sha256').update(`${id}:${row.digest}:${entryId}`).digest('hex').slice(0, 24)}`;
     const existing = this.store.records.get('capabilities', connectionId);
     if (existing) return existing;
-    const replaceRoot = value => String(value || '').replace(/\$\{(?:CLAUDE_PLUGIN_ROOT|PLUGIN_ROOT)\}/g, row.path);
+    const replaceRoot = value => {
+      const replaced = String(value || '').replace(/\$\{(?:CLAUDE_PLUGIN_ROOT|PLUGIN_ROOT)\}/g, row.path);
+      // 替换后落在插件根内的路径规范化为本地分隔符（声明里通常是正斜杠）。
+      if (replaced.startsWith(row.path))
+        return path.join(row.path, replaced.slice(row.path.length).replace(/^[\\/]+/, ''));
+      return replaced;
+    };
     const config = selected.config;
     if (config.type && !['stdio', 'http', 'streamable-http', 'sse'].includes(config.type) && !overrides.transport) throw new Error('此 MCP 传输类型需要先映射为受支持的协议。');
     const authorization = Object.entries(config.headers || {}).find(([name]) => name.toLowerCase() === 'authorization')?.[1];
