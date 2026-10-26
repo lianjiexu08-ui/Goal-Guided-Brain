@@ -271,7 +271,29 @@ async function workbenchFetch(args, route, { method = 'GET', body } = {}) {
   try { data = text ? JSON.parse(text) : null; } catch { data = text; }
   if (!response.ok) throw new Error((data && data.error) || `HTTP ${response.status}`);
   await checkWorkbenchFreshness(args).catch(() => {});
+  await ensureVaultUnlocked(args).catch(() => {});
   return data;
+}
+
+/** 确保凭据库已解锁：从 .vault_pass 文件读取口令自动解锁。 */
+let vaultUnlocked = false;
+async function ensureVaultUnlocked(args) {
+  if (vaultUnlocked) return;
+  const base = workbenchBase(args);
+  const status = await fetch(`${base}/api/vault`).then(r => r.json()).catch(() => null);
+  if (!status || status.unlocked) { vaultUnlocked = true; return; }
+  if (!status.initialized) { vaultUnlocked = true; return; }
+  // 尝试从 .vault_pass 文件读取口令（网页登录时会写入）
+  const passFile = path.join(process.env.WORKBENCH_DATA_DIR || path.join(os.homedir(), '.dsh-workbench'), '.vault_pass');
+  let passphrase = '';
+  try { passphrase = fs.readFileSync(passFile, 'utf8').trim(); } catch {}
+  if (!passphrase) { vaultUnlocked = true; return; } // 无口令可试，让调用方处理
+  const res = await fetch(`${base}/api/vault/unlock`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ passphrase }),
+  });
+  if (res.ok) { vaultUnlocked = true; }
 }
 
 // 常驻实例可能在跑旧代码：每进程一次，用 /api/health 的指纹比对，旧了就自动重启。
@@ -655,6 +677,11 @@ async function loginCommand(args) {
   const baseUrl = valueAfter(args, '--base-url', preset.baseUrl);
   const existing = await workbenchFetch(args, 'providers');
   const match = (existing || []).find((item) => item.name === preset.label || item.baseUrl === baseUrl);
+
+  // 写入 .vault_pass 文件让工作台重启后自动解锁
+  const passFile = path.join(process.env.WORKBENCH_DATA_DIR || path.join(os.homedir(), '.dsh-workbench'), '.vault_pass');
+  fs.mkdirSync(path.dirname(passFile), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(passFile, passphrase, { mode: 0o600 });
 
   // 3) 写入加密凭据（已有则原地更新）
   const credential = match?.credentialId

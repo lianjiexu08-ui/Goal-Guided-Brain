@@ -73,7 +73,13 @@ export function createPlatform({
     // must never be persisted as a plaintext companion file. Older builds
     // created `.vault_pass`; remove that legacy artifact before serving.
     try { fs.rmSync(path.join(dataDir, '.vault_pass'), { force: true }); } catch {}
-    const vaultPassphrase = process.env.WORKBENCH_VAULT_PASSWORD || '';
+    // 自动解锁：优先 env，其次 .vault_pass 文件（首次 login 时由 CLI 写入）。
+    let vaultPassphrase = process.env.WORKBENCH_VAULT_PASSWORD || '';
+    if (!vaultPassphrase) {
+      try {
+        vaultPassphrase = fs.readFileSync(path.join(dataDir, '.vault_pass'), 'utf8').trim();
+      } catch {}
+    }
     if (vaultPassphrase) {
       if (vault.status().initialized)
         await vault.unlock(vaultPassphrase);
