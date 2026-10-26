@@ -507,6 +507,31 @@ export class ControlPlane {
     // 自治招募：团队关闭招募审核且方案已就绪时，直接确认并创建成员，开始干活。
     if (saved.recruitment.phase === 'proposed' && proposal.ready && saved.requireReview === false) {
       try {
+        // 自治团队保底：至少一个有终端权限的执行成员，否则团队无法干活。
+        const hasExecutor = proposal.members.some((m) => {
+          const role = this.store.role(m.roleId);
+          return role && role.tools?.terminal === true;
+        });
+        if (!hasExecutor) {
+          const devTemplate = this.store.role('developer');
+          if (devTemplate && !devTemplate.archived) {
+            proposal.members.push({
+              memberId: 'developer',
+              roleId: 'developer',
+              name: devTemplate.name || '开发助手',
+              responsibility: '实现代码、运行测试并交付可验证结果。',
+              deliverables: ['可运行代码', '测试通过证据'],
+              skillIds: ['development-workflow', 'code-review', 'bug-fix'],
+              capabilityIds: [],
+              providerIds: [],
+              tools: [],
+              toolAccess: { files: true, terminal: true },
+              modelHint: '',
+              dependencies: [],
+              recommendations: null,
+            });
+          }
+        }
         const confirmed = this.applyRecruitmentProposal(saved.id, proposal);
         this.store.saveTeamMessage({
           spaceId: confirmed.id,

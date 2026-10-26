@@ -430,7 +430,7 @@ async function teamCreate(args) {
     if (!entries.length) console.error(`警告：${workspace} 是空目录，团队将没有可处理的代码。`);
   }
   const body = {
-    name, goal, purpose: goal, teamType, pmRoleId: 'project_manager', memberRoleIds: ['project_manager'],
+    name, goal, purpose: goal, teamType, pmRoleId: 'project_manager', memberRoleIds: ['project_manager', 'developer'],
     requireReview,
     ...(workspace ? { workspace } : {}),
     collaboration: { enabled: true, autoHandoff: true, sharedBoard: true, allowedTeamIds: [] },
@@ -761,7 +761,7 @@ async function deliver(args) {
       const teamName = goal.slice(0, 20).replace(/[\\/]/g, '') || '交付团队';
       team = await workbenchFetch(args, 'teams', { method: 'POST', body: {
         name: teamName, goal, purpose: goal,
-        pmRoleId: 'project_manager', memberRoleIds: ['project_manager'],
+        pmRoleId: 'project_manager', memberRoleIds: ['project_manager', 'developer'],
         requireReview: false,
         ...(workspace ? { workspace } : {}),
         collaboration: { enabled: true, autoHandoff: true, sharedBoard: true, allowedTeamIds: [] },
@@ -2128,7 +2128,7 @@ async function home(input, args) {
         if (!name || !goal) { console.log('需要名称与目标。'); continue; }
         try {
           const saved = await workbenchFetch(args, 'teams', { method: 'POST', body: {
-            name, goal, purpose: goal, pmRoleId: 'project_manager', memberRoleIds: ['project_manager'],
+            name, goal, purpose: goal, pmRoleId: 'project_manager', memberRoleIds: ['project_manager', 'developer'],
             requireReview: false,
             collaboration: { enabled: true, autoHandoff: true, sharedBoard: true, allowedTeamIds: [] },
           } });
