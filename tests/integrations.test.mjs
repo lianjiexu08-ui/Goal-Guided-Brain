@@ -154,3 +154,26 @@ test('bridge 渠道：仅入站可不配 URL，Bearer token 校验', async t => 
   assert.equal(calls[0].options.headers.Authorization, 'Bearer t');
   assert.equal(calls[0].body.event, 'task.completed');
 });
+
+test('入站限流：滑动窗口与失败加速冷却', t => {
+  const { records } = setup(t);
+  const service = new IntegrationService({ records, fetchImpl: async () => ({}) });
+  const created = service.save({ type: 'webhook', config: { url: 'https://x', secret: 'sec' } });
+  const id = created.id;
+  // 小窗口限制（便于测试）：每分钟 3 次。
+  const limits = { limit: 3, windowMs: 60_000 };
+  for (let index = 0; index < 3; index++)
+    assert.equal(service.checkInboundRate(id, limits).ok, true);
+  const blocked = service.checkInboundRate(id, limits);
+  assert.equal(blocked.ok, false);
+  assert.match(blocked.reason, /过于频繁/);
+  assert.ok(blocked.retryAfterMs > 0);
+  // 失败计数让后续窗口额度减半（3 → 1）。
+  service.noteInboundFailure(id);
+  const state = service.inboundHits.get(id);
+  state.hits.length = 0; // 模拟窗口流逝
+  assert.equal(service.checkInboundRate(id, limits).ok, true); // 减半后额度 1
+  const second = service.checkInboundRate(id, limits);
+  assert.equal(second.ok, false);
+  assert.match(second.reason, /校验失败记录/);
+});

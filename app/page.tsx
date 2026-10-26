@@ -2266,13 +2266,15 @@ function Workbench() {
       // The single team-recruitment entry is the team's front door. Keep its messages in
       // the same space timeline so PM replies and delegated work stay linked.
       if (teamSpace?.pmRoleId === role) {
-        const message = await api<TeamMessage & { sessionId?: string }>(
+        const message = await api<TeamMessage & { sessionId?: string; steered?: boolean }>(
           `spaces/${teamSpace.id}/messages`,
           'POST',
           {
             clientMessageId: `chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             content,
             attachmentIds,
+            // PM 忙碌时不报 409，而是把内容作为插话注入运行中的执行实例。
+            steerIfBusy: true,
             ...(selectedModelOption
               ? {
                   model: selectedModelOption.model.id,
@@ -2284,6 +2286,10 @@ function Workbench() {
         );
         if (message.sessionId) {
           setSelected((s) => ({ ...s, [sessionSelectionKey]: message.sessionId }));
+        }
+        if (message.steered) {
+          setNotice('项目经理正在处理上一条消息，你的内容已作为插话注入当前执行。');
+          return;
         }
         if (draftVersionRef.current[draftKey] === sentVersion) {
           await clearServerDraft(draftKey, teamSpace?.id || null, role, content, attachmentIds);

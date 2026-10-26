@@ -389,6 +389,7 @@ export function createPlatform({
   }
   const control = new ControlPlane({
     store,
+    dataDir,
     createTask: newTask,
     stopTask,
     evaluateDecision: input => providers.evaluateDecision(input),
@@ -1218,8 +1219,14 @@ export function createPlatform({
   async function ingestInbound(integrationId, { rawBody = '', headers = {}, text: inboundText = '', senderLabel = '' } = {}) {
     const integration = records.get('integrations', integrationId);
     if (!integration || !integration.enabled) throw Object.assign(new Error('集成不存在或已停用。'), { status: 404 });
+    const rate = integrations.checkInboundRate(integrationId);
+    if (!rate.ok)
+      throw Object.assign(new Error(rate.reason), { status: 429, retryAfterMs: rate.retryAfterMs });
     const verdict = integrations.verifyInbound(integration, { headers, rawBody });
-    if (!verdict.ok) throw Object.assign(new Error(verdict.reason), { status: 401 });
+    if (!verdict.ok) {
+      integrations.noteInboundFailure(integrationId);
+      throw Object.assign(new Error(verdict.reason), { status: 401 });
+    }
     let parsed = {};
     try { parsed = JSON.parse(String(rawBody || '{}')); } catch { parsed = {}; }
     const content = String(inboundText || parsed.text || parsed.content || '').trim().slice(0, 8000);

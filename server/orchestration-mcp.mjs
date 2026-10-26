@@ -87,6 +87,7 @@ const tools = [
     artifacts: { type: 'array', items: string }, operations: { type: 'array', items: string }, nextSteps: { type: 'array', items: string },
   }, ['title', 'content']) },
   { name: 'submit_execution_plan', description: '改动代码或系统前提交执行计划（目标、步骤、风险、验证方式）。计划会作为可审计事件保存，团队动态可追踪。', inputSchema: objectSchema({ goal: string, steps: { type: 'array', items: { type: 'string' } }, risks: { type: 'array', items: { type: 'string' } }, verification: string }, ['goal', 'steps']) },
+  { name: 'record_team_lesson', description: '把本次任务踩过的坑、用户偏好修正或常用验证命令写进团队记忆；后续任务会常驻注入这些内容。至少提供一项。', inputSchema: objectSchema({ lessons: string, preferences: string, commands: { type: 'array', items: { type: 'string' } } }, []), },
   { name: 'spawn_sample_tasks', description: '为同一目标创建 2-3 个并行样本任务（各自隔离目录），用于比较不同实现方案；Token 不限时，落选样本会保留为证据。', inputSchema: objectSchema({ prompt: string, count: { type: 'integer', minimum: 2, maximum: 3 }, title: string, role: string }, ['prompt']) },
   { name: 'select_sample', description: '比较并行样本后选择优胜者并说明理由；选择会记录为事件，落选样本保留为证据。', inputSchema: objectSchema({ taskId: string, rationale: string }, ['taskId']) },
   { name: 'submit_artifact', description: '提交产物位置、版本和验证证据；不会自动合并代码或发布。', inputSchema: objectSchema({ title: string, location: string, content: string, commit: string, evidence: string }, ['title', 'location', 'evidence']) },
@@ -307,6 +308,7 @@ export function createOrchestrationServer({ control, token, capabilities }) {
         case 'delegate_task': response = control.createJob(input, principal); break;
         case 'save_checkpoint': response = control.saveScoped('checkpoints', input, principal); break;
         case 'submit_execution_plan': response = control.recordExecutionPlan(input, principal); break;
+        case 'record_team_lesson': response = control.recordTeamLesson(input, principal); break;
         case 'spawn_sample_tasks': response = control.spawnSampleTasks(input, principal); break;
         case 'select_sample': response = control.selectSample(input, principal); break;
         case 'submit_artifact': response = control.saveScoped('artifacts', input, principal); break;

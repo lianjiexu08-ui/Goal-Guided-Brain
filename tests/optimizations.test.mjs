@@ -13,7 +13,7 @@ function setup(t, options = {}) {
   const workspace = path.join(directory, 'project');
   fs.mkdirSync(workspace);
   const store = new Store(path.join(directory, 'data'), workspace, { seedProjectManager: true });
-  const control = new ControlPlane({ store, now: () => 1000000, ...options });
+  const control = new ControlPlane({ store, now: () => 1000000, dataDir: directory, ...options });
   t.after(() => { store.close(); fs.rmSync(directory, { recursive: true, force: true }); });
   return { store, control, directory, workspace };
 }
@@ -87,7 +87,7 @@ test('团队记忆：追加、读取、截断与删除', t => {
 
 function teamWithInstance(t, options = {}) {
   const fixture = setup(t, options);
-  const { store, control } = fixture;
+  const { store, control, directory } = fixture;
   const space = store.saveTeamSpace({
     name: '优化测试团队', goal: '验证新能力。', purpose: '测试。',
     workspace: fixture.workspace, pmRoleId: 'project_manager',
@@ -95,7 +95,7 @@ function teamWithInstance(t, options = {}) {
   const job = control.createJob({ role: space.pmRoleId, prompt: '推进目标', teamId: space.id, spaceId: space.id, permissions: ['deploy'] });
   const claim = control.claimLocal(store.task(job.taskId));
   const principal = control.validateInstanceToken(claim.token);
-  return { ...fixture, space, principal };
+  return { ...fixture, store, control, directory, space, principal };
 }
 
 test('submit_execution_plan：记录可审计计划事件，缺步骤报错', t => {
@@ -174,4 +174,35 @@ test('DshRun.recordSessionEntry：运行事件映射为追加式会话条目', a
   assert.equal(entries[2].parentId, entries[1].id);
   assert.equal(entries[2].data.text, '做完了');
   assert.equal(run.lastEntryId, entries[2].id);
+});
+
+// ---- 团队记忆 MCP 工具（record_team_lesson） ----
+
+test('record_team_lesson：写入团队记忆并留审计事件，非团队任务拒绝', t => {
+  const { store, control, directory, space, principal } = teamWithInstance(t);
+  assert.throws(
+    () => control.recordTeamLesson({}, principal),
+    /至少提供/,
+  );
+  const result = control.recordTeamLesson(
+    { lessons: 'npm test 之前要先跑 lint', preferences: '回复用中文', commands: ['npm test'] },
+    principal,
+  );
+  assert.equal(result.recorded, true);
+  assert.equal(result.teamId, space.id);
+  const memory = readTeamMemory(directory, space.id);
+  assert.ok(memory.includes('npm test 之前要先跑 lint'));
+  assert.ok(memory.includes('回复用中文'));
+  const events = store.records
+    .listByTask('task-events', principal.taskId)
+    .filter(item => item.type === 'team-memory/recorded');
+  assert.equal(events.length, 1);
+  // 无团队空间的裸任务：teamId 为空 → 409。
+  const bareJob = control.createJob({ role: 'assistant', prompt: '独立任务', permissions: [] });
+  const bareClaim = control.claimLocal(store.task(bareJob.taskId));
+  const barePrincipal = control.validateInstanceToken(bareClaim.token);
+  assert.throws(
+    () => control.recordTeamLesson({ lessons: 'x' }, barePrincipal),
+    /不属于任何团队空间/,
+  );
 });

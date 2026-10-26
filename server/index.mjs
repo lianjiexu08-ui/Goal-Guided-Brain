@@ -898,6 +898,18 @@ export function createWorkbench({
               return meta.spaceId === space.id && task.role === space.pmRoleId;
             });
             const activePmTask = spaceTasks.find((task) => ['queued', 'running'].includes(task.status));
+            // 插话模式：PM 忙碌时把内容直接注入运行中的执行实例（不打断当前轮），
+            // 消息以已发送状态进入时间线并关联到该任务；带附件时仍退回 409。
+            if (activePmTask && body.steerIfBusy === true && !attachmentIds.length) {
+              const queued = platform.steerTask(activePmTask.id, messageContent);
+              if (queued) {
+                const linked = store.saveTeamMessage(
+                  { ...message, taskId: activePmTask.id, status: 'sent' },
+                  message.id,
+                );
+                return send(200, { ...linked, steered: true, steerTaskId: activePmTask.id });
+              }
+            }
             const pmTask = activePmTask
               || (recruitment.sessionId && spaceTasks.find((task) => task.sessionId === recruitment.sessionId));
             try {

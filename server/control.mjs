@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { bearer, hashToken } from './auth.mjs';
 import { SKILLS } from './roles.mjs';
 import { assessCapabilityRisk, capabilityFingerprint } from './capabilities.mjs';
+import { appendTeamMemory } from './memory.mjs';
 
 const terminal = new Set(['completed', 'failed', 'cancelled', 'interrupted', 'state_unknown']);
 const messageKinds = new Set(['task', 'question', 'reply', 'progress', 'blocked', 'handoff', 'notice']);
@@ -31,9 +32,10 @@ const teamMeta = (store, taskId) => store.records.get('task-meta', taskId) || {}
 
 export class ControlPlane {
   constructor({ store, createTask = input => store.createTask(input), updateTask = (id, changes) => store.updateTask(id, changes),
-    stopTask, buildAssignment, onEvent, onRemoteDone, evaluateDecision = async () => { throw fail('TypeSafe 决策服务未配置。'); }, now = () => Date.now(), leaseMs = 60000 } = {}) {
+    stopTask, buildAssignment, onEvent, onRemoteDone, evaluateDecision = async () => { throw fail('TypeSafe 决策服务未配置。'); }, now = () => Date.now(), leaseMs = 60000, dataDir = null } = {}) {
     this.store = store;
     this.records = store.records;
+    this.dataDir = dataDir;
     this.createTask = createTask;
     this.updateTask = updateTask;
     this.stopTask = stopTask;
@@ -1085,6 +1087,40 @@ export class ControlPlane {
       const p = String(pattern || '').toLowerCase().trim();
       return p && (normalized === p || normalized.includes(p));
     });
+  }
+  // 智能体把教训/偏好/常用命令写进团队记忆（TEAM_MEMORY），由平台在后续任务常驻注入。
+  // 仅限已确认团队的实例；写入留 task-event 审计。
+  recordTeamLesson(input = {}, principal) {
+    this.ensureCurrent(principal);
+    if (principal.type !== 'instance') throw fail('只有执行实例可以写入团队记忆。', 403);
+    const taskId = principal.taskId;
+    this.authorizeTask(principal, taskId);
+    const lessons = String(input.lessons || '').trim().slice(0, 800);
+    const preferences = String(input.preferences || '').trim().slice(0, 500);
+    const commands = (Array.isArray(input.commands) ? input.commands : [])
+      .map(item => String(item || '').trim()).filter(Boolean).slice(0, 5);
+    if (!lessons && !preferences && !commands.length)
+      throw fail('至少提供 lessons、preferences 或 commands 之一。', 400);
+    const meta = this.records.get('task-meta', taskId) || {};
+    const teamId = meta.teamId || meta.spaceId || null;
+    if (!teamId) throw fail('当前任务不属于任何团队空间，无法写入团队记忆。', 409);
+    const task = this.store.task(taskId);
+    const written = appendTeamMemory(this.dataDir, {
+      teamId,
+      taskTitle: task?.title || taskId,
+      outcome: 'completed',
+      lessons,
+      preferences,
+      commands,
+    });
+    if (!written) throw fail('没有可写入的实质内容。', 400);
+    this.records.save('task-events', {
+      taskId,
+      type: 'team-memory/recorded',
+      data: { teamId, lessons: lessons.slice(0, 200), preferences: preferences.slice(0, 200), commands },
+      at: new Date().toISOString(),
+    }, `team-memory:${taskId}:${Date.now()}`);
+    return { recorded: true, teamId };
   }
   // 提交执行计划（plan-then-execute）：改动前先记录目标、步骤、风险与验证方式，作为可审计事件。
   recordExecutionPlan(input = {}, principal) {

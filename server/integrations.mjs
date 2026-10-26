@@ -36,6 +36,9 @@ export class IntegrationService {
     this.now = now;
     this.fetchImpl = typeof fetchImpl === 'function' ? fetchImpl : null;
     this.channels = new Map();
+    // 入站防爆破：每个集成一个滑动窗口计数器（默认 60 次/分钟），
+    // 连续校验失败会加速冷却。
+    this.inboundHits = new Map();
     this.registerBuiltinChannels();
   }
 
@@ -268,6 +271,36 @@ export class IntegrationService {
   }
 
   // ---- 入站 ----
+
+  /**
+   * 入站防爆破：滑动窗口限流（默认每分钟 60 次/集成），
+   * 窗口内的校验失败会计入下一次冷却，避免对密钥的无限暴力尝试。
+   * 返回 { ok } 或 { ok: false, reason, retryAfterMs }。
+   */
+  checkInboundRate(integrationId, { limit = 60, windowMs = 60_000 } = {}) {
+    const now = Date.now();
+    const state = this.inboundHits.get(integrationId) || { hits: [], failures: 0 };
+    state.hits = state.hits.filter(at => now - at < windowMs);
+    if (state.hits.length >= limit) {
+      this.inboundHits.set(integrationId, state);
+      const retryAfterMs = Math.ceil(windowMs - (now - state.hits[0]));
+      return { ok: false, reason: `入站请求过于频繁，请 ${Math.ceil(retryAfterMs / 1000)} 秒后重试。`, retryAfterMs };
+    }
+    // 最近窗口内有校验失败时，可用额度减半，加速冷却。
+    const effectiveLimit = state.failures > 0 ? Math.floor(limit / 2) : limit;
+    if (state.hits.length >= effectiveLimit) {
+      this.inboundHits.set(integrationId, state);
+      return { ok: false, reason: '入站请求过于频繁（存在校验失败记录），请稍后重试。', retryAfterMs: windowMs };
+    }
+    state.hits.push(now);
+    this.inboundHits.set(integrationId, state);
+    return { ok: true };
+  }
+
+  noteInboundFailure(integrationId) {
+    const state = this.inboundHits.get(integrationId);
+    if (state) state.failures += 1;
+  }
 
   /**
    * 校验入站请求。webhook：HMAC 签名头；qq-onebot：Bearer access token。
