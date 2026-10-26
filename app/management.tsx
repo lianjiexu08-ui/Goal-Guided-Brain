@@ -1856,6 +1856,10 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
   const [args, setArgs] = useState('test');
   const [verifyAuto, setVerifyAuto] = useState(true);
   const [verifyProfile, setVerifyProfile] = useState<Entity | null>(null);
+  const [steerText, setSteerText] = useState('');
+  const [steerNote, setSteerNote] = useState('');
+  const [sessionEntries, setSessionEntries] = useState<Entity[] | null>(null);
+  const [forkNote, setForkNote] = useState('');
   useEffect(() => {
     let cancelled = false;
     void api<Entity>(`tasks/${taskId}`)
@@ -1958,6 +1962,50 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
   } else if (deliveryState === 'blocked') {
     deliveryDetail = '任务正在等待处理事项，完成后再进行交付判断。';
   }
+  const sendSteer = async () => {
+    const text = steerText.trim();
+    if (!text) {
+      setSteerNote('插话内容不能为空。');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await api<Entity>(`tasks/${taskId}/steer`, 'POST', { text });
+      setSteerNote('已插入消息：不打断当前轮，执行实例会在下一轮读到。');
+      setSteerText('');
+    } catch (err) {
+      setSteerNote((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const loadSession = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const res = await api<Entity & { entries?: Entity[] }>(
+        `tasks/${taskId}/session`,
+      );
+      setSessionEntries(Array.isArray(res.entries) ? res.entries : []);
+    } catch (err) {
+      setSteerNote((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const forkSession = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const created = await api<Entity>(`tasks/${taskId}/fork`, 'POST', {});
+      setForkNote(`已创建分支任务 ${txt(created, 'id')}，从会话分叉点继续，原始任务保持不变。`);
+    } catch (err) {
+      setForkNote((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
   const mutating =
     execution &&
     ['running', 'queued', 'state_unknown'].includes(status(execution));
@@ -2234,6 +2282,93 @@ export function ExecutionInspector({ taskId }: { taskId: string }) {
                   </div>
                 )}
               </>
+            )}
+          </section>
+          <section className="evidence-center" aria-label="运行中插话与会话">
+            <div className="evidence-center-heading">
+              <div>
+                <h3><Send size={16} /> 运行中插话与会话</h3>
+                <p>
+                  插话不打断当前轮；会话树支持从任意分叉点生成摘要继续，原始会话不重放。
+                </p>
+              </div>
+              <Badge value={mutating ? '运行中' : '已结束'} />
+            </div>
+            {mutating ? (
+              <div className="manage-form">
+                <label>
+                  插话内容（作为下一轮上下文注入）
+                  <textarea
+                    rows={3}
+                    value={steerText}
+                    placeholder="例如：优先处理登录页，其他问题下一轮再说。"
+                    onChange={(event) => setSteerText(event.target.value)}
+                  />
+                </label>
+                <div className="acceptance-decision-actions">
+                  <button
+                    className="primary-button"
+                    type="button"
+                    disabled={busy || !steerText.trim()}
+                    onClick={() => void sendSteer()}
+                  >
+                    <Send size={15} /> 发送插话
+                  </button>
+                </div>
+                {steerNote && <p className="acceptance-decision-hint">{steerNote}</p>}
+              </div>
+            ) : (
+              <p className="acceptance-decision-hint">
+                任务不在运行中；如需继续，可从会话分叉或重试任务。
+              </p>
+            )}
+            <div className="acceptance-decision-actions">
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={busy}
+                onClick={() => void loadSession()}
+              >
+                <FileText size={15} /> 查看会话记录
+              </button>
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={busy}
+                onClick={() => void forkSession()}
+              >
+                <GitBranch size={15} /> 从会话分叉继续
+              </button>
+            </div>
+            {forkNote && <p className="acceptance-decision-hint">{forkNote}</p>}
+            {sessionEntries !== null && (
+              sessionEntries.length ? (
+                <div className="evidence-list">
+                  {sessionEntries.slice(-30).reverse().map((entry) => {
+                    const data = entry.data && typeof entry.data === 'object' ? (entry.data as Entity) : {};
+                    const preview = txt(data, 'text') || txt(data, 'name') || JSON.stringify(data).slice(0, 160);
+                    return (
+                      <article className="evidence-item" key={txt(entry, 'id')}>
+                        <div className="evidence-item-heading">
+                          <div>
+                            <strong>{txt(entry, 'type')}</strong>
+                            <span>{preview}</span>
+                          </div>
+                          <Badge value={time(entry.at)} />
+                        </div>
+                      </article>
+                    );
+                  })}
+                  {sessionEntries.length > 30 && (
+                    <p className="acceptance-decision-hint">仅显示最近 30 条，共 {sessionEntries.length} 条。</p>
+                  )}
+                </div>
+              ) : (
+                <div className="evidence-empty">
+                  <strong>还没有会话记录</strong>
+                  <span>执行实例启动后会以追加式会话树记录轮次、消息和工具调用。</span>
+                </div>
+              )
             )}
           </section>
           <section className="evidence-center" aria-label="交付证据">
