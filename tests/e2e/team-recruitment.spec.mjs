@@ -1595,6 +1595,9 @@ test.describe('团队招募核心流程', () => {
   });
 
   test('desktop/mobile 连续20次切换时团队模型、动态和草稿保持隔离', async ({ page }) => {
+    // 20 轮移动端 UI 操作（开侧栏/切团队/选模型/填草稿/发送/校验轮询），
+    // 并行全量跑时 45 秒默认超时不够，给这个压测单独 3 分钟。
+    test.setTimeout(180_000);
     const teams = seedModelTeams();
     const requests = [];
     const messages = new Map();

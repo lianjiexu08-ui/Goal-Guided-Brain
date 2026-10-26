@@ -4110,6 +4110,7 @@ export function Management({
             'capabilities',
             'schedules',
             'monitors',
+            'integrations',
           ].includes(collection) && (
             <button
               className="primary-button"
