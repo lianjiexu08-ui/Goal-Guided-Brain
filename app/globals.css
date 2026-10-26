@@ -3410,3 +3410,35 @@ h1 {
     justify-content: flex-start;
   }
 }
+
+/* 新手引导卡：无供应商时显示在招募对话区顶部 */
+.onboarding-card {
+  margin: 0 auto 12px;
+  max-width: 720px;
+  width: 100%;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  background: rgba(59, 130, 246, 0.08);
+  border-radius: 12px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.onboarding-card strong {
+  font-size: 14px;
+}
+
+.onboarding-card ol {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.onboarding-card .secondary-button {
+  align-self: flex-start;
+}

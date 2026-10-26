@@ -3502,6 +3502,27 @@ function Workbench() {
                 <div ref={endRef} />
               </div>
               <div className="composer-area">
+                {!(data?.providers || []).length && (
+                  <div className="onboarding-card" data-testid="onboarding-model-guide">
+                    <strong>三步开始使用 GGB</strong>
+                    <ol>
+                      <li>打开「模型管理」，添加一个供应商并填入 API Key（支持 DeepSeek、Gemini、Claude、Codex/OpenAI、Kimi）。</li>
+                      <li>可选：在「能力中心」安装 Skill / MCP / Plugin，扩展团队的能力。</li>
+                      <li>回到这里，描述你的目标——项目经理会与你澄清并组建团队。</li>
+                    </ol>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => {
+                        setOpenMobile(false);
+                        setView('models');
+                        setRole('project_manager');
+                      }}
+                    >
+                      <Settings2 size={15} /> 去配置模型
+                    </button>
+                  </div>
+                )}
                 <div
                   className="composer"
                   onDragEnter={(event) => {
