@@ -67,3 +67,23 @@ References:
 - [YAML 2.8.3 release](https://github.com/eemeli/yaml/releases/tag/v2.8.3)
 - [Vinext beta.9 release](https://github.com/cloudflare/vinext/releases/tag/vinext%401.0.0-beta.9)
 - [Undici 7.29.1 security fixes](https://github.com/nodejs/undici/releases/tag/v7.29.1)
+
+## 2026-10-26 Audit Follow-up
+
+`npm audit fix` upgraded the production dependency `@modelcontextprotocol/sdk`
+to 1.32.2 (five high-severity advisories: OAuth credential leakage,
+session fixation, cross-origin redirect replay, memory exhaustion and
+bearer-token confusion) along with transitive `body-parser` and
+`brace-expansion` fixes. The full deterministic suite and production
+build were verified after the upgrade.
+
+Remaining advisories (14 total: 2 critical, 7 high) live exclusively in
+devDependencies and require breaking tooling upgrades tracked separately:
+
+- `vite`/`esbuild`/`ws`: need `@cloudflare/vite-plugin@1.65.0` (outside declared range)
+- `tinypool`: needs `oxfmt@0.74.0` (breaking)
+- `zod`: needs `shadcn@4.22.1` (breaking)
+- `sharp`, `undici`: transitive via Cloudflare/browser tooling
+
+None of these ship in the production runtime paths served by
+`server/index.mjs`; they affect local development and build tooling only.
