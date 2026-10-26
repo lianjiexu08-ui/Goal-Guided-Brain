@@ -625,6 +625,21 @@ function EntityEditor({
   const [testResult, setTestResult] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState('');
   const [preview, setPreview] = useState<string[]>([]);
+  const [deliveries, setDeliveries] = useState<Entity[] | null>(null);
+  useEffect(() => {
+    if (collection !== 'integrations' || !initial?.id) return;
+    let cancelled = false;
+    void api<Entity & { items?: Entity[] }>(`integrations/${initial.id}/deliveries?limit=20`)
+      .then((res) => {
+        if (!cancelled) setDeliveries(Array.isArray(res.items) ? res.items : []);
+      })
+      .catch(() => {
+        if (!cancelled) setDeliveries([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [collection, initial?.id]);
   const [envBindings, setEnvBindings] = useState<
     { name: string; credentialId: string }[]
   >(() =>
@@ -986,6 +1001,25 @@ function EntityEditor({
                   ))}
                 </fieldset>
                 {toggle('enabled', '启用集成')}
+                {deliveries !== null && (
+                  <fieldset>
+                    <div className="manage-field-heading">最近投递记录（最新 20 条）</div>
+                    {deliveries.length ? (
+                      <div className="manage-inline-fields" style={{ display: 'block' }}>
+                        {deliveries.map((item) => (
+                          <div key={txt(item, 'id')} style={{ display: 'flex', gap: 8, alignItems: 'baseline', padding: '2px 0' }}>
+                            <Badge value={txt(item, 'status') === 'sent' ? 'enabled' : 'failed'} />
+                            <span style={{ minWidth: 120 }}>{integrationEventLabels[txt(item, 'event')] || txt(item, 'event')}</span>
+                            <span style={{ opacity: 0.75 }}>{time(item.at)}</span>
+                            {txt(item, 'error') && <span style={{ color: '#f87171' }}>{txt(item, 'error')}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="acceptance-decision-hint">还没有投递记录；保存后点击「发送测试消息」即可产生一条。</p>
+                    )}
+                  </fieldset>
+                )}
               </>
             )}
             {collection === 'providers' && (
