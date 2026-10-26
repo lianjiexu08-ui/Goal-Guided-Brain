@@ -187,3 +187,75 @@ test('ggb task reject 需要 --note', async t => {
   assert.notEqual(result.code, 0);
   assert.match(result.stderr + result.stdout, /需改什么|--note/);
 });
+
+// ---- steer / fork / session：CLI 新子命令 ----
+
+test('ggb task steer 向运行中任务插话', async t => {
+  let steered = null;
+  const { base, env, app } = await startWorkbench(t, options => ({
+    options,
+    start() { /* 保持 running */ },
+    cancel() { options.onDone('cancelled', ''); },
+    enqueue(text) {
+      steered = text;
+      return { queued: true, id: `q-${Date.now()}` };
+    },
+  }));
+  const created = await (await fetch(`${base}/api/tasks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role: 'developer', prompt: '长任务' }),
+  })).json();
+  const ready = await waitFor(() => app.runs.get(created.id));
+  assert.ok(ready, '执行实例应已启动');
+
+  const result = await runCli(['task', 'steer', created.id, '优先处理登录页', '--api', base], { env });
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /已插话/);
+  assert.equal(steered, '优先处理登录页');
+
+  const json = await runCli(['task', 'steer', created.id, '--text', '第二条', '--api', base, '--json'], { env });
+  assert.equal(json.code, 0, json.stderr);
+  assert.equal(JSON.parse(json.stdout).queued, true);
+});
+
+test('ggb task session 查看 fork 创建分支', async t => {
+  let started = '';
+  const { base, env, app } = await startWorkbench(t, options => ({
+    options,
+    start(prompt) {
+      started = options.task.id; /* 保持 running */
+      // 通过平台提供的 sessionLog 回调写入追加式会话条目（模拟 DSH 事件）。
+      const at = new Date().toISOString();
+      options.sessionLog?.({ id: 'e1', parentId: null, taskId: options.task.id, type: 'message', data: { text: prompt.slice(0, 80) }, at });
+      options.sessionLog?.({ id: 'e2', parentId: 'e1', taskId: options.task.id, type: 'tool_call', data: { name: 'read', arguments: {} }, at });
+    },
+    cancel() { options.onDone('cancelled', ''); },
+    enqueue() { return { queued: true, id: 'q' }; },
+  }));
+  const created = await (await fetch(`${base}/api/tasks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role: 'developer', prompt: '会话树测试' }),
+  })).json();
+  await waitFor(() => started);
+  await waitFor(() => (app.store.records.listByTask('session-entries', created.id).length >= 2));
+
+  const list = await runCli(['task', 'session', created.id, '--api', base], { env });
+  assert.equal(list.code, 0, list.stderr);
+  assert.match(list.stdout, /会话条目/);
+  assert.match(list.stdout, /message|turn_start|tool_call/);
+
+  const json = await runCli(['task', 'session', created.id, '--api', base, '--json'], { env });
+  const parsed = JSON.parse(json.stdout);
+  assert.ok(Array.isArray(parsed.entries) && parsed.entries.length > 0);
+
+  const fork = await runCli(['task', 'fork', created.id, '--title', '分支继续', '--api', base], { env });
+  assert.equal(fork.code, 0, fork.stderr);
+  assert.match(fork.stdout, /已分叉/);
+  const forkedTaskId = fork.stdout.match(/新任务 ([\w-]+)/)?.[1];
+  assert.ok(forkedTaskId);
+  const forkedMeta = app.store.records.get('task-meta', forkedTaskId);
+  assert.equal(forkedMeta.forkedFrom, created.id);
+  assert.match(String(forkedMeta.contextExtra || ''), /分支摘要/);
+});

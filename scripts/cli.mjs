@@ -97,6 +97,9 @@ const usage = `用法：
   ggb team list | create | run <id> "目标" [--watch] | status <id> | reviews <id> | review --approve <opId>
   ggb skill recommend "任务描述" | install <技能ID> | list | enable|disable <ID|名称> [--yes]
   ggb task <id> | ack <id> | accept <id> | reject <id> --note "需改什么" | retry <id>
+  ggb task steer <id> "优先处理登录页" [--json]   # 运行中插话（不打断当前轮）
+  ggb task session <id> [--limit 20] [--json]      # 查看追加式会话树
+  ggb task fork <id> [--entry <entryId>] [--title "标题"]  # 从分叉点继续
   ggb team watch <id>            # 订阅实时事件流（不再轮询）
   ggb context list|share <teamId> ...   # 查看或发布跨团队共享上下文
   ggb models                     # 供应商与模型目录（含自定义 models.json）
@@ -519,7 +522,7 @@ function renderTask(task) {
 async function taskCommand(args) {
   const sub = args[0];
   if (!sub || sub === 'help' || sub === '--help' || sub === '-h') return console.log(teamUsage);
-  const known = ['ack', 'accept', 'reject', 'retry'];
+  const known = ['ack', 'accept', 'reject', 'retry', 'steer', 'fork', 'session'];
   if (!known.includes(sub)) {
     const task = await workbenchFetch(args, `tasks/${sub}`);
     if (has(args, '--json')) return console.log(JSON.stringify(task, null, 2));
@@ -538,6 +541,46 @@ async function taskCommand(args) {
     const result = await workbenchFetch(args, `tasks/${id}/retry`, { method: 'POST', body: {} });
     if (has(args, '--json')) return console.log(JSON.stringify(result, null, 2));
     console.log(`已重试：新执行实例 ${result.taskId || result.id || id}`);
+    return;
+  }
+  // 运行中插话：不打断当前轮，下一轮作为上下文生效。
+  if (sub === 'steer') {
+    // 跳过全部选项及其值（--api URL / --json / --text 内容），其余为插话正文。
+    const rest = [];
+    for (let index = 2; index < args.length; index++) {
+      if (args[index].startsWith('--')) { index++; continue; }
+      rest.push(args[index]);
+    }
+    const textFromFlag = valueAfter(args, '--text', '');
+    const content = (textFromFlag || rest.join(' ')).trim();
+    if (!content) throw new Error('task steer 需要插话内容（位置参数或 --text）。');
+    const result = await workbenchFetch(args, `tasks/${id}/steer`, { method: 'POST', body: { text: content } });
+    if (has(args, '--json')) return console.log(JSON.stringify(result, null, 2));
+    return console.log(`已插话：任务 ${id} 当前轮结束后生效。`);
+  }
+  // 会话分叉：从分叉点生成分支摘要并创建继续任务。
+  if (sub === 'fork') {
+    const title = valueAfter(args, '--title', '');
+    const entry = valueAfter(args, '--entry', '');
+    const result = await workbenchFetch(args, `tasks/${id}/fork`, {
+      method: 'POST',
+      body: { ...(entry ? { uptoEntryId: entry } : {}), ...(title ? { title } : {}) },
+    });
+    if (has(args, '--json')) return console.log(JSON.stringify(result, null, 2));
+    return console.log(`已分叉：新任务 ${result.id}（原任务保持不变）。`);
+  }
+  // 追加式会话树：查看轮次/消息/工具调用记录。
+  if (sub === 'session') {
+    const result = await workbenchFetch(args, `tasks/${id}/session`);
+    const entries = Array.isArray(result.entries) ? result.entries : [];
+    if (has(args, '--json')) return console.log(JSON.stringify(result, null, 2));
+    const limit = Number(valueAfter(args, '--limit', '20')) || 20;
+    console.log(`共 ${result.count ?? entries.length} 条会话条目（显示最近 ${Math.min(limit, entries.length)} 条）：`);
+    for (const entry of entries.slice(-limit).reverse()) {
+      const data = entry.data || {};
+      const preview = String(data.text || data.name || entry.type).replace(/\s+/g, ' ').slice(0, 120);
+      console.log(`  ${String(entry.at || '').slice(11, 19)}  ${String(entry.type).padEnd(12)} ${preview}`);
+    }
     return;
   }
   const result = await workbenchFetch(args, `tasks/${id}/${sub}`, { method: 'POST', body: { note } });

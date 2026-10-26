@@ -1107,19 +1107,6 @@ export function createWorkbench({
               : undefined,
           }),
         );
-      if (
-        req.method === 'GET' &&
-        parts[1] === 'tasks' &&
-        parts[2] &&
-        parts[3] === 'session'
-      ) {
-        const task = store.task(parts[2]);
-        if (!task) return send(404, { error: '任务不存在。' });
-        const entries = store.records
-          .listByTask('session-entries', task.id)
-          .sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')));
-        return send(200, { taskId: task.id, count: entries.length, entries });
-      }
       if (req.method === 'POST' && parts[1] === 'tasks' && parts[2]) {
         const task = store.task(parts[2]);
         if (!task) return send(404, { error: '任务不存在。' });

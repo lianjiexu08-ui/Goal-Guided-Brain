@@ -2328,6 +2328,14 @@ export function createPlatform({
       return ok(recordTaskAcceptance(task, decision, note, delivery));
     }
     if (collection === 'tasks' && method === 'GET') {
+      if (id && action === 'session') {
+        const task = store.task(id);
+        if (!task) return ok({ error: '任务不存在。' }, 404);
+        const entries = records
+          .listByTask('session-entries', id)
+          .sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')));
+        return ok({ taskId: id, count: entries.length, entries });
+      }
       if (id) {
         const task = store.task(id);
         if (!task) return ok({ error: '任务不存在。' }, 404);
