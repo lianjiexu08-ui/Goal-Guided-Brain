@@ -36,8 +36,6 @@ const { createWorkbench } = await import('../server/index.mjs');
 const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
 const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
 
-const tick = () => new Promise(resolve => setTimeout(resolve, 30));
-
 function sandbox(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ggb-rec-rec-'));
   const workspace = path.join(dir, 'project');
