@@ -603,10 +603,14 @@ test('HTTP journey: concurrent assistants, developer queue, cancellation, handof
     });
     assert.equal(acceptedAgain.status, 200);
     assert.equal(acceptedAgain.body.delivery.deliveryStatus, 'accepted');
-    assert.equal(
-      fs.statSync(path.join(s.dataDir, 'vault.json')).mode & 0o777,
-      0o600,
-    );
+    // NTFS 不支持 POSIX mode 位；Windows 上只验证文件保持可写。
+    if (process.platform === 'win32')
+      assert.ok(fs.statSync(path.join(s.dataDir, 'vault.json')).mode & 0o200);
+    else
+      assert.equal(
+        fs.statSync(path.join(s.dataDir, 'vault.json')).mode & 0o777,
+        0o600,
+      );
     assert.equal(fs.existsSync(path.join(s.dataDir, 'secrets.json')), false);
   } finally {
     await app.close();

@@ -103,10 +103,15 @@ test('worktree preserves dirty source, unusual names and complete large diffs', 
     );
     fs.writeFileSync(path.join(f.source, '.env'), 'TOKEN=do-not-copy');
     fs.writeFileSync(path.join(f.source, '.env.local'), 'TOKEN=do-not-copy');
-    fs.symlinkSync(
-      path.join(f.source, 'base.txt'),
-      path.join(f.source, 'source-link'),
-    );
+    // Windows 无特权账号不能创建文件符号链接；且指向源内/临时目录的 junction
+    // 会让 git status 沿真实目录递归。符号链接排除行为由 no-HEAD snapshot
+    // 测试的 junction 夹具覆盖，这里在 Windows 上跳过该夹具。
+    const windowsNoFileSymlink = process.platform === 'win32';
+    if (!windowsNoFileSymlink)
+      fs.symlinkSync(
+        path.join(f.source, 'base.txt'),
+        path.join(f.source, 'source-link'),
+      );
     const before = await command('git', ['status', '--porcelain', '-z'], {
       cwd: f.source,
     });
@@ -129,7 +134,7 @@ test('worktree preserves dirty source, unusual names and complete large diffs', 
       fs.readFileSync(path.join(row.path, ' leading name '), 'utf8'),
       'untracked exact name\n',
     );
-    for (const name of ['.env', '.env.local', 'source-link'])
+    for (const name of ['.env', '.env.local', ...(windowsNoFileSymlink ? [] : ['source-link'])])
       assert.equal(fs.existsSync(path.join(row.path, name)), false);
     assert.equal(
       await command('git', ['status', '--porcelain', '-z'], { cwd: f.source }),
@@ -153,7 +158,9 @@ test('no-HEAD snapshot excludes secrets and symlinks and refuses explicit worktr
     fs.writeFileSync(path.join(f.source, '.env.production'), 'TOKEN=secret');
     fs.mkdirSync(path.join(f.source, 'nested'));
     fs.writeFileSync(path.join(f.source, 'nested', '.env'), 'TOKEN=secret');
-    fs.symlinkSync('/tmp', path.join(f.source, 'outside'));
+    if (process.platform === 'win32')
+      fs.symlinkSync(os.tmpdir(), path.join(f.source, 'outside'), 'junction');
+    else fs.symlinkSync('/tmp', path.join(f.source, 'outside'));
     const row = await f.manager.prepare(
       { id: 'snapshot-task', workspace: f.source },
       'isolated',

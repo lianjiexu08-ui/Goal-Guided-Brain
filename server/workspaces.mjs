@@ -103,7 +103,7 @@ export class WorkspaceManager {
         if (mode !== 'snapshot') {
           try {
             baseCommit = (
-              await command('git', ['rev-parse', '--verify', 'HEAD'], {
+              await command('git', ['-c', 'core.autocrlf=false', 'rev-parse', '--verify', 'HEAD'], {
                 cwd: task.workspace,
               })
             ).trim();
@@ -115,30 +115,32 @@ export class WorkspaceManager {
           throw new Error('项目没有 Git 基准提交，无法创建 worktree。');
         if (baseCommit) {
           branch = `codex/task-${task.id}`;
+          // 未提交变更必须字节级保留；用户机器上的 core.autocrlf 会在
+          // worktree 检出和补丁应用时静默转换换行符，这里显式关闭。
           await command(
             'git',
-            ['worktree', 'add', '-b', branch, directory, baseCommit],
+            ['-c', 'core.autocrlf=false', 'worktree', 'add', '-b', branch, directory, baseCommit],
             { cwd: task.workspace },
           );
           createdWorktree = true;
           kind = 'worktree';
-          const dirty = await command('git', ['status', '--porcelain'], {
+          const dirty = await command('git', ['-c', 'core.autocrlf=false', 'status', '--porcelain'], {
             cwd: task.workspace,
           });
           if (dirty) {
-            const patch = await command('git', ['diff', '--binary', 'HEAD'], {
+            const patch = await command('git', ['-c', 'core.autocrlf=false', 'diff', '--binary', 'HEAD'], {
               cwd: task.workspace,
             });
             if (patch) {
               const filename = path.join(root, 'working.patch');
               fs.writeFileSync(filename, patch, { mode: 0o600 });
-              await command('git', ['apply', '--binary', filename], {
+              await command('git', ['-c', 'core.autocrlf=false', 'apply', '--binary', filename], {
                 cwd: directory,
               });
             }
             const untracked = await command(
               'git',
-              ['ls-files', '--others', '--exclude-standard', '-z'],
+              ['-c', 'core.autocrlf=false', 'ls-files', '--others', '--exclude-standard', '-z'],
               { cwd: task.workspace },
             );
             for (const relative of untracked.split('\0').filter(Boolean)) {
