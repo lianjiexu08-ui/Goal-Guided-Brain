@@ -1489,9 +1489,10 @@ export function createPlatform({
         'workflows',
         'schedule-runs',
         'usage',
-        'integrations',
       ].map((name) => [name, records.list(name).slice(0, 100)]),
     );
+    // 集成出口经过服务层输出：密钥掩码，不回传明文。
+    output.integrations = integrations.list();
     return {
       ...output,
       attention,
