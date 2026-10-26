@@ -16,7 +16,7 @@ const waitFor = async (check, timeoutMs = 8000) => {
   }
 };
 
-function project(t) {
+function project() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ggb-impact-e2e-'));
   const workspace = path.join(dir, 'project');
   fs.mkdirSync(workspace, { recursive: true });
