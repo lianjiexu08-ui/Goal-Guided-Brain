@@ -151,7 +151,8 @@ function filesIn(root, directory = root, output = []) {
     if (item.isSymbolicLink()) throw new Error('能力包中不允许符号链接。');
     if (item.isDirectory()) filesIn(root, filename, output);
     else if (item.isFile()) {
-      output.push(path.relative(root, filename));
+      // 统一用正斜杠表示包内相对路径，让 Windows 上的清单/Hook 路径匹配与 POSIX 一致。
+      output.push(path.relative(root, filename).split(path.sep).join('/'));
       if (output.length > 1000) throw new Error('能力包文件数量超过 1000。');
     }
   }
@@ -181,13 +182,14 @@ function markdownComponent(root, filename, kind) {
     runnable: !diagnostics.some(value => /shell 预处理|context: fork/.test(value)),
   };
 }
+const toRelativePosix = (root, target) => path.relative(root, target).split(path.sep).join('/');
 function componentFiles(root, files, defaultDirectory, declared) {
   const paths = [defaultDirectory, ...(typeof declared === 'string' ? [declared] : Array.isArray(declared) ? declared : [])];
   const result = new Set();
   for (const location of paths) {
     if (typeof location !== 'string') throw new Error('插件组件路径必须是字符串。');
-    const relative = path.relative(root, inside(root, location));
-    for (const filename of files) if (filename.endsWith('.md') && (filename === relative || filename.startsWith(`${relative}${path.sep}`))) result.add(filename);
+    const relative = toRelativePosix(root, inside(root, location));
+    for (const filename of files) if (filename.endsWith('.md') && (filename === relative || filename.startsWith(`${relative}/`))) result.add(filename);
   }
   return [...result].sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
 }
@@ -198,7 +200,7 @@ function readMcpEntries(root, files, manifest) {
   const entries = {};
   if (manifest.mcpServers && typeof manifest.mcpServers === 'object' && !Array.isArray(manifest.mcpServers)) Object.assign(entries, manifest.mcpServers);
   for (const candidate of new Set(candidates)) {
-    const relative = path.relative(root, inside(root, candidate));
+    const relative = toRelativePosix(root, inside(root, candidate));
     if (!files.includes(relative)) continue;
     const config = JSON.parse(fs.readFileSync(inside(root, relative), 'utf8'));
     const servers = config.mcpServers || config;
@@ -262,7 +264,7 @@ export function inspectBundle(root) {
   let hooksPath = files.includes('hooks/hooks.json') ? 'hooks/hooks.json' : null;
   if (declaredHooks !== undefined) {
     if (typeof declaredHooks === 'string') {
-      hooksPath = path.relative(root, inside(root, declaredHooks));
+      hooksPath = toRelativePosix(root, inside(root, declaredHooks));
       if (!files.includes(hooksPath)) throw new Error('插件声明的 Hook 配置文件不存在。');
     } else {
       hooksPath = null;

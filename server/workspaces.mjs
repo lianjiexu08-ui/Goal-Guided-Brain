@@ -11,10 +11,13 @@ export function command(
   { cwd, timeout = 60000, maxOutputBytes = 32_000_000, env = {} } = {},
 ) {
   return new Promise((resolve, reject) => {
+    // npm/pnpm 等在 Windows 上是 .cmd 命令垫片，只能通过 shell 启动。
+    const windowsShim = process.platform === 'win32' && /\.(cmd|bat)$/i.test(executable);
     const child = spawn(executable, args, {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...childEnvironment(), GIT_TERMINAL_PROMPT: '0', ...env },
+      ...(windowsShim ? { shell: true, windowsHide: true } : {}),
     });
     const stdout = [],
       stderr = [];

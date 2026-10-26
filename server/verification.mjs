@@ -180,6 +180,21 @@ export function detectVerificationPlan(root, { maxChecks = MAX_CHECKS } = {}) {
 const UNAVAILABLE_PATTERN =
   /command not found|不是内部或外部命令|no such file or directory|ENOENT|No module named|cannot find module|not found: |无法将.*项识别为|is not recognized as an internal or external command|requires .* which is not installed|Please install/i;
 
+// Windows 上 npm/pnpm 等是 .cmd 垫片，python3 通常叫 python；执行前解析为真实可执行名。
+const WINDOWS_EXECUTABLE_ALIASES = {
+  npm: 'npm.cmd',
+  pnpm: 'pnpm.cmd',
+  yarn: 'yarn.cmd',
+  bun: 'bun.cmd',
+  python3: 'python',
+  mvn: 'mvn.cmd',
+  gradle: 'gradle.bat',
+};
+const executableFor = (command) =>
+  process.platform === 'win32'
+    ? WINDOWS_EXECUTABLE_ALIASES[command] || command
+    : command;
+
 export function classifyFailure(error, timedOut) {
   if (timedOut) return 'unavailable';
   const message = String(error?.message || error || '');
@@ -204,7 +219,7 @@ export async function runVerificationPlan(plan, {
     let checkStatus = 'verified';
     let timedOut = false;
     try {
-      output = await run(check.command, check.args, {
+      output = await run(executableFor(check.command), check.args, {
         cwd: plan.root,
         timeout: timeoutMs,
         env: check.env || {},

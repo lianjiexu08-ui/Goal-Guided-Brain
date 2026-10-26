@@ -191,7 +191,10 @@ test('capability install refuses path traversal, symlinks and inline credentials
       /ID|标识|无效|路径|越界/,
     );
     assert.equal(f.records.list('capabilities').length, 0);
-    fs.symlinkSync('/tmp', path.join(f.source, 'outside'));
+    // Windows 无特权账号不能创建符号链接；junction 在 lstat/readdir 下同样表现为符号链接。
+    if (process.platform === 'win32')
+      fs.symlinkSync(os.tmpdir(), path.join(f.source, 'outside'), 'junction');
+    else fs.symlinkSync('/tmp', path.join(f.source, 'outside'));
     assert.throws(() => inspectBundle(f.source), /符号链接/);
     await assert.rejects(f.service.install({ path: f.source }), /符号链接/);
     await assert.rejects(
