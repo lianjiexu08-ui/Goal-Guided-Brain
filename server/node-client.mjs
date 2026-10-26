@@ -73,6 +73,7 @@ export class NodeClient {
     this.onEvent = onEvent;
     this.active = new Map();
     this.stopping = false;
+    this.closed = false;
     this.running = false;
     this.tokenFile = path.join(this.dataDir, 'node-identity.json');
     try {
@@ -362,13 +363,17 @@ export class NodeClient {
     void this.tick();
   }
   async close() {
+    if (this.closed) return;
+    this.closed = true;
     this.stopping = true;
     clearInterval(this.timer);
     clearInterval(this.leaseTimer);
     clearInterval(this.heartbeatTimer);
     if (this.tickDone) await this.tickDone;
     if (this.heartbeatDone) await this.heartbeatDone;
-    await this.stopExpired(true);
+    // 每步独立容错：任何一步失败都不能跳过 db.close()，否则 Windows 上
+    // outbox.sqlite 保持占用，数据目录无法清理或移动。
+    try { await this.stopExpired(true); } catch { /* 已在停止中，下一次启动会重试对账。 */ }
     try { await this.flushOutbox(); } catch { /* The durable outbox is retried on the next start. */ }
     this.workspaceManager.close();
     this.db.close();

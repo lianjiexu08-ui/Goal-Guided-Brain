@@ -19,7 +19,11 @@ function setup(t, options = {}) {
   const store = new Store(path.join(directory, 'data'), workspace);
   let time = 1000000;
   const control = new ControlPlane({ store, now: () => time, ...options });
-  t.after(() => { store.close(); fs.rmSync(directory, { recursive: true, force: true }); });
+  t.after(() => {
+    store.close();
+    // Windows 上已打开的 SQLite 句柄会短暂占用文件，重试删除以容忍时钟差。
+    fs.rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
   const request = (route, body = {}, token, method = 'POST') => control.handle({
     method, parts: route.split('/'), body, req: { headers: token ? { authorization: `Bearer ${token}` } : {} },
   });
@@ -468,6 +472,9 @@ test('worker rejects insecure remote control, resolves local workspace mapping a
   await client.flushOutbox();
   assert.equal(client.db.prepare('SELECT COUNT(*) AS n FROM outbox').get().n, 0);
   assert.equal(client.db.prepare('SELECT COUNT(*) AS n FROM rejected_results').get().n, 1);
+  // after 钩子按注册顺序执行：setup 的目录清理先于本测试的 close 钩子，
+  // 必须在测试体末尾先关库，否则 Windows 上 outbox.sqlite 仍被占用。
+  await client.close();
 });
 
 test('worker self-stops an expired lease even without a successful controller heartbeat', async t => {
@@ -483,6 +490,8 @@ test('worker self-stops an expired lease even without a successful controller he
   assert.equal(cancelled, 1);
   assert.equal(client.active.size, 0);
   assert.equal(client.db.prepare('SELECT COUNT(*) AS n FROM outbox').get().n, 1);
+  // 同上：先关库再让 setup 的目录清理钩子执行。
+  await client.close();
 });
 
 test('HTTP and TCP monitors execute deterministically without a model', async t => {

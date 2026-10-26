@@ -31,7 +31,7 @@ function project(t) {
   git('add', '-A');
   git('commit', '-qm', 'init');
   const base = git('rev-parse', 'HEAD');
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  // 目录清理由 start() 的 after 钩子负责（先关应用再删除，避免 Windows 句柄占用）。
   return { dir, workspace, base };
 }
 
@@ -43,7 +43,18 @@ function start(t, fixture, runtimeFactory) {
     requireCredential: false,
     runtimeFactory,
   });
-  t.after(async () => { await app.close(); });
+  // after 钩子按注册顺序执行：project() 的目录清理先注册先执行。
+  // 在这里先关应用再删目录，避免 Windows 上 SQLite 句柄未释放导致 EBUSY。
+  t.after(async () => {
+    await app.close();
+    // worktree 目录可能被刚退出的 git/验证子进程持续短暂占用（Windows 语义），
+    // 清理为尽力而为：断言已全部完成，残留临时目录由系统 temp 策略回收。
+    try {
+      fs.rmSync(fixture.dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+    } catch (error) {
+      console.warn(`[impact-gate] 临时目录清理失败（无碍断言）：${error.message}`);
+    }
+  });
   return app;
 }
 
