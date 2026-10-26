@@ -3,9 +3,38 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createWorkbench } from '../server/index.mjs';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import http from 'node:http';
+
+// Hub 源在模块加载时读取环境变量：先把三个源都指向本地 fixture 服务器，
+// 再动态导入服务端模块，让推荐测试完全离线、确定性（不再依赖 GitHub API）。
+const hubServer = http.createServer((request, response) => {
+  if (request.url?.startsWith('/contents/catalog.json') || request.url?.startsWith('/catalog.json')) {
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify({
+      skills: [{
+        id: 'hub-fixture-contract-review',
+        title: '合同条款审查',
+        name: 'contract-review',
+        description: '审阅合同条款并识别法律与合规风险。',
+        category: 'legal',
+        categoryLabel: '法务',
+        installUrl: 'skills.sh/fixture/contract-review',
+      }],
+    }));
+    return;
+  }
+  response.writeHead(404);
+  response.end();
+});
+await new Promise(resolve => hubServer.listen(0, '127.0.0.1', resolve));
+const hubBase = `http://127.0.0.1:${hubServer.address().port}`;
+process.env.WORKBENCH_SKILL_HUB = hubBase;
+process.env.WORKBENCH_SKILL_HUB_API = hubBase;
+process.env.WORKBENCH_SKILL_HUB_CDN = hubBase;
+
+const { createWorkbench } = await import('../server/index.mjs');
+const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 30));
 
@@ -29,20 +58,8 @@ function sandbox(t) {
   return { app, runs };
 }
 
-async function hubReachable() {
-  try {
-    const response = await fetch('https://api.github.com/repos/lianjiexu08-ui/skills-hub/contents/catalog.json?ref=main', {
-      headers: { Accept: 'application/vnd.github.raw' },
-      signal: AbortSignal.timeout(8000),
-    });
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
-
 test('propose_team 自动填充推荐：内置进 skillIds、Hub 只作建议', async t => {
-  if (!(await hubReachable())) return t.skip('无法连接自维护 Hub');
+  // 本地 fixture Hub，不再需要网络可达性预检。
   const { app, runs } = sandbox(t);
   await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -66,7 +83,9 @@ test('propose_team 自动填充推荐：内置进 skillIds、Hub 只作建议', 
       recruitment: { phase: 'discovery' },
     }, 'POST')).body;
     await request(`teams/${team.id}/messages`, { clientMessageId: 'rec-rec', content: '准备一个团队。' }, 'POST');
-    await tick();
+    // 轮询等待 PM 执行实例启动（固定 30ms 睡眠在并行负载下会失败）。
+    for (let at = 0; at < 250 && !runs.length; at++)
+      await new Promise(resolve => setTimeout(resolve, 40));
     const patch = runs[0].options.capabilityPatch.find(item => item.id === 'workbench-orchestration');
     const client = new Client({ name: 'rec-rec', version: '1' });
     clients.push(client);
@@ -116,4 +135,8 @@ test('propose_team 自动填充推荐：内置进 skillIds、Hub 只作建议', 
   } finally {
     await Promise.allSettled(clients.map(client => client.close()));
   }
+});
+
+test('关闭 fixture Hub 服务器', () => {
+  hubServer.close();
 });

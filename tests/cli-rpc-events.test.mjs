@@ -112,7 +112,26 @@ test('ggb events --team 使用团队事件流输出任务与消息', async t => 
   setTimeout(() => {
     store.saveTeamMessage({ spaceId: team.id, kind: 'reply', senderType: 'agent', senderId: 'project_manager', content: '事件流内容' }, 'evt-1');
   }, 300);
-  const result = await runCli(['events', '--team', team.id, '--api', base, '--json'], { env, timeoutMs: 6000 });
+  // 并行负载下 CLI 启动 + SSE 建连可能超过固定窗口：改为 stdout 命中即主动结束，
+  // 15 秒仅为最终兜底，不作为正常路径的时序依赖。
+  const result = await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cli, 'events', '--team', team.id, '--api', base, '--json'], {
+      env: { ...process.env, PATH: process.env.PATH, ...env },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '', stderr = '';
+    child.stdout.on('data', chunk => {
+      stdout += chunk;
+      if (/事件流内容|hello|team/.test(stdout)) {
+        child.kill('SIGKILL');
+        resolve({ code: null, stdout, stderr, killed: true });
+      }
+    });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.on('error', reject);
+    const timer = setTimeout(() => { child.kill('SIGKILL'); resolve({ code: null, stdout, stderr, killed: true }); }, 15000);
+    child.on('close', code => { clearTimeout(timer); resolve({ code, stdout, stderr }); });
+  });
   // 事件流不会自行结束（kill 后 code=null），只要输出包含事件即可
   assert.match(result.stdout, /事件流内容|hello|team/);
 });
