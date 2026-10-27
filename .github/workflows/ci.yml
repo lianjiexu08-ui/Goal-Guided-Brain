@@ -59,10 +59,8 @@ jobs:
         run: npm ci
       - name: Install Playwright chromium (version-matched)
         run: node node_modules/@playwright/test/cli.js install --with-deps chromium
-      - name: Build production bundle
-        run: npm run build
-      - name: Run browser E2E baseline (production server)
-        run: GGB_E2E_PROD=1 npm run test:e2e
+      - name: Run browser E2E baseline
+        run: npm run test:e2e
       - name: Upload failure traces
         if: failure()
         uses: actions/upload-artifact@v4

@@ -37,9 +37,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    // 生产模式（GGB_E2E_PROD=1）用预构建产物启动，无按需编译，
-    // 适合 CI 低核数 runner；本地默认 dev 便于迭代。
-    command: process.env.GGB_E2E_PROD === '1' ? 'node scripts/start.mjs' : 'node scripts/dev.mjs',
+    // 必须用 dev 服务器：vinext 生产模式对动态 API/RSC payload 有缓存语义，
+    // 测试中的直接写库 fixture 对页面不可见（见 AGENTS.md 已知边界）。
+    command: 'node scripts/dev.mjs',
     url: 'http://127.0.0.1:3288/',
     timeout: 120_000,
     reuseExistingServer: false,

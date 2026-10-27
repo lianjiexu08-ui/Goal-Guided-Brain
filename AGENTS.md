@@ -69,3 +69,4 @@ CI（GitHub Actions）对每次推送跑三阶段：quality / unit / e2e，必�
 - task-meta 在裸 `ControlPlane`（单测）下字段不全（workspaceMode 等），完整链路只在 platform 的 `newTask` 落盘。
 - `records.list()` 按集合全量返回（DESC）；按 taskId 的热点查询用 `listByTask`。
 - outbound 集成密钥在 GET/PUT 中掩码，回传 `***` 前缀视为"保留旧值"。
+- **vinext 生产模式（`vinext start`）对动态 API/RSC payload 有缓存语义**：直接写库的测试 fixture 在已启动的生产服务器上不可见，E2E 必须用 dev 服务器（`playwright.config.mjs` 有注释）。生产部署下的缓存策略是待深挖的产品问题。
