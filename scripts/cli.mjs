@@ -96,7 +96,9 @@ const usage = `用法：
   ggb decide --state '{"goal":"..."}' --questions '{"urgent":{"type":"noul","instructions":"Is this urgent?"}}'
   ggb team list | create | run <id> "目标" [--watch] | status <id> | reviews <id> | review --approve <opId>
   ggb skill recommend "任务描述" | install <技能ID> | list | enable|disable <ID|名称> [--yes]
-  ggb task <id> | ack <id> | accept <id> | reject <id> --note "需改什么" | retry <id>
+  ggb task <id> | list | ack <id> | accept <id> | reject <id> --note "…" | retry <id>
+  ggb logs <taskId> [--tail N]           # 任务执行日志
+  ggb team members <id>                  # 团队成员及其技能/权限
   ggb task steer <id> "优先处理登录页" [--json]   # 运行中插话（不打断当前轮）
   ggb task session <id> [--limit 20] [--json]      # 查看追加式会话树
   ggb task fork <id> [--entry <entryId>] [--title "标题"]  # 从分叉点继续
@@ -545,11 +547,39 @@ function renderTask(task) {
 async function taskCommand(args) {
   const sub = args[0];
   if (!sub || sub === 'help' || sub === '--help' || sub === '-h') return console.log(teamUsage);
-  const known = ['ack', 'accept', 'reject', 'retry', 'steer', 'fork', 'session'];
+  const known = ['ack', 'accept', 'reject', 'retry', 'steer', 'fork', 'session', 'list'];
   if (!known.includes(sub)) {
     const task = await workbenchFetch(args, `tasks/${sub}`);
     if (has(args, '--json')) return console.log(JSON.stringify(task, null, 2));
     return renderTask(task);
+  }
+  if (sub === 'list') {
+    const teamFilter = valueAfter(args, '--team', '');
+    const statusFilter = valueAfter(args, '--status', '');
+    const limit = Number(valueAfter(args, '--limit', '20')) || 20;
+    const allTeams = await workbenchFetch(args, 'teams');
+    const allTasks = [];
+    for (const team of allTeams) {
+      if (teamFilter && team.id !== teamFilter && team.name !== teamFilter) continue;
+      try {
+        const detail = await workbenchFetch(args, `teams/${team.id}`);
+        for (const task of detail.tasks || []) {
+          if (statusFilter && task.status !== statusFilter) continue;
+          allTasks.push({ ...task, teamName: team.name });
+        }
+      } catch {}
+    }
+    allTasks.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    if (has(args, '--json')) return console.log(JSON.stringify(allTasks.slice(0, limit), null, 2));
+    console.log(`共 ${allTasks.length} 个任务：\n`);
+    for (const task of allTasks.slice(0, limit)) {
+      const title = String(task.title || task.id).replace(/\s+/g, ' ').slice(0, 60);
+      const verify = task.verificationStatus ? ` 验证:${task.verificationStatus}` : '';
+      const delivery = task.deliveryStatus ? ` 交付:${task.deliveryStatus}` : '';
+      console.log(`  [${task.status}] ${title}${verify}${delivery}`);
+      console.log(`    ggb task ${task.id}  团队:${task.teamName || '-'}`);
+    }
+    return;
   }
   const id = args[1] && !args[1].startsWith('--') ? args[1] : '';
   if (!id) throw new Error(`task ${sub} 需要任务 ID。`);
@@ -560,6 +590,32 @@ async function taskCommand(args) {
     return console.log(`已确认影响面：${id}`);
   }
   if (sub === 'reject' && !note) throw new Error('退回复核需要 --note 说明需要改什么。');
+  if (sub === 'list') {
+    const teamFilter = valueAfter(args, '--team', '');
+    const statusFilter = valueAfter(args, '--status', '');
+    const limit = Number(valueAfter(args, '--limit', '20')) || 20;
+    const teams = await workbenchFetch(args, 'teams');
+    const allTasks = [];
+    for (const team of teams) {
+      if (teamFilter && team.id !== teamFilter && team.name !== teamFilter) continue;
+      try {
+        const detail = await workbenchFetch(args, `teams/${team.id}`);
+        for (const task of detail.tasks || []) {
+          if (statusFilter && task.status !== statusFilter) continue;
+          allTasks.push({ ...task, teamName: team.name });
+        }
+      } catch {}
+    }
+    allTasks.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    if (has(args, '--json')) return console.log(JSON.stringify(allTasks.slice(0, limit), null, 2));
+    console.log(`共 ${allTasks.length} 个任务：\n`);
+    for (const task of allTasks.slice(0, limit)) {
+      const title = String(task.title || task.id).replace(/\s+/g, ' ').slice(0, 60);
+      const verify = task.verificationStatus ? ` 验证:${task.verificationStatus}` : '';
+      console.log(`  [${task.status}] ${title}${verify}\n    ggb task ${task.id}  团队:${task.teamName || '-'}`);
+    }
+    return;
+  }
   if (sub === 'retry') {
     const result = await workbenchFetch(args, `tasks/${id}/retry`, { method: 'POST', body: {} });
     if (has(args, '--json')) return console.log(JSON.stringify(result, null, 2));
@@ -1483,6 +1539,12 @@ async function team(args) {
   if (sub === 'status') return teamStatus(args);
   if (sub === 'reviews') return teamReviews(args);
   if (sub === 'watch') return teamWatch(args);
+  if (sub === 'members') {
+    const teamId = args[1] && !args[1].startsWith('--') ? args[1] : '';
+    if (!teamId) throw new Error('用法：ggb team members <teamId>');
+    await teamMembersCommand([teamId]);
+    return;
+  }
   if (sub === 'review') return teamReview(args);
   throw new Error(`未知 team 子命令“${sub}”。\n\n${teamUsage}`);
 }
@@ -2097,6 +2159,67 @@ async function wbLifecycle(args) {
   console.log(`未知子命令 "${sub}"。用法：ggb wb start|stop|status|restart`);
 }
 
+async function logsCommand(args) {
+  const taskId = args[0] && !args[0].startsWith('--') ? args[0] : '';
+  if (!taskId) throw new Error('用法：ggb logs <taskId> [--tail 50] [--json]');
+  const tail = Number(valueAfter(args, '--tail', '50')) || 50;
+  const data = await workbenchFetch(args, `tasks/${taskId}`);
+  if (has(args, '--json')) return console.log(JSON.stringify(data, null, 2));
+  const log = data.log || '';
+  if (log) {
+    const lines = log.split('\n').slice(-tail);
+    console.log(lines.join('\n'));
+  } else {
+    console.log('暂无执行日志。');
+  }
+  // 事件
+  const events = data.events || [];
+  if (events.length) {
+    console.log(`\n事件（最近 ${Math.min(tail, events.length)} 条）：`);
+    for (const event of events.slice(-tail)) {
+      const type = event.type || 'event';
+      const at = event.at || '';
+      const detail = JSON.stringify(event.data || {}).slice(0, 120);
+      console.log(`  [${at}] ${type} ${detail}`);
+    }
+  }
+}
+
+async function teamMembersCommand(args) {
+  const teamId = args[0] && !args[0].startsWith('--') ? args[0] : '';
+  if (!teamId) throw new Error('用法：ggb team members <teamId>');
+  const detail = await workbenchFetch(args, `teams/${teamId}`);
+  const roles = detail.memberRoleIds || [];
+  const settings = detail.memberSettings || {};
+  const responsibilities = detail.responsibilities || {};
+  console.log(`团队「${detail.name}」成员（${roles.length} 人）：\n`);
+  for (const roleId of roles) {
+    const setting = settings[roleId] || {};
+    const label = setting.label || roleId;
+    const resp = setting.responsibility || responsibilities[roleId] || '';
+    // 从 /api/state 获取角色信息（工具权限等）
+    let terminal = '?', files = '?', web = '?', model = '默认', skillIds = [];
+    try {
+      const state = await workbenchFetch(args, 'state');
+      const roleInfo = (state.roles || []).find(r => r.id === roleId);
+      if (roleInfo) {
+        const tools = roleInfo.tools || {};
+        terminal = tools.terminal ? '终端✓' : '终端✗';
+        files = tools.files ? '文件✓' : '文件✗';
+        web = tools.web ? '网络✓' : '网络✗';
+        model = roleInfo.model || '默认';
+        skillIds = roleInfo.skillIds || [];
+      }
+    } catch {}
+    console.log(`  ${label} (${roleId})`);
+    console.log(`    权限: ${terminal} ${files} ${web}`);
+    console.log(`    模型: ${model}`);
+    if (skillIds.length) console.log(`    技能: ${skillIds.join(', ')}`);
+    if (resp) console.log(`    职责: ${resp.slice(0, 100)}`);
+    console.log('');
+  }
+}
+
 async function home(input, args) {
   prepareSession(input);
   const HOME_COMMANDS = ['/', '/help', '/login ', '/logout ', '/models', '/tasks ', '/new', '/exit'];
@@ -2650,6 +2773,7 @@ async function main() {
   if (command === 'models') return modelsCommand(args);
   if (command === 'usage') return usageCommand(args);
   if (command === 'wb') return wbLifecycle(args);
+  if (command === 'logs') return logsCommand(args);
   if (command === 'login') return loginCommand(args);
   if (command === 'rpc') return rpc(args);
   if (command === 'events') return events(args);
