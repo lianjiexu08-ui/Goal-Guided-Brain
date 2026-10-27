@@ -20,6 +20,7 @@
     "format": "oxfmt",
     "dev:ui": "vinext dev",
     "dev:api": "node server/index.mjs",
+    "pretest": "node scripts/check-dependencies.mjs",
     "test": "node --test --test-concurrency=4 tests/*.test.mjs",
     "test:e2e": "node scripts/e2e.mjs",
     "typecheck": "tsc --noEmit",
