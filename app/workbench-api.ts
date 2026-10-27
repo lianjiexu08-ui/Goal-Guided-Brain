@@ -78,3 +78,22 @@ export function entityList(value: unknown): Entity[] {
       )
     : [];
 }
+
+// 首次配置向导使用的供应商预设（与 scripts/cli.mjs 的 PRESETS 对齐）。
+export type ProviderPreset = {
+  id: string;
+  label: string;
+  protocol: 'openai-completions' | 'anthropic-messages' | 'openai-responses';
+  baseUrl: string;
+  model: string;
+  contextWindow: number;
+  keyHint: string;
+};
+
+export const PROVIDER_PRESETS: ProviderPreset[] = [
+  { id: 'deepseek', label: 'DeepSeek', protocol: 'openai-completions', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', contextWindow: 128000, keyHint: 'DEEPSEEK_API_KEY' },
+  { id: 'claude', label: 'Claude', protocol: 'anthropic-messages', baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-5', contextWindow: 200000, keyHint: 'ANTHROPIC_API_KEY' },
+  { id: 'codex', label: 'Codex / OpenAI', protocol: 'openai-responses', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5-codex', contextWindow: 400000, keyHint: 'OPENAI_API_KEY' },
+  { id: 'gemini', label: 'Gemini', protocol: 'openai-completions', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash', contextWindow: 1048576, keyHint: 'GEMINI_API_KEY' },
+  { id: 'kimi', label: 'Kimi', protocol: 'openai-completions', baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k', contextWindow: 128000, keyHint: 'KIMI_API_KEY' },
+];

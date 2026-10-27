@@ -9,7 +9,8 @@ import {
   Management,
   managementNavigation,
 } from './management';
-import { api, entityList, entityText, type Entity } from './workbench-api';
+import { api, entityList, entityText, PROVIDER_PRESETS, type Entity } from './workbench-api';
+import { ErrorMessage } from './management';
 import {
   AssistantEditor,
   assistantIcons,
@@ -30,6 +31,7 @@ import {
   FileText,
   FolderOpen,
   History,
+  Activity,
   Layers3,
   LoaderCircle,
   MessageSquare,
@@ -2260,6 +2262,78 @@ function Workbench() {
       .map((item) => item.getAsFile())
       .filter((file): file is File => !!file);
   }
+  const [setupWizard, setSetupWizard] = useState(false);
+  const [wizardBusy, setWizardBusy] = useState(false);
+  const [wizardError, setWizardError] = useState('');
+  const [wizardDone, setWizardDone] = useState(false);
+  const [wizardForm, setWizardForm] = useState({
+    preset: PROVIDER_PRESETS[0].id,
+    apiKey: '',
+    baseUrl: '',
+    passphrase: '',
+  });
+  const runSetupWizard = async () => {
+    const preset = PROVIDER_PRESETS.find((item) => item.id === wizardForm.preset) || PROVIDER_PRESETS[0];
+    const apiKey = wizardForm.apiKey.trim();
+    const passphrase = wizardForm.passphrase.trim();
+    const baseUrl = (wizardForm.baseUrl.trim() || preset.baseUrl).replace(/\/$/, '');
+    if (!apiKey) {
+      setWizardError('请粘贴 API Key。');
+      return;
+    }
+    if (!passphrase || passphrase.length < 6) {
+      setWizardError('请设置凭据库口令（至少 6 位），工作台重启后用它自动解锁。');
+      return;
+    }
+    setWizardBusy(true);
+    setWizardError('');
+    try {
+      // 凭据库：先尝试解锁，未初始化则初始化。
+      try {
+        await api('vault/unlock', 'POST', { passphrase });
+      } catch {
+        await api('vault/initialize', 'POST', { passphrase });
+      }
+      // 密钥写入加密凭据库（复用同名凭据避免重复）。
+      const existing = await api<Entity[]>('providers');
+      const match = (existing || []).find(
+        (item) => item.name === preset.label || entityText(item, 'baseUrl') === baseUrl,
+      );
+      const credential = match && entityText(match, 'credentialId')
+        ? await api<Entity>(`credentials/${entityText(match, 'credentialId')}`, 'PUT', {
+            name: `${preset.label} API Key`, value: apiKey, kind: 'api-key',
+          })
+        : await api<Entity>('credentials', 'POST', {
+            name: `${preset.label} API Key`, value: apiKey, kind: 'api-key',
+          });
+      const payload = {
+        name: preset.label,
+        protocol: preset.protocol,
+        baseUrl,
+        credentialId: credential.id,
+        models: [{ id: preset.model, name: preset.model, tools: true, contextWindow: preset.contextWindow }],
+        enabled: true,
+        priority: 100,
+      };
+      const saved = match
+        ? await api<Entity>(`providers/${entityText(match, 'id')}`, 'PUT', payload)
+        : await api<Entity>('providers', 'POST', payload);
+      const probe = await api<Entity>(`providers/${entityText(saved, 'id')}/probe`, 'POST', {
+        model: preset.model,
+        toolTest: true,
+      });
+      if (probe.ok === false) {
+        const health = probe.health && typeof probe.health === 'object' ? (probe.health as Entity) : ({} as Entity);
+        throw new Error(entityText(health, 'detail') || entityText(health, 'reason') || '连通性测试未通过，请检查 API Key 与网络。');
+      }
+      setWizardDone(true);
+      await refresh();
+    } catch (err) {
+      setWizardError((err as Error).message);
+    } finally {
+      setWizardBusy(false);
+    }
+  };
   async function submit() {
     const attachmentIds = (draftAttachments[attachmentDraftKey] || []).map((item) => item.id);
     const content = drafts[draftKey] || '';
@@ -2965,6 +3039,28 @@ function Workbench() {
             </button>
           </div>
         </header>
+                {!(data?.providers || []).length && (
+                  <div className="onboarding-card" data-testid="onboarding-model-guide">
+                    <strong>三步开始使用 GGB</strong>
+                    <ol>
+                      <li>打开「模型管理」，添加一个供应商并填入 API Key（支持 DeepSeek、Gemini、Claude、Codex/OpenAI、Kimi）。</li>
+                      <li>可选：在「能力中心」安装 Skill / MCP / Plugin，扩展团队的能力。</li>
+                      <li>回到这里，描述你的目标——项目经理会与你澄清并组建团队。</li>
+                    </ol>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => {
+                        setOpenMobile(false);
+                        setSetupWizard(true);
+                        setWizardDone(false);
+                        setWizardError('');
+                      }}
+                    >
+                      <Settings2 size={15} /> 打开配置向导
+                    </button>
+                  </div>
+                )}
         {isMobile && (
           <div className="mobile-context-bar" data-testid="mobile-context-bar">
             <div className="mobile-context-copy">
@@ -3522,27 +3618,6 @@ function Workbench() {
                 <div ref={endRef} />
               </div>
               <div className="composer-area">
-                {!(data?.providers || []).length && (
-                  <div className="onboarding-card" data-testid="onboarding-model-guide">
-                    <strong>三步开始使用 GGB</strong>
-                    <ol>
-                      <li>打开「模型管理」，添加一个供应商并填入 API Key（支持 DeepSeek、Gemini、Claude、Codex/OpenAI、Kimi）。</li>
-                      <li>可选：在「能力中心」安装 Skill / MCP / Plugin，扩展团队的能力。</li>
-                      <li>回到这里，描述你的目标——项目经理会与你澄清并组建团队。</li>
-                    </ol>
-                    <button
-                      className="secondary-button"
-                      type="button"
-                      onClick={() => {
-                        setOpenMobile(false);
-                        setView('models');
-                        setRole('project_manager');
-                      }}
-                    >
-                      <Settings2 size={15} /> 去配置模型
-                    </button>
-                  </div>
-                )}
                 <div
                   className="composer"
                   onDragEnter={(event) => {
@@ -5299,6 +5374,94 @@ function Workbench() {
           )}
         </DialogContent>
       </Dialog>
+      {setupWizard && (
+        <Dialog open onOpenChange={(open) => !open && !wizardBusy && setSetupWizard(false)}>
+          <DialogContent className="manage-dialog" showCloseButton={!wizardBusy} data-testid="setup-wizard">
+            <DialogTitle>配置模型供应商</DialogTitle>
+            <DialogDescription className="sr-only">
+              三步完成：选供应商、粘贴 API Key、保存并测试连通。
+            </DialogDescription>
+            {wizardDone ? (
+              <div className="manage-detail">
+                <h3>✓ 配置完成，连通性测试通过</h3>
+                <p>现在回到这里描述你的目标即可开始。以后可随时在「模型管理」中调整供应商。</p>
+                <button className="primary-button" type="button" onClick={() => setSetupWizard(false)}>
+                  <Check size={15} /> 开始使用
+                </button>
+              </div>
+            ) : (
+              <form
+                className="manage-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void runSetupWizard();
+                }}
+              >
+                <fieldset disabled={wizardBusy}>
+                  <label>
+                    供应商
+                    <select
+                      value={wizardForm.preset}
+                      onChange={(event) => setWizardForm((f) => ({ ...f, preset: event.target.value }))}
+                    >
+                      {PROVIDER_PRESETS.map((preset) => (
+                        <option key={preset.id} value={preset.id}>
+                          {preset.label}（{preset.model}）
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    API Key
+                    <input
+                      type="password"
+                      required
+                      autoComplete="new-password"
+                      value={wizardForm.apiKey}
+                      placeholder={`对应环境变量：${PROVIDER_PRESETS.find((item) => item.id === wizardForm.preset)?.keyHint || ''}`}
+                      onChange={(event) => setWizardForm((f) => ({ ...f, apiKey: event.target.value }))}
+                    />
+                  </label>
+                  <label>
+                    自定义 Base URL（可选，默认官方地址）
+                    <input
+                      value={wizardForm.baseUrl}
+                      placeholder={PROVIDER_PRESETS.find((item) => item.id === wizardForm.preset)?.baseUrl}
+                      onChange={(event) => setWizardForm((f) => ({ ...f, baseUrl: event.target.value }))}
+                    />
+                  </label>
+                  <label>
+                    凭据库口令（至少 6 位；已初始化则输入原口令解锁）
+                    <input
+                      type="password"
+                      required
+                      minLength={6}
+                      autoComplete="new-password"
+                      value={wizardForm.passphrase}
+                      onChange={(event) => setWizardForm((f) => ({ ...f, passphrase: event.target.value }))}
+                    />
+                  </label>
+                  {wizardError && <ErrorMessage error={wizardError} />}
+                  <div className="manage-form-footer">
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      disabled={wizardBusy}
+                      onClick={() => setSetupWizard(false)}
+                    >
+                      取消
+                    </button>
+                    <button className="primary-button" type="submit" disabled={wizardBusy}>
+                      {wizardBusy ? <LoaderCircle size={15} className="spin" /> : <Activity size={15} />}
+                      {wizardBusy ? '保存并测试连通…' : '保存并测试连通'}
+                    </button>
+                  </div>
+                </fieldset>
+              </form>
+            )}
+          </DialogContent>
+        </Dialog>
+      )}
     </>
   );
 }

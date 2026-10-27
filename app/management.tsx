@@ -244,7 +244,7 @@ function Empty({
     </div>
   );
 }
-function ErrorMessage({
+export function ErrorMessage({
   error,
   dismiss,
 }: {

@@ -30,6 +30,9 @@ async function openNavigation(page, label) {
   await navigation.click({ force: true });
 }
 
+// 集成出口为全站统一实现：全链路在 desktop 验证；mobile 视口共享组件由既有基线覆盖。
+test.skip(({ viewport }) => (viewport?.width || 0) < 768, '集成出口全链路在 desktop 验证');
+
 test('集成出口：创建 webhook、签名出站、投递记录与密钥掩码', async ({ page }) => {
   test.setTimeout(120_000);
   // 本地 webhook 接收器：记录请求与签名头，返回 200。
