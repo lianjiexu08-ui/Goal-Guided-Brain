@@ -97,3 +97,11 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   { id: 'gemini', label: 'Gemini', protocol: 'openai-completions', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash', contextWindow: 1048576, keyHint: 'GEMINI_API_KEY' },
   { id: 'kimi', label: 'Kimi', protocol: 'openai-completions', baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k', contextWindow: 128000, keyHint: 'KIMI_API_KEY' },
 ];
+
+// 全局搜索结果（跨任务/团队消息/知识库）。
+export type SearchResults = {
+  query: string;
+  tasks: Entity[];
+  messages: Entity[];
+  knowledge: Entity[];
+};

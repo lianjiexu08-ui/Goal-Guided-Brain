@@ -3442,3 +3442,79 @@ h1 {
 .onboarding-card .secondary-button {
   align-self: flex-start;
 }
+
+/* 全局搜索（顶栏） */
+.global-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 10px;
+  color: inherit;
+}
+
+.global-search input {
+  min-width: 200px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+}
+
+.global-search-results {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: min(520px, 90vw);
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--background, #fff);
+  color: inherit;
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  z-index: 60;
+  padding: 6px;
+}
+
+.global-search-group-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.6;
+  padding: 6px 8px 2px;
+}
+
+.global-search-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.global-search-item:hover {
+  background: rgba(128, 128, 128, 0.12);
+}
+
+.global-search-item strong {
+  font-size: 13px;
+}
+
+.global-search-item small {
+  font-size: 12px;
+  opacity: 0.72;
+}
+
+.global-search-empty {
+  cursor: default;
+  opacity: 0.6;
+}

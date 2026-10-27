@@ -9,7 +9,7 @@ import {
   Management,
   managementNavigation,
 } from './management';
-import { api, entityList, entityText, PROVIDER_PRESETS, type Entity } from './workbench-api';
+import { api, entityList, entityText, PROVIDER_PRESETS, type Entity, type SearchResults } from './workbench-api';
 import { ErrorMessage } from './management';
 import {
   AssistantEditor,
@@ -2272,6 +2272,28 @@ function Workbench() {
     baseUrl: '',
     passphrase: '',
   });
+  const [globalSearch, setGlobalSearch] = useState('');
+  const [globalResults, setGlobalResults] = useState<SearchResults | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  useEffect(() => {
+    const q = globalSearch.trim();
+    if (!q) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void api<SearchResults>(`search?q=${encodeURIComponent(q)}&limit=8`)
+        .then((res) => {
+          if (!cancelled) {
+            setGlobalResults(res);
+            setSearchOpen(true);
+          }
+        })
+        .catch(() => {});
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [globalSearch]);
   const runSetupWizard = async () => {
     const preset = PROVIDER_PRESETS.find((item) => item.id === wizardForm.preset) || PROVIDER_PRESETS[0];
     const apiKey = wizardForm.apiKey.trim();
@@ -3024,6 +3046,66 @@ function Workbench() {
                     : managementNavigation.find((item) => item.id === view)
                         ?.label || '知识库'}
             </strong>
+          </div>
+          <div className="global-search" data-testid="global-search">
+            <Search size={15} />
+            <input
+              aria-label="全局搜索"
+              placeholder="搜索任务、消息、知识…"
+              value={globalSearch}
+              onChange={(event) => setGlobalSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  setSearchOpen(false);
+                  setGlobalSearch('');
+                }
+              }}
+            />
+            {searchOpen && globalResults && (
+              <div className="global-search-results" aria-label="搜索结果">
+                {(
+                  [
+                    { key: 'tasks', label: '任务', items: globalResults.tasks },
+                    { key: 'messages', label: '团队消息', items: globalResults.messages },
+                    { key: 'knowledge', label: '知识库', items: globalResults.knowledge },
+                  ] as const
+                ).map((group) => (
+                  <div key={group.key} className="global-search-group">
+                    <div className="global-search-group-label">{group.label}</div>
+                    {group.items.length ? (
+                      group.items.map((item) => (
+                        <button
+                          key={entityText(item, 'id')}
+                          type="button"
+                          className="global-search-item"
+                          onClick={() => {
+                            setSearchOpen(false);
+                            if (group.key === 'tasks') {
+                              void api<Entity>(`tasks/${entityText(item, 'id')}`)
+                                .then((detail) => showTask(detail as never))
+                                .catch(() => {
+                                  if (item.spaceId) {
+                                    setSelectedSpaceId(String(entityText(item, 'spaceId')));
+                                    setView('team');
+                                  }
+                                });
+                            } else {
+                              if (item.spaceId) setSelectedSpaceId(entityText(item, 'spaceId'));
+                              setView(group.key === 'knowledge' ? 'knowledge' : 'team');
+                            }
+                          }}
+                        >
+                          <strong>{entityText(item, 'title') || entityText(item, 'content').slice(0, 60)}</strong>
+                          <small>{entityText(item, 'teamName') || '无团队'} · {entityText(item, 'status') || entityText(item, 'senderType') || ''} · {entityText(item, 'snippet') || entityText(item, 'content').slice(0, 120)}</small>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="global-search-item global-search-empty">无匹配结果</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div className="topbar-right">
             <span className={`connection ${connectionError ? 'offline' : ''}`}>

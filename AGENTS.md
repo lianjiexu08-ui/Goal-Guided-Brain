@@ -56,6 +56,13 @@ CI（GitHub Actions）对每次推送跑三阶段：quality / unit / e2e，必�
 - 新行为必须有对应测试；`npm test` 与 e2e 都要绿再提交。
 - 12 个 skipped 是平台守卫（有跨平台替代断言），保持这个状态。
 
+## 协作约定（多会话并行开发）
+
+- main 为受 CI 保护的集成分支：推送前必须 `npm test` + lint 本地全绿；e2e 由 CI 兜底。
+- 多个 agent 会话同时工作时，大特性（>200 行或新增依赖）应推功能分支并发 PR，小修复可直接推 main。
+- 推送被拒（non-fast-forward）时先 `git pull --rebase`，冲突以测试与文档为准协商解决。
+- 每个提交说明必须包含行为变化与验证方式（跑了哪些测试）。
+
 ## 已知边界
 
 - `server/store.mjs saveTeamSpace` 对 review/recruitment 等做字段白名单归一化——新增团队字段要同步白名单。
