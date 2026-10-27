@@ -3519,10 +3519,3 @@ h1 {
   opacity: 0.6;
 }
 
-/* 移动端隐藏顶栏全局搜索：412px 视口下会挤爆顶栏、遮挡侧栏开关；
-   移动端检索入口待独立设计后再开放。 */
-@media (max-width: 767px) {
-  .global-search {
-    display: none;
-  }
-}

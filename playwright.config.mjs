@@ -16,6 +16,7 @@ export default defineConfig({
   timeout: 45_000,
   expect: { timeout: 10_000 },
   reporter: 'list',
+  globalSetup: './tests/e2e/global-setup.mjs',
   globalTeardown: './tests/e2e/global-teardown.mjs',
   use: {
     baseURL: 'http://127.0.0.1:3288',
@@ -36,7 +37,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'node scripts/dev.mjs',
+    // 生产模式（GGB_E2E_PROD=1）用预构建产物启动，无按需编译，
+    // 适合 CI 低核数 runner；本地默认 dev 便于迭代。
+    command: process.env.GGB_E2E_PROD === '1' ? 'node scripts/start.mjs' : 'node scripts/dev.mjs',
     url: 'http://127.0.0.1:3288/',
     timeout: 120_000,
     reuseExistingServer: false,
