@@ -129,3 +129,52 @@ test('bridge 渠道入站：Bearer token 校验', async t => {
   });
   assert.equal(ok.status, 200);
 });
+
+// ---- 团队记忆 API（GET/PUT /api/spaces/:id/memory） ----
+
+test('团队记忆 API：确认团队读写、未确认拒绝、上限校验', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ggb-memory-'));
+  const workspace = path.join(dir, 'project');
+  fs.mkdirSync(workspace);
+  const app = createWorkbench({
+    dir,
+    workspace,
+    dataDir: path.join(dir, 'data'),
+    requireCredential: false,
+    runtimeFactory: options => ({ options, start() {}, cancel() { options.onDone('cancelled', ''); } }),
+  });
+  t.after(async () => {
+    await app.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const space = app.store.saveTeamSpace({
+    name: '记忆团队', goal: 'g', purpose: 'p',
+    workspace: path.join(app.store.config.workspace),
+    pmRoleId: 'project_manager',
+  });
+  // 未确认（discovery）→ 409
+  app.store.saveTeamSpace({ ...app.store.teamSpace(space.id), recruitment: { ...app.store.teamSpace(space.id).recruitment, phase: 'discovery' } }, space.id);
+  const denied = await fetch(`${base}/api/spaces/${space.id}/memory`);
+  assert.equal(denied.status, 409);
+  // 确认后：PUT → GET 往返
+  app.store.saveTeamSpace({ ...app.store.teamSpace(space.id), recruitment: { ...app.store.teamSpace(space.id).recruitment, phase: 'confirmed' } }, space.id);
+  const memoryFixture = ['# 记忆', '- 教训：先跑 lint'].join(String.fromCharCode(10));
+  const put = await fetch(`${base}/api/spaces/${space.id}/memory`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+
+    body: JSON.stringify({ content: memoryFixture }),
+  });
+  assert.equal(put.status, 200);
+  const got = await (await fetch(`${base}/api/spaces/${space.id}/memory`)).json();
+  assert.ok(got.content.includes('先跑 lint'));
+  // 超长 → 400
+  const tooLong = await fetch(`${base}/api/spaces/${space.id}/memory`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content: 'x'.repeat(65000) }),
+  });
+  assert.equal(tooLong.status, 400);
+});

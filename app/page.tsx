@@ -37,6 +37,7 @@ import {
   Paperclip,
   Plus,
   RefreshCw,
+  Save,
   Search,
   Settings2,
   Sparkles,
@@ -1277,6 +1278,8 @@ function Workbench() {
   const [teamRenameForm, setTeamRenameForm] = useState({ name: '' });
   const [teamTemplateForm, setTeamTemplateForm] = useState({ name: '', description: '' });
   const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
+  const [teamMemoryDraft, setTeamMemoryDraft] = useState<string | null>(null);
+  const [teamMemoryNote, setTeamMemoryNote] = useState('');
   const [teamTemplateId, setTeamTemplateId] = useState('');
   const [teamForm, setTeamForm] = useState<TeamForm>({
     name: '',
@@ -2437,7 +2440,24 @@ function Workbench() {
     setTeamRenameForm({ name: teamSpace.name });
     setModal('rename-team');
   }
+  // 团队设置弹窗打开时拉取团队记忆草稿（重置在 openTeamSettings 中完成）。
+  useEffect(() => {
+    if (modal !== 'team' || !editingTeamId) return;
+    let cancelled = false;
+    void api<{ content: string }>(`spaces/${editingTeamId}/memory`)
+      .then((res) => {
+        if (!cancelled) setTeamMemoryDraft(res.content || '');
+      })
+      .catch(() => {
+        if (!cancelled) setTeamMemoryDraft('');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [modal, editingTeamId]);
   function openTeamSettings() {
+    setTeamMemoryDraft(null);
+    setTeamMemoryNote('');
     if (!teamSpace) return;
     const pm = activeRoles.find((item) => item.id === teamSpace.pmRoleId) || activeRoles[0];
     setEditingTeamId(teamSpace.id);
@@ -5119,6 +5139,39 @@ function Workbench() {
                   ]}
                 />
               </div>
+              {editingTeamId && (
+                <div className="field-label">
+                  团队记忆（TEAM_MEMORY）
+                  <textarea
+                    rows={7}
+                    value={teamMemoryDraft ?? ''}
+                    onChange={(e) => setTeamMemoryDraft(e.target.value)}
+                    placeholder={
+                      teamMemoryDraft === null
+                        ? '正在加载团队记忆…'
+                        : '智能体自动维护：任务验证命令与结论会自动追加，也可通过 record_team_lesson 记录踩坑与偏好。可在此手动编辑。'
+                    }
+                  />
+                  <div style={{ display: 'flex', gap: 10, marginTop: 6, alignItems: 'center' }}>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      disabled={busy || teamMemoryDraft === null}
+                      onClick={() =>
+                        void action(async () => {
+                          await api(`spaces/${editingTeamId}/memory`, 'PUT', {
+                            content: teamMemoryDraft ?? '',
+                          });
+                          setTeamMemoryNote('团队记忆已保存，后续任务会作为背景注入。');
+                        })
+                      }
+                    >
+                      <Save size={15} /> 保存团队记忆
+                    </button>
+                    {teamMemoryNote && <small>{teamMemoryNote}</small>}
+                  </div>
+                </div>
+              )}
               <button className="primary-button" type="submit" disabled={busy || !activeRoles.length}>
                 <Plus size={16} /> {editingTeamId ? '保存团队设置' : '创建团队'}
               </button>

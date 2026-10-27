@@ -12,6 +12,7 @@ import { lockControl } from './persistence.mjs';
 import { createPlatform } from './platform.mjs';
 import { assessCapabilityRisk, capabilityFingerprint } from './capabilities.mjs';
 import { createOrchestrationHandler } from './orchestration-mcp.mjs';
+import { readTeamMemory, writeTeamMemory } from './memory.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export function createWorkbench({
@@ -779,6 +780,17 @@ export function createWorkbench({
                 workspaceMode: candidateWorkspaceMode || null,
               }));
             return send(200, collaborators);
+          }
+          // 团队记忆（TEAM_MEMORY）：查看与手动编辑智能体自动维护的记忆文件。
+          if (parts[3] === 'memory' && (req.method === 'GET' || req.method === 'PUT')) {
+            if (space.recruitment?.phase !== 'confirmed')
+              throw Object.assign(new Error('团队招募尚未确认，暂无团队记忆。'), { status: 409 });
+            if (req.method === 'GET')
+              return send(200, { teamId: space.id, content: readTeamMemory(dataDir, space.id) || '' });
+            const content = typeof body.content === 'string' ? body.content : '';
+            if (content.length > 64000) throw new Error('团队记忆不能超过 64000 字符。');
+            writeTeamMemory(dataDir, space.id, content);
+            return send(200, { teamId: space.id, content, bytes: content.length });
           }
           if (req.method === 'POST' && parts[3] === 'collaborate') {
             if (space.status !== 'active') throw new Error('团队空间当前不可发起协作。');
