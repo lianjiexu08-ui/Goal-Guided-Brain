@@ -481,65 +481,6 @@ export function createWorkbench({
         principal: authorization.principal,
       });
       if (managed) return send(managed.status, managed.body);
-      if (req.method === 'GET' && parts[1] === 'search') {
-        // 全局搜索：跨任务、团队消息、知识库的不区分大小写子串检索。
-        const q = (options.query.get('q') || '').trim().toLowerCase();
-        const limit = Math.min(Math.max(Number(options.query.get('limit')) || 8, 1), 20);
-        if (!q) return send(200, { query: q, tasks: [], messages: [], knowledge: [] });
-        const teamName = new Map(store.teamSpaces().map((s) => [s.id, s.name]));
-        const spaceIdByTask = new Map(
-          store.records
-            .list('task-meta')
-            .map((meta) => [meta.taskId || meta.id, meta.spaceId || meta.teamId || null]),
-        );
-        const matches = (value) => String(value || '').toLowerCase().includes(q);
-        const tasks = store
-          .tasks()
-          .filter((task) => matches(task.title) || matches(task.prompt) || matches(task.result))
-          .slice(0, limit)
-          .map((task) => {
-            const spaceId = spaceIdByTask.get(task.id) || task.spaceId || null;
-            return {
-              id: task.id,
-              title: task.title || String(task.prompt || '').slice(0, 80),
-              status: task.status,
-              role: task.role,
-              spaceId,
-              teamName: spaceId ? teamName.get(spaceId) || null : null,
-              snippet: String(task.result || task.prompt || '').replace(/\s+/g, ' ').slice(0, 160),
-              at: task.updatedAt || task.createdAt,
-            };
-          });
-        const messages = store.records
-          .list('space-messages')
-          .filter((message) => matches(message.content) && message.kind !== 'notice')
-          .slice(0, limit)
-          .map((message) => {
-            const spaceId = message.spaceId || message.teamId || null;
-            return {
-              id: message.id,
-              spaceId,
-              teamName: spaceId ? teamName.get(spaceId) || null : null,
-              taskId: message.taskId || null,
-              senderType: message.senderType,
-              content: String(message.content || '').replace(/\s+/g, ' ').slice(0, 200),
-              at: message.at || message.createdAt,
-            };
-          });
-        const knowledge = store
-          .knowledge()
-          .filter((item) => matches(item.title) || matches(item.content))
-          .slice(0, limit)
-          .map((item) => ({
-            id: item.id,
-            title: item.title,
-            spaceId: item.teamId || null,
-            teamName: item.teamId ? teamName.get(item.teamId) || null : null,
-            snippet: String(item.content || '').slice(0, 200),
-            at: item.updatedAt || item.createdAt,
-          }));
-        return send(200, { query: q, tasks, messages, knowledge });
-      }
       if (req.method === 'GET' && parts[1] === 'state')
         return send(200, getState());
       if (req.method === 'GET' && parts[1] === 'risks')
