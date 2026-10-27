@@ -104,6 +104,7 @@ const usage = `用法：
   ggb context list|share <teamId> ...   # 查看或发布跨团队共享上下文
   ggb models                     # 供应商与模型目录（含自定义 models.json）
   ggb usage [--teamId id] [--since ISO]  # 模型用量报告（token/成本/延迟/验证）
+  ggb wb start|stop|status|restart       # 工作台生命周期管理
   ggb rpc                        # JSONL 机器协议（prompt/follow_up/set_model/abort）
   ggb events <taskId> | --team <id> [--once] [--json]
   ggb node --control-url https://… --workspace 名称=/绝对路径
@@ -2002,6 +2003,100 @@ function attachSlashMenu(rl, getContext) {
   rl.on('close', () => process.stdin.removeListener('keypress', handler));
 }
 
+// ---- 工作台生命周期管理 ----
+function wbPidFile() {
+  return path.join(process.env.WORKBENCH_DATA_DIR || path.join(os.homedir(), '.dsh-workbench'), 'workbench.pid');
+}
+function wbPort() {
+  return Number(process.env.WORKBENCH_API_PORT || 3089);
+}
+function wbBase() {
+  return `http://127.0.0.1:${wbPort()}`;
+}
+async function wbIsRunning() {
+  try {
+    const res = await fetch(`${wbBase()}/api/health`, { signal: AbortSignal.timeout(2000) });
+    return res.ok;
+  } catch { return false; }
+}
+function wbSpawn() {
+  const serverPath = fileURLToPath(new URL('../server/index.mjs', import.meta.url));
+  const dataDir = process.env.WORKBENCH_DATA_DIR || path.join(os.homedir(), '.dsh-workbench');
+  const logFile = path.join(dataDir, 'workbench.log');
+  fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  const out = fs.openSync(logFile, 'a');
+  fs.appendFileSync(out, `[cli] spawn pid=${process.pid} at=${new Date().toISOString()}\n`);
+  const child = spawn(process.execPath, [serverPath], {
+    detached: true,
+    stdio: ['ignore', out, out],
+    env: { ...process.env, WORKBENCH_API_PORT: String(wbPort()), WORKBENCH_DATA_DIR: dataDir },
+  });
+  child.unref();
+  fs.closeSync(out);
+  fs.writeFileSync(wbPidFile(), String(child.pid), { mode: 0o600 });
+  return child.pid;
+}
+async function wbWaitHealth(timeoutMs = 15000) {
+  for (let i = 0; i < timeoutMs / 500; i++) {
+    await new Promise(r => setTimeout(r, 500));
+    if (await wbIsRunning()) return true;
+  }
+  return false;
+}
+
+async function wbLifecycle(args) {
+  const sub = args[0];
+  const port = wbPort();
+  if (sub === 'start' || sub === 'restart') {
+    if (await wbIsRunning()) {
+      if (sub === 'restart') {
+        console.log('停止旧实例…');
+        const pidFile = wbPidFile();
+        if (fs.existsSync(pidFile)) {
+          const pid = Number(fs.readFileSync(pidFile, 'utf8').trim());
+          try { process.kill(pid, 'SIGTERM'); } catch {}
+          for (let i = 0; i < 20; i++) {
+            await new Promise(r => setTimeout(r, 500));
+            if (!(await wbIsRunning())) break;
+          }
+        } else {
+          try { execFileSync('lsof', ['-ti', `tcp:${port}`, '-sTCP:LISTEN'], { encoding: 'utf8', timeout: 5000 }).trim().split('\n').filter(Boolean).forEach(pid => { try { process.kill(Number(pid), 'SIGTERM'); } catch {} }); } catch {}
+          await new Promise(r => setTimeout(r, 1000));
+        }
+      } else {
+        console.log(`工作台已在运行：${wbBase()}`);
+        return;
+      }
+    }
+    console.log('启动工作台…');
+    const pid = wbSpawn();
+    const ready = await wbWaitHealth(15000);
+    if (ready) console.log(`✓ 工作台已启动：${wbBase()} (PID ${pid})`);
+    else console.error(`✗ 启动超时，请查看日志：${path.join(process.env.WORKBENCH_DATA_DIR || path.join(os.homedir(), '.dsh-workbench'), 'workbench.log')}`);
+    return;
+  }
+  if (sub === 'stop') {
+    const pidFile = wbPidFile();
+    if (fs.existsSync(pidFile)) {
+      const pid = Number(fs.readFileSync(pidFile, 'utf8').trim());
+      try { process.kill(pid, 'SIGTERM'); console.log(`已发送 SIGTERM 到 PID ${pid}`); } catch { console.log('进程不存在'); }
+      fs.rmSync(pidFile);
+    } else {
+      console.log('没有找到 PID 文件。');
+    }
+    return;
+  }
+  if (sub === 'status' || !sub || sub === '--help' || sub === '-h') {
+    const running = await wbIsRunning();
+    const pidFile = wbPidFile();
+    const pid = fs.existsSync(pidFile) ? fs.readFileSync(pidFile, 'utf8').trim() : '-';
+    console.log(`工作台：${running ? '运行中' : '未运行'}  PID文件：${pid}  端口：${port}`);
+    console.log(`地址：${wbBase()}`);
+    return;
+  }
+  console.log(`未知子命令 "${sub}"。用法：ggb wb start|stop|status|restart`);
+}
+
 async function home(input, args) {
   prepareSession(input);
   const HOME_COMMANDS = ['/', '/help', '/login ', '/logout ', '/models', '/tasks ', '/new', '/exit'];
@@ -2035,9 +2130,22 @@ async function home(input, args) {
   };
 
   let rendered = false;
-  const renderHome = (teams, modelReady) => {
+  const renderHome = async (teams, modelReady) => {
     console.log('');
+    // 拉取待办事项（attention）
+    let attentionItems = [];
+    try {
+      attentionItems = (await workbenchFetch(args, 'manage')).attention?.filter(item => item.status === 'open') || [];
+    } catch {}
+
     console.log(`Goal-Guided Brain · ${modelReady ? '模型已配置' : '模型未配置：ggb login <供应商>'}`);
+    if (attentionItems.length) {
+      console.log(`  ⚠ ${attentionItems.length} 项待处理`);
+      for (const item of attentionItems.slice(0, 5)) {
+        console.log(`  ⚠ [${item.kind || '?'}] ${item.title || item.detail || item.id}`);
+      }
+      if (attentionItems.length > 5) console.log(`  ⚠ … 共 ${attentionItems.length} 项`);
+    }
     if (teams.length) {
       console.log('团队：');
       teams.forEach((team, index) => {
@@ -2077,7 +2185,7 @@ async function home(input, args) {
         cachedTeams = teams;
         const envKey = Boolean(pickKey(input.preset, ''));
         cachedModelReady = envKey || (providers || []).some(item => item.enabled !== false && item.protocol !== 'typesafe-system-one');
-        renderHome(cachedTeams, cachedModelReady);
+        await renderHome(cachedTeams, cachedModelReady);
       }
       const answer = (await readLine('ggb › ')).trim();
       if (!answer) continue;
@@ -2541,6 +2649,7 @@ async function main() {
   if (command === 'skill') return skillCommand(args);
   if (command === 'models') return modelsCommand(args);
   if (command === 'usage') return usageCommand(args);
+  if (command === 'wb') return wbLifecycle(args);
   if (command === 'login') return loginCommand(args);
   if (command === 'rpc') return rpc(args);
   if (command === 'events') return events(args);
