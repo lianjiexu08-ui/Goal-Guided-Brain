@@ -33,7 +33,6 @@ test('首次配置向导：选供应商、写密钥、连通测试全链路', as
   await new Promise(resolve => provider.listen(0, '127.0.0.1', resolve));
   const providerBase = `http://127.0.0.1:${provider.address().port}`;
   try {
-  const name = undefined;
   await page.goto('/');
   // 全新 fixture 无供应商：引导卡可见。
   const card = page.getByTestId('onboarding-model-guide');
