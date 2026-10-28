@@ -2220,6 +2220,83 @@ async function teamMembersCommand(args) {
   }
 }
 
+async function globalSearch(args) {
+  const query = args.filter(arg => !arg.startsWith('--')).join(' ').trim();
+  if (!query) throw new Error('用法：ggb search "搜索关键词"');
+  const limit = Number(valueAfter(args, '--limit', '10')) || 10;
+  const lowerQuery = query.toLowerCase();
+  const results = { teams: [], tasks: [], skills: [], context: [] };
+
+  // 搜索团队
+  try {
+    const teams = await workbenchFetch(args, 'teams');
+    results.teams = (teams || []).filter(t =>
+      `${t.name} ${t.goal || ''} ${t.purpose || ''}`.toLowerCase().includes(lowerQuery)
+    ).slice(0, limit).map(t => ({ id: t.id, name: t.name, status: t.status, phase: t.recruitment?.phase }));
+  } catch {}
+
+  // 搜索任务
+  try {
+    const teams = await workbenchFetch(args, 'teams');
+    for (const team of teams) {
+      try {
+        const detail = await workbenchFetch(args, `teams/${team.id}`);
+        for (const task of detail.tasks || []) {
+          if (`${task.title || ''} ${task.result || ''}`.toLowerCase().includes(lowerQuery)) {
+            results.tasks.push({ id: task.id, title: task.title?.slice(0, 60), status: task.status, team: team.name });
+          }
+        }
+      } catch {}
+    }
+    results.tasks = results.tasks.slice(0, limit);
+  } catch {}
+
+  // 搜索 Hub Skill
+  try {
+    const catalog = JSON.parse(fs.readFileSync(path.join(workbenchDataDir(), 'skill-hub-catalog.json'), 'utf8'));
+    results.skills = (catalog.skills || []).filter(skill =>
+      `${skill.id} ${skill.title} ${skill.description}`.toLowerCase().includes(lowerQuery)
+    ).slice(0, limit).map(skill => ({ id: skill.id, title: skill.title, description: skill.description?.slice(0, 80) }));
+  } catch {}
+
+  // 搜索共享上下文
+  try {
+    const teams = await workbenchFetch(args, 'teams');
+    for (const team of teams) {
+      try {
+        const ctx = await workbenchFetch(args, `teams/${team.id}/context`);
+        for (const item of ctx.items || []) {
+          if (`${item.key} ${item.title} ${item.content}`.toLowerCase().includes(lowerQuery)) {
+            results.context.push({ team: item.teamName, key: item.key, title: item.title });
+          }
+        }
+      } catch {}
+    }
+    results.context = results.context.slice(0, limit);
+  } catch {}
+
+  if (has(args, '--json')) return console.log(JSON.stringify(results, null, 2));
+  console.log(`搜索「${query}」：\n`);
+  if (results.teams.length) {
+    console.log('团队：');
+    for (const t of results.teams) console.log(`  [${t.status}] ${t.id} ${t.name || ''}`);
+  }
+  if (results.tasks.length) {
+    console.log('\n任务：');
+    for (const t of results.tasks) console.log(`  [${t.status}] ${t.id} ${t.title || ''}`);
+  }
+  if (results.skills.length) {
+    console.log('\n技能：');
+    for (const sk of results.skills) console.log(`  ${sk.id}  ${sk.title || ''}  ${sk.description || ''}`);
+  }
+  if (results.context.length) {
+    console.log('\n共享上下文：');
+    for (const c of results.context) console.log(`  ${c.team} / ${c.key}  ${c.title || ''}`);
+  }
+  const total = results.teams.length + results.tasks.length + results.skills.length + results.context.length;
+  if (!total) console.log('  没有找到匹配结果。');
+}
+
 async function home(input, args) {
   prepareSession(input);
   const HOME_COMMANDS = ['/', '/help', '/login ', '/logout ', '/models', '/tasks ', '/new', '/exit'];
@@ -2780,6 +2857,7 @@ async function main() {
   if (command === 'node') return runNode(args);
   if (command === 'logout') return logoutCommand(args);
   if (command === 'deliver') return deliver(args);
+  if (command === 'search') return globalSearch(args);
   if (command === 'context') return contextCommand(args);
   if (command !== 'run' && command !== 'chat') throw new Error(`未知命令“${command}”。\n\n${usage}`);
   const input = parseInput(args);
