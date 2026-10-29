@@ -3047,6 +3047,7 @@ function Workbench() {
                         ?.label || '知识库'}
             </strong>
           </div>
+          {!isMobile && (
           <div className="global-search" data-testid="global-search">
             <Search size={15} />
             <input
@@ -3107,6 +3108,7 @@ function Workbench() {
               </div>
             )}
           </div>
+          )}
           <div className="topbar-right">
             <span className={`connection ${connectionError ? 'offline' : ''}`}>
               <span className="live-dot" />
