@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
+import fs from 'node:fs';
 import { Store } from '../../server/store.mjs';
 
 const dataDir = process.env.GGB_E2E_DATA_DIR;
