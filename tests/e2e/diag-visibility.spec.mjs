@@ -45,3 +45,31 @@ test('诊断：跨进程 SQLite 可见性', async ({ page }) => {
   console.log(`[diag] http-api sees: hit=${viaApi.hit} jobs=${JSON.stringify(viaApi.jobTitles)}`);
   expect(viaApi.hit, 'HTTP API 应能看到直接写库的 fixture').toBe(true);
 });
+
+
+test('诊断：反向可见性——HTTP 写入的数据 worker Store 能否读到', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForTimeout(1000);
+  // 通过 HTTP 创建一个特征 provider
+  const created = await page.evaluate(async () => {
+    const res = await fetch('/api/providers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'DIAG-HTTP-PROVIDER', protocol: 'openai-completions',
+        baseUrl: 'http://127.0.0.1:9', models: [{ id: 'diag-model', name: 'diag-model', tools: true, contextWindow: 1000 }],
+        enabled: false, priority: 999,
+      }),
+    });
+    return res.json();
+  });
+  console.log(`[diag2] http-created provider id=${created?.id}`);
+  // worker 的 Store 连接读
+  const store = new Store(dataDir, process.cwd());
+  const row = store.records.get('providers', created?.id || 'missing');
+  console.log(`[diag2] worker-Store sees http-created provider: ${row ? row.name : 'MISSING'}`);
+  console.log(`[diag2] worker-Store providers total: ${store.records.list('providers').length}`);
+  // 同时列 worker Store 的 dataDir 与 jobs 计数，供比对
+  console.log(`[diag2] worker Store dir: ${store.dir}`);
+  store.close();
+});
