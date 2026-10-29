@@ -3107,66 +3107,6 @@ function Workbench() {
               </div>
             )}
           </div>
-          <div className="global-search" data-testid="global-search">
-            <Search size={15} />
-            <input
-              aria-label="全局搜索"
-              placeholder="搜索任务、消息、知识…"
-              value={globalSearch}
-              onChange={(event) => setGlobalSearch(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') {
-                  setSearchOpen(false);
-                  setGlobalSearch('');
-                }
-              }}
-            />
-            {searchOpen && globalResults && (
-              <div className="global-search-results" aria-label="搜索结果">
-                {(
-                  [
-                    { key: 'tasks', label: '任务', items: globalResults.tasks },
-                    { key: 'messages', label: '团队消息', items: globalResults.messages },
-                    { key: 'knowledge', label: '知识库', items: globalResults.knowledge },
-                  ] as const
-                ).map((group) => (
-                  <div key={group.key} className="global-search-group">
-                    <div className="global-search-group-label">{group.label}</div>
-                    {group.items.length ? (
-                      group.items.map((item) => (
-                        <button
-                          key={entityText(item, 'id')}
-                          type="button"
-                          className="global-search-item"
-                          onClick={() => {
-                            setSearchOpen(false);
-                            if (group.key === 'tasks') {
-                              void api<Entity>(`tasks/${entityText(item, 'id')}`)
-                                .then((detail) => showTask(detail as never))
-                                .catch(() => {
-                                  if (item.spaceId) {
-                                    setSelectedSpaceId(String(entityText(item, 'spaceId')));
-                                    setView('team');
-                                  }
-                                });
-                            } else {
-                              if (item.spaceId) setSelectedSpaceId(entityText(item, 'spaceId'));
-                              setView(group.key === 'knowledge' ? 'knowledge' : 'team');
-                            }
-                          }}
-                        >
-                          <strong>{entityText(item, 'title') || entityText(item, 'content').slice(0, 60)}</strong>
-                          <small>{entityText(item, 'teamName') || '无团队'} · {entityText(item, 'status') || entityText(item, 'senderType') || ''} · {entityText(item, 'snippet') || entityText(item, 'content').slice(0, 120)}</small>
-                        </button>
-                      ))
-                    ) : (
-                      <div className="global-search-item global-search-empty">无匹配结果</div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
           <div className="topbar-right">
             <span className={`connection ${connectionError ? 'offline' : ''}`}>
               <span className="live-dot" />
