@@ -92,3 +92,29 @@ test('诊断：server 与 worker 的 dataDir 是否为同一目录', async ({ pa
   console.log(`[diag3] server sees backups: ${JSON.stringify(names)}`);
   console.log(`[diag3] worker probe visible to server: ${names.some((n) => String(n).includes('worker-probe'))}`);
 });
+
+
+test('诊断：server 写入的备份文件出现在谁的目录里', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForTimeout(800);
+  // 触发 server 在它自己的 dataDir/backups 创建备份，返回文件名
+  const backup = await page.evaluate(async () => {
+    const res = await fetch('/api/backups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    return res.json();
+  });
+  console.log(`[diag4] server created backup: ${JSON.stringify(backup)}`);
+  // worker 列出自己 dataDir/backups 的全部文件
+  const workerFiles = fs.readdirSync(path.join(dataDir, 'backups'));
+  console.log(`[diag4] worker backups dir now contains: ${JSON.stringify(workerFiles)}`);
+  const serverFileInWorkerDir = workerFiles.includes(backup.filename);
+  console.log(`[diag4] server backup in worker dir: ${serverFileInWorkerDir}`);
+  // worker 直接读 server 刚创建的备份库，看里面的 tasks/jobs
+  if (serverFileInWorkerDir) {
+    const { DatabaseSync } = await import('node:sqlite');
+    const db = new DatabaseSync(path.join(dataDir, 'backups', backup.filename), { readOnly: true });
+    const jobs = db.prepare("SELECT COUNT(*) AS n FROM records WHERE collection='jobs'").get();
+    const providers = db.prepare("SELECT COUNT(*) AS n FROM records WHERE collection='providers'").get();
+    console.log(`[diag4] server backup db: jobs=${jobs.n} providers=${providers.n}`);
+    db.close();
+  }
+});
