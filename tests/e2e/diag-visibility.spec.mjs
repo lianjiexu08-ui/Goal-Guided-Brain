@@ -73,3 +73,20 @@ test('诊断：反向可见性——HTTP 写入的数据 worker Store 能否读�
   console.log(`[diag2] worker Store dir: ${store.dir}`);
   store.close();
 });
+
+
+test('诊断：server 与 worker 的 dataDir 是否为同一目录', async ({ page }) => {
+  // worker 往自己的 dataDir/backups 放探针文件
+  const backupsDir = path.join(dataDir, 'backups');
+  fs.mkdirSync(backupsDir, { recursive: true });
+  fs.writeFileSync(path.join(backupsDir, 'worker-probe.sqlite'), 'probe');
+  await page.goto('/');
+  await page.waitForTimeout(1000);
+  const listed = await page.evaluate(async () => {
+    const res = await fetch('/api/backups');
+    return res.json();
+  });
+  const names = (Array.isArray(listed) ? listed : []).map((b) => b.filename || b);
+  console.log(`[diag3] server sees backups: ${JSON.stringify(names)}`);
+  console.log(`[diag3] worker probe visible to server: ${names.some((n) => String(n).includes('worker-probe'))}`);
+});
