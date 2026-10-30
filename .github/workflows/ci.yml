@@ -25,6 +25,8 @@ jobs:
         run: npm ci
       - name: Lint
         run: npm run lint
+      - name: UI logic tests
+        run: npm run test:ui
       - name: Typecheck
         run: npm run typecheck
       - name: Build

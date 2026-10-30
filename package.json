@@ -24,7 +24,9 @@
     "test": "node --test --test-concurrency=4 tests/*.test.mjs",
     "test:e2e": "node scripts/e2e.mjs",
     "typecheck": "tsc --noEmit",
-    "stop": "node scripts/stop.mjs"
+    "stop": "node scripts/stop.mjs",
+    "test:ui": "vitest run",
+    "test:ui:watch": "vitest"
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",
@@ -71,6 +73,7 @@
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
     "vite": "8.0.16",
+    "vitest": "^5.0.5",
     "wrangler": "4.92.0"
   },
   "overrides": {
