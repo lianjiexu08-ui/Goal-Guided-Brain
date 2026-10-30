@@ -55,6 +55,11 @@ CI（GitHub Actions）对每次推送跑三阶段：quality / unit / e2e，必�
 - Windows/POSIX 差异：符号链接用 junction（`isSymbolicLink` 语义相同）；`fsync` 目录与只读句柄在 Windows 会 EPERM；文件 mode 位断言（0o600）只在上 POSIX 生效；路径比较注意 JSON 转义与分隔符。
 - 新行为必须有对应测试；`npm test` 与 e2e 都要绿再提交。
 - 12 个 skipped 是平台守卫（有跨平台替代断言），保持这个状态。
+- **E2E fixture 纪律（血泪教训，2026-10 连红 7 次的根因）**：
+  - Playwright 的 **webServer 先于 globalSetup 启动**——server 进程先打开 workspace.sqlite；globalSetup 里**删除重建目录**会造成 inode 分裂（Linux 上 server 句柄指向隐形旧文件，worker 新库与 server 完全隔离，51+ 项失败）。global-setup 只 mkdir，不删除。
+  - E2E 共享单一 fixture 目录与库：**任何 spec 里直接写库或通过 HTTP 建全局资源都会污染后续测试**（例如建 provider 会破坏 setup-wizard 的“全新环境”断言）。写 fixture 前先确认它不会跨测试泄漏。
+  - E2E 必须用 **dev 服务器**（见已知边界的 vinext 缓存条目）。
+  - 移动视口（393px）下顶栏空间紧张：新增顶栏元素必须做移动端适配（条件渲染而非 CSS media，见全局搜索框的 `{!isMobile && ...}`）。
 
 ## 协作约定（多会话并行开发）
 
