@@ -3988,6 +3988,7 @@ export function Management({
                   setMarketSearched(false);
                 }}
               >
+                <option value="library">GGB 内置库（2000 技能，离线）</option>
                 <option value="hub">自维护 Hub</option>
                 <option value="skillsmp">SkillsMP</option>
                 <option value="clawhub">ClawHub</option>
@@ -4075,7 +4076,7 @@ export function Management({
                         disabled={busy}
                         onClick={() => {
                           // Hub 条目通过 Git 地址安装；搜索模式沿用所选市场。
-                          setImportSource(marketMode === 'recommend' ? 'git' : marketSource);
+                          setImportSource(marketSource === 'library' ? 'library' : marketMode === 'recommend' ? 'git' : marketSource);
                           setImportItem(item);
                           setSourceUrl(
                             txt(item, 'installUrl') || sourceLink || txt(item, 'slug') || item.id,
@@ -4870,7 +4871,8 @@ export function Management({
                   }}
                 >
                   <option value="github">Git 仓库 / 本地目录</option>
-                  <option value="hub">自维护 Hub</option>
+                  <option value="library">GGB 内置库（2000 技能，离线）</option>
+                <option value="hub">自维护 Hub</option>
                   <option value="skillsmp">SkillsMP</option>
                   <option value="clawhub">ClawHub</option>
                   <option value="mcp">MCP Registry</option>

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { command } from './workspaces.mjs';
 import { parse as parseArguments } from 'shell-quote';
 import { SKILLS } from './roles.mjs';
+import { searchLibrary, getLibrarySkill, libraryCandidates } from './skill-library.mjs';
 import { collectCandidates, recommend as scoreCandidates } from './skill-routing.mjs';
 
 function bounded(value, max = 2000) { return String(value || '').slice(0, max); }
@@ -437,7 +438,13 @@ export class CapabilityService {
         // Hub 不可达时只基于本地候选推荐。
       }
     }
-    const candidates = collectCandidates({ builtin, installed, hub });
+    let library = [];
+    try {
+      library = libraryCandidates(query, { limit: 6 });
+    } catch {
+      // 内置库缺失时跳过该来源。
+    }
+    const candidates = collectCandidates({ builtin, installed, hub, library });
     return scoreCandidates(query, candidates, { limit });
   }
   save(input, id, options = {}) {
@@ -515,6 +522,9 @@ export class CapabilityService {
         .map(skill => ({ id: skill.id, name: skill.title || skill.name, description: skill.description,
           source, kind: 'skill', sourceUrl: skill.installUrl, url: skill.installUrl, version: skill.version || null,
           category: skill.category || null, categoryLabel: skill.categoryLabel || null }));
+    } else if (source === 'library') {
+      // GGB 内置技能库：离线、随仓库分发、digest 固定安装。
+      items = searchLibrary(q, { limit: 25 });
     } else if (source === 'skillsmp') {
       const data = await jsonFetch(`https://skillsmp.com/api/v1/skills/search?q=${encodeURIComponent(q)}&limit=25`);
       items = (data.data?.skills || data.data?.results || data.skills || []).map(s => ({ id: s.id || s.githubUrl, name: s.name, description: s.description, source, sourceUrl: s.githubUrl, url: s.skillUrl || s.githubUrl, stars: s.stars, kind: 'skill' }));
@@ -539,7 +549,14 @@ export class CapabilityService {
     const staging = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-capability-'));
     let sourceRoot = staging;
     try {
-      if (input.source === 'clawhub' && input.slug) {
+      if (input.source === 'library' && input.id) {
+        const libSkill = getLibrarySkill(input.id);
+        if (!libSkill) throw new Error('内置技能库中不存在此技能。');
+        const libDir = path.join(staging, input.id);
+        fs.mkdirSync(libDir, { recursive: true });
+        fs.writeFileSync(path.join(libDir, 'SKILL.md'), libSkill.body, { mode: 0o600 });
+        sourceRoot = libDir;
+      } else if (input.source === 'clawhub' && input.slug) {
         const slug = encodeURIComponent(input.slug);
         const detail = await jsonFetch(`https://clawhub.ai/api/v1/skills/${slug}`);
         const version = input.version || detail.latestVersion?.version;
