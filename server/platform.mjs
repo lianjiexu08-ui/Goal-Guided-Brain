@@ -69,11 +69,9 @@ export function createPlatform({
   const ready = (async () => {
     await auth.init();
     usageMeter = await loadUsageMeter();
-    // A vault passphrase may be supplied for unattended local startup, but it
-    // must never be persisted as a plaintext companion file. Older builds
-    // created `.vault_pass`; remove that legacy artifact before serving.
-    try { fs.rmSync(path.join(dataDir, '.vault_pass'), { force: true }); } catch {}
-    // 自动解锁：优先 env，其次 .vault_pass 文件（首次 login 时由 CLI 写入）。
+    // 自动解锁：优先 env，其次 .vault_pass 文件（CLI login/deliver 以 0600 权限写入，
+    // 仅当前用户可读；早期版本会在启动时删除该文件，导致重启后永远无法自动解锁，
+    // 与下方读取逻辑自相矛盾——现改为信任 0600 权限的本地文件）。
     let vaultPassphrase = process.env.WORKBENCH_VAULT_PASSWORD || '';
     if (!vaultPassphrase) {
       try {
@@ -131,7 +129,10 @@ export function createPlatform({
       !resolveApiKey(dataDir)
     )
       throw new Error('请先配置模型供应商或 DeepSeek API Key。');
-    const workspace = input.workspace || store.config.workspace;
+    // 执行目录优先级：任务显式指定 > 团队空间配置 > 全局工作台默认。
+    const workspace = input.workspace
+      || (teamId ? store.teamSpace(teamId)?.workspace : null)
+      || store.config.workspace;
     const teamWorkspaceMode = teamId ? store.teamSpace(teamId)?.workspaceMode : null;
     const jobId = input.jobId || randomUUID();
     const groupId =

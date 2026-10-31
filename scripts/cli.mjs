@@ -841,6 +841,15 @@ async function deliver(args) {
     if (!team) team = teams.find(t => t.recruitment?.phase === 'confirmed' && t.status === 'active');
     if (team) {
       console.error(`  ✓ 复用团队「${team.name}」`);
+      // 复用团队时同步工作目录：让本次交付的任务在指定项目目录里执行。
+      if (workspace && workspace !== process.cwd()) {
+        try {
+          await workbenchFetch(args, `teams/${team.id}`, { method: 'PUT', body: { workspace } });
+          console.error(`  ✓ 执行目录：${workspace}`);
+        } catch (error) {
+          console.error(`  ⚠ 同步执行目录失败：${error.message}`);
+        }
+      }
     } else {
       const teamName = goal.slice(0, 20).replace(/[\\/]/g, '') || '交付团队';
       team = await workbenchFetch(args, 'teams', { method: 'POST', body: {

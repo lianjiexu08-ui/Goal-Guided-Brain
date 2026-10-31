@@ -202,7 +202,9 @@ export function modelPatch(route) {
                 id: route.model,
                 name: route.model,
                 contextWindow: route.modelSpec?.contextWindow ?? 128000,
-                maxTokens: 8192,
+                // 输出上限：8192 会在大文件生成中途截断（执行未完成：max-tokens），
+                // 提到 32768；deepseek-chat/gpt-4o 级模型均支持。
+                maxTokens: 32768,
                 input: route.modelSpec?.vision ? ['text', 'image'] : ['text'],
                 reasoningEfforts: false,
               },
@@ -501,7 +503,7 @@ export class DshRun {
             ? 'workbench-provider'
             : 'deepseek-official',
         model: this.route?.model || this.assistant.model || this.config.model,
-        maxTokens: 8192,
+        maxTokens: 32768,
       });
       this.onLog(
         `已连接 ${ready.serverInfo.name} · ${this.route?.model || this.assistant.model || this.config.model}`,

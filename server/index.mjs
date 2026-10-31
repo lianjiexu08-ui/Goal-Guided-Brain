@@ -702,7 +702,18 @@ export function createWorkbench({
               requestedRecruitment.phase !== space.recruitment.phase
             )
               throw Object.assign(new Error('团队招募阶段只能通过招募流程推进。'), { status: 409 });
-            return send(200, store.saveTeamSpace(body, space.id));
+            const nextSpace = store.saveTeamSpace(body, space.id);
+            // 换执行目录时重绑 PM 会话：会话校验要求 session.workspace 与任务 workspace 一致，
+            // 否则团队复用到新项目时所有消息都会被“会话不属于当前工作目录”拒绝。
+            if (
+              typeof body.workspace === 'string' &&
+              body.workspace &&
+              nextSpace.workspace !== space.workspace &&
+              nextSpace.recruitment?.sessionId
+            ) {
+              try { store.saveSession(nextSpace.recruitment.sessionId, { workspace: nextSpace.workspace }); } catch {}
+            }
+            return send(200, nextSpace);
           }
           if (req.method === 'POST' && parts[3] === 'recruitment' && parts[4] === 'confirm') {
             return send(200, platform.control.confirmTeamRecruitment(space.id, {

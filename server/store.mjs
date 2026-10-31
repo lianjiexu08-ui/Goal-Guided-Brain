@@ -483,6 +483,18 @@ export class Store {
       },
     };
   }
+  saveSession(id, { title, workspace } = {}) {
+    const session = this.db.prepare('SELECT * FROM sessions WHERE id=?').get(id);
+    if (!session) return null;
+    const next = {
+      title: typeof title === 'string' && title.trim() ? title.trim().slice(0, 200) : session.title,
+      workspace: typeof workspace === 'string' && workspace.trim() ? workspace.trim() : session.workspace,
+    };
+    this.db
+      .prepare('UPDATE sessions SET title=?, workspace=? WHERE id=?')
+      .run(next.title, next.workspace, id);
+    return { ...session, ...next };
+  }
   saveTeamSpace(input, id) {
     const existing = id ? this.teamSpace(id) : undefined;
     if (id && !existing) throw new Error('团队空间不存在。');
