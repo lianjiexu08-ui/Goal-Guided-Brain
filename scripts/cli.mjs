@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import { randomUUID, createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { SKILLS } from '../server/roles.mjs';
 
@@ -102,7 +102,7 @@ const usage = `用法：
   ggb task steer <id> "优先处理登录页" [--json]   # 运行中插话（不打断当前轮）
   ggb task session <id> [--limit 20] [--json]      # 查看追加式会话树
   ggb task fork <id> [--entry <entryId>] [--title "标题"]  # 从分叉点继续
-  ggb team watch <id>            # 订阅实时事件流（不再轮询）
+  ggb team watch <id> [--no-agent]  # 实时事件流：Agent 输出逐字显示、工具调用可见
   ggb context list|share <teamId> ...   # 查看或发布跨团队共享上下文
   ggb models                     # 供应商与模型目录（含自定义 models.json）
   ggb usage [--teamId id] [--since ISO]  # 模型用量报告（token/成本/延迟/验证）
@@ -1128,6 +1128,15 @@ async function teamWatch(args) {
   console.log(`订阅团队事件流（Ctrl-C 退出）：${id}`);
   let tasks = 0;
   let messages = 0;
+  // Agent 实时输出渲染状态：跟踪当前正在流式输出的任务，切换时换行加前缀。
+  let currentStreamTask = '';
+  const streamLabel = (taskId) => `\n\x1b[2m[${String(taskId).slice(0, 8)}]\x1b[0m `;
+  const endStreamLine = () => {
+    if (currentStreamTask) {
+      process.stdout.write('\n');
+      currentStreamTask = '';
+    }
+  };
   try {
     await streamTeam(args, id, (type, data) => {
       if (type === 'hello') {
@@ -1136,12 +1145,65 @@ async function teamWatch(args) {
         console.log(`已连接：${data.name}  阶段 ${data.phase || '-'}  消息 ${messages}  任务 ${tasks}`);
         return;
       }
+      if (type === 'agent') {
+        if (has(args, '--no-agent')) return;
+        const etype = data.type || '';
+        const edata = data.data || {};
+        const taskId = data.taskId || '';
+        if (etype === 'assistant/chunk') {
+          const chunk = edata.chunk || {};
+          if (chunk.type === 'text-delta' && chunk.text) {
+            if (currentStreamTask !== taskId) {
+              endStreamLine();
+              process.stdout.write(streamLabel(taskId));
+              currentStreamTask = taskId;
+            }
+            process.stdout.write(String(chunk.text));
+          }
+          return;
+        }
+        if (etype === 'tool/call') {
+          endStreamLine();
+          const name = edata.name || '工具';
+          const argsPreview = typeof edata.arguments === 'string'
+            ? edata.arguments.replace(/\s+/g, ' ').slice(0, 100)
+            : JSON.stringify(edata.arguments || {}).replace(/\s+/g, ' ').slice(0, 100);
+          process.stdout.write(`\n\x1b[36m⚙ [${String(taskId).slice(0, 8)}]\x1b[0m ${name}\x1b[2m ${argsPreview}\x1b[0m\n`);
+          return;
+        }
+        if (etype === 'tool/result') {
+          if (edata.error) {
+            endStreamLine();
+            process.stdout.write(`\n\x1b[31m✗ 工具失败：${String(edata.error.code || edata.error.name || '未知').slice(0, 120)}\x1b[0m\n`);
+          }
+          return;
+        }
+        if (etype === 'turn/start') {
+          endStreamLine();
+          return;
+        }
+        if (etype === 'turn/end') {
+          endStreamLine();
+          const reason = edata.reason?.kind || '';
+          if (reason && reason !== 'completed') console.log(`\x1b[2m  轮结束：${reason}\x1b[0m`);
+          return;
+        }
+        if (etype === 'plan/submitted') {
+          endStreamLine();
+          const steps = Array.isArray(edata.steps) ? edata.steps.length : 0;
+          console.log(`\n\x1b[35m📋 [${String(taskId).slice(0, 8)}] 执行计划（${steps} 步）\x1b[0m`);
+          return;
+        }
+        return;
+      }
       if (type === 'message') {
+        endStreamLine();
         messages += 1;
         const who = data.senderType === 'owner' ? '你' : data.senderType === 'system' ? '系统' : data.senderType === 'team' ? `团队(${data.fromTeamId || data.senderId || ''})` : 'PM';
         console.log(`\n[${fmtTime(data.createdAt)}] ${who}: ${String(data.content || '').slice(0, 500)}`);
       }
       if (type === 'task') {
+        endStreamLine();
         const risk = data.impactRisk && data.impactRisk !== 'unknown'
           ? ` 影响:${data.impactRisk}${data.impactAcknowledged ? '(已确认)' : ''}`
           : '';

@@ -424,10 +424,18 @@ export class DshRun {
                   DEEPSEEK_API_KEY: apiKey,
                   ...(this.route
                     ? {
-                        DEEPSEEK_BASE_URL: providerEndpoint(this.route).replace(
-                          /\/chat\/completions$/,
-                          '',
-                        ),
+                        DEEPSEEK_BASE_URL: (() => {
+                          const endpoint = providerEndpoint(this.route).replace(
+                            /\/chat\/completions$/,
+                            '',
+                          );
+                          // DSH 0.2.x 的 DeepSeek SDK 走 Anthropic 兼容协议（{base}/v1/messages）；
+                          // 官方 API 的兼容端点在 /anthropic 下，旧根路径只有 OpenAI 兼容接口。
+                          if (/^https?:\/\/api\.deepseek\.com\/?$/.test(endpoint)) {
+                            return 'https://api.deepseek.com/anthropic';
+                          }
+                          return endpoint;
+                        })(),
                       }
                     : {}),
                 }),

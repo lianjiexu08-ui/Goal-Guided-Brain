@@ -741,6 +741,18 @@ export function createWorkbench({
                 })
                 .map((task) => [task.id, `${task.status}:${task.updatedAt}`]),
             );
+            // Agent 事件流：只推连接之后的实时增量，不回放历史（避免新观察者被历史 chunk 淹没）。
+            const seenEvents = new Map(
+              store.tasks()
+                .filter((task) => {
+                  const meta = store.records.get('task-meta', task.id) || {};
+                  return (meta.spaceId || meta.teamId) === space.id;
+                })
+                .map((task) => [
+                  task.id,
+                  new Set(store.records.listByTask('task-events', task.id).map((item) => item.id)),
+                ]),
+            );
             sendEvent('hello', {
               teamId: space.id,
               name: space.name,
@@ -795,6 +807,33 @@ export function createWorkbench({
                     impactRisk: delivery.impact?.risk || null,
                     impactAcknowledged: delivery.impactAcknowledged,
                   });
+                }
+                // Agent 实时事件：assistant/chunk（流式文本）、tool/call、turn 边界等。
+                try {
+                  for (const task of tasks) {
+                    let seen = seenEvents.get(task.id);
+                    if (!seen) {
+                      seen = new Set(store.records.listByTask('task-events', task.id).map((item) => item.id));
+                      seenEvents.set(task.id, seen);
+                    }
+                    const fresh = store.records
+                      .listByTask('task-events', task.id)
+                      .filter((item) => !seen.has(item.id));
+                    if (!fresh.length) continue;
+                    for (const item of fresh) seen.add(item.id);
+                    // 旧→新顺序推送，单 tick 限 40 条防止洪泛；超出部分丢弃最早的文本碎片。
+                    const ordered = fresh.reverse().slice(-40);
+                    for (const item of ordered) {
+                      sendEvent('agent', {
+                        taskId: task.id,
+                        type: item.type,
+                        data: item.data,
+                        at: item.at || item.createdAt,
+                      });
+                    }
+                  }
+                } catch {
+                  /* 单次读取失败不终止流 */
                 }
               } catch {
                 /* 单次读取失败不终止流 */

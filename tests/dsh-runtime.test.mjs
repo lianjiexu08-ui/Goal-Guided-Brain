@@ -417,7 +417,7 @@ for (const protocol of [
             : 'Bearer local-route-fixture-key',
         );
         assert.equal(
-          requests[0].path,
+          requests[0].path.split('?')[0],
           `/v1/${protocol === 'anthropic-messages' ? 'messages' : protocol === 'openai-responses' ? 'responses' : 'chat/completions'}`,
         );
         assert.equal(
@@ -429,10 +429,22 @@ for (const protocol of [
           !JSON.stringify({ logs, events }).includes('local-route-fixture-key'),
         );
         if (protocol === 'openai-completions') {
-          assert.equal(
-            fs.readFileSync(path.join(workspace, 'hook-verified.txt'), 'utf8'),
-            'hook-ran',
-          );
+          // DSH 0.2.x 移除了 dsh-hooks-claude-code 插件；仅在插件可用时验证 hook 执行。
+          const hooksPluginInstalled = (() => {
+            const executable = findDsh();
+            if (!executable) return false;
+            const candidates = [
+              path.join(path.dirname(executable), '../lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-hooks-claude-code'),
+              path.join(path.dirname(executable), 'node_modules/@deepseek-ai/dsh-hooks-claude-code'),
+            ];
+            return candidates.some((candidate) => fs.existsSync(candidate));
+          })();
+          if (hooksPluginInstalled) {
+            assert.equal(
+              fs.readFileSync(path.join(workspace, 'hook-verified.txt'), 'utf8'),
+              'hook-ran',
+            );
+          }
           assert.ok(mcpRequests.length >= 2);
           assert.ok(
             mcpRequests.every(
@@ -515,63 +527,57 @@ for (const role of ['product', 'developer', 'custom', 'no-tools'])
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
         });
-        const emit = (delta, finish_reason = null) =>
-          res.write(
-            'data: ' +
-              JSON.stringify({
-                id: 'fixture',
-                object: 'chat.completion.chunk',
-                created: 1,
-                model: 'deepseek-v4-flash',
-                choices: [{ index: 0, delta, finish_reason }],
-              }) +
-              '\n\n',
-          );
+        // DSH 0.2.x 的 DeepSeek Messages 协议采用 Anthropic 风格事件流：
+        // message_start → content_block_start → content_block_delta → content_block_stop → message_delta → message_stop。
+        const emit = (event, data) =>
+          res.write(`event: ${event}\ndata: ${JSON.stringify({ type: event, ...data })}\n\n`);
+        const textRound = () => {
+          emit('message_start', { message: { usage: { input_tokens: 20 } } });
+          emit('content_block_start', { index: 0, content_block: { type: 'text', text: '' } });
+          emit('content_block_delta', { index: 0, delta: { type: 'text_delta', text: '本地集成验证完成。' } });
+          emit('content_block_stop', { index: 0 });
+          emit('message_delta', { delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 8 } });
+          emit('message_stop', {});
+        };
         if (toolRound++ === 0 && role !== 'no-tools') {
           const toolName = ['developer', 'custom'].includes(role)
             ? 'bash'
             : 'write';
-          const write = request.tools.find(
-            (t) => t.function?.name === toolName,
+          const write = request.tools?.find(
+            (t) => t.function?.name === toolName || t.name === toolName,
           );
           if (!write) {
-            emit(
-              { role: 'assistant', content: 'fixture: write tool unavailable' },
-              'stop',
-            );
+            textRound();
           } else {
-            emit({
-              role: 'assistant',
-              tool_calls: [
-                {
-                  index: 0,
-                  id: 'fixture-write',
-                  type: 'function',
-                  function: {
-                    name: toolName,
-                    arguments: JSON.stringify(
-                      ['developer', 'custom'].includes(role)
-                        ? {
-                            command:
-                              "printf 'DSH wrote this file.\\n' > verified.txt",
-                            description:
-                              'Write a test file inside the workspace',
-                          }
-                        : {
-                            file_path: 'verified.txt',
-                            content: 'DSH wrote this file.\n',
-                          },
-                    ),
-                  },
-                },
-              ],
+            const toolInput = ['developer', 'custom'].includes(role)
+              ? {
+                  command:
+                    "printf 'DSH wrote this file.\\n' > verified.txt",
+                  description:
+                    'Write a test file inside the workspace',
+                }
+              : {
+                  file_path: 'verified.txt',
+                  content: 'DSH wrote this file.\n',
+                };
+            emit('message_start', { message: { usage: { input_tokens: 20 } } });
+            emit('content_block_start', {
+              index: 0,
+              content_block: { type: 'tool_use', id: 'fixture-write', name: toolName, input: {} },
             });
-            emit({}, 'tool_calls');
+            const partialJson = JSON.stringify(toolInput);
+            emit('content_block_delta', {
+              index: 0,
+              delta: { type: 'input_json_delta', partial_json: partialJson },
+            });
+            emit('content_block_stop', { index: 0 });
+            emit('message_delta', { delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 8 } });
+            emit('message_stop', {});
           }
         } else {
-          emit({ role: 'assistant', content: '本地集成验证完成。' }, 'stop');
+          textRound();
         }
-        res.end('data: [DONE]\n\n');
+        res.end();
       });
       await new Promise((r) => provider.listen(0, '127.0.0.1', r));
       const logs = [];
@@ -616,7 +622,7 @@ for (const role of ['product', 'developer', 'custom', 'no-tools'])
             fs.readFileSync(path.join(workspace, 'verified.txt'), 'utf8'),
             'DSH wrote this file.\n',
           );
-        const tools = calls[0].tools.map((t) => t.function.name);
+        const tools = calls[0].tools.map((t) => t.function?.name || t.name);
         assert.equal(tools.includes('write'), role !== 'no-tools');
         assert.equal(
           tools.includes('bash'),
@@ -625,11 +631,11 @@ for (const role of ['product', 'developer', 'custom', 'no-tools'])
         if (assistant) {
           assert.ok(!tools.includes('web_search'));
           assert.ok(!tools.includes('web_fetch'));
+          // DSH 0.2.x 把 persona/workflow 装进 assistant-workflow skill（按需加载），首帧只出现 skill 目录摘要。
           assert.match(
             JSON.stringify(calls[0].messages),
-            /CUSTOM_ASSISTANT_PERSONA/,
+            /assistant-workflow/,
           );
-          assert.match(JSON.stringify(calls[0].messages), /assistant-workflow/);
           assert.match(
             fs.readFileSync(
               path.join(
