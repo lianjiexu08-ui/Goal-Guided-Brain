@@ -93,6 +93,8 @@ const tools = [
   { name: 'submit_artifact', description: '提交产物位置、版本和验证证据；不会自动合并代码或发布。', inputSchema: objectSchema({ title: string, location: string, content: string, commit: string, evidence: string }, ['title', 'location', 'evidence']) },
   { name: 'read_board', description: '读取当前任务组的共享任务板和版本。', inputSchema: objectSchema() },
   { name: 'read_shared_context', description: '读取当前团队及双向协作团队共享的跨团队上下文（决定、发现、状态、产物索引）。只读，只返回已建立双向协作关系团队的内容。', inputSchema: objectSchema() },
+  { name: 'submit_acceptance_evidence', description: '为当前任务的验收清单逐条提交证据（测试名/命令/哈希/说明）。清单全部 met 后 owner 才能验收；交付说明必须逐条对应清单。', inputSchema: objectSchema({ items: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, test: { type: 'string' }, command: { type: 'string' }, hash: { type: 'string' }, note: { type: 'string' } }, required: ['id'] } } }, ['items']) },
+  { name: 'get_acceptance_checklist', description: '读取当前任务的验收清单与各条证据状态。交付前先核对全部条目。', inputSchema: objectSchema() },
   { name: 'sync_delivery', description: '把指定已完成任务的交付快照（hash manifest）按平台侧复制同步到当前执行目录。用于接手前一轮交付的代码，禁止手工转录。入参：sourceTaskId（必填，交付来源任务）。', inputSchema: objectSchema({ sourceTaskId: string }, ['sourceTaskId']) },
   { name: 'share_context', description: '发布一条跨团队共享上下文（如关键决定、可复用结论、产物位置），供与本团队双向协作的其他团队阅读。同一 key 重复发布视为更新。', inputSchema: objectSchema({ key: string, title: string, content: string, kind: { type: 'string', enum: ['decision', 'finding', 'status', 'artifact', 'note'] }, expectedRevision: { type: 'integer', minimum: 1 } }, ['key', 'title', 'content']) },
   { name: 'update_board', description: '保存共享结论；更新已有记录必须使用读取到的 revision，避免覆盖并发修改。', inputSchema: objectSchema({ id: string, title: string, content: string, expectedRevision: { type: 'integer', minimum: 1 } }, ['title', 'content']) },
@@ -314,6 +316,24 @@ export function createOrchestrationServer({ control, token, capabilities, platfo
         case 'select_sample': response = control.selectSample(input, principal); break;
         case 'submit_artifact': response = control.saveScoped('artifacts', input, principal); break;
         case 'read_board': response = { items: control.records.list('board').filter(record => record.groupId === principal.groupId).slice(0, 100) }; break;
+        case 'submit_acceptance_evidence': {
+          if (!platform?.submitAcceptanceEvidence) { response = { error: '平台未启用验收清单。' }; break; }
+          const targetTaskId = principal?.taskId || (typeof input.taskId === 'string' ? input.taskId : '');
+          if (!targetTaskId) { response = { error: '无法确定当前任务。' }; break; }
+          try {
+            const checklist = platform.submitAcceptanceEvidence(targetTaskId, Array.isArray(input.items) ? input.items : []);
+            const unmet = checklist.items.filter((item) => item.status !== 'met').length;
+            response = { ok: true, total: checklist.items.length, met: checklist.items.length - unmet, unmet };
+          } catch (error) { response = { error: String(error.message || error).slice(0, 300) }; }
+          break;
+        }
+        case 'get_acceptance_checklist': {
+          if (!platform?.getAcceptanceChecklist) { response = { error: '平台未启用验收清单。' }; break; }
+          const targetTaskId = principal?.taskId || (typeof input.taskId === 'string' ? input.taskId : '');
+          if (!targetTaskId) { response = { error: '无法确定当前任务。' }; break; }
+          response = platform.getAcceptanceChecklist(targetTaskId) || { error: '该任务没有登记验收清单。' };
+          break;
+        }
         case 'sync_delivery': {
           if (!platform?.syncDelivery) { response = { error: '平台未启用交付快照同步。' }; break; }
           try {

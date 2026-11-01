@@ -547,11 +547,27 @@ function renderTask(task) {
 async function taskCommand(args) {
   const sub = args[0];
   if (!sub || sub === 'help' || sub === '--help' || sub === '-h') return console.log(teamUsage);
-  const known = ['ack', 'accept', 'reject', 'retry', 'steer', 'fork', 'session', 'list'];
+  const known = ['ack', 'accept', 'reject', 'retry', 'steer', 'fork', 'session', 'list', 'checklist'];
   if (!known.includes(sub)) {
     const task = await workbenchFetch(args, `tasks/${sub}`);
     if (has(args, '--json')) return console.log(JSON.stringify(task, null, 2));
     return renderTask(task);
+  }
+  if (sub === 'checklist') {
+    const taskId = args[1] && !args[1].startsWith('--') ? args[1] : '';
+    if (!taskId) throw new Error('用法：ggb task checklist <taskId> [--json]');
+    const checklist = await workbenchFetch(args, `tasks/${taskId}/checklist`).catch(() => null);
+    if (!checklist || checklist.error) { console.log(checklist?.error || '该任务没有登记验收清单。'); return; }
+    if (has(args, '--json')) return console.log(JSON.stringify(checklist, null, 2));
+    const unmet = checklist.items.filter((item) => item.status !== 'met');
+    console.log(`验收清单（${checklist.items.length - unmet.length}/${checklist.items.length} 已挂证据）：`);
+    for (const item of checklist.items) {
+      const mark = item.status === 'met' ? '✓' : '○';
+      const ev = item.evidence ? `  证据：${item.evidence.test || item.evidence.command || item.evidence.note || '已挂'}` : '';
+      console.log(`  ${mark} [${item.id}] ${item.requirement}${ev}`);
+    }
+    if (unmet.length) console.log(`\n⚠ ${unmet.length} 条未挂证据，accept 会被门禁拦下。`);
+    return;
   }
   if (sub === 'list') {
     const teamFilter = valueAfter(args, '--team', '');
@@ -735,9 +751,15 @@ async function loginCommand(args) {
   const existing = await workbenchFetch(args, 'providers');
   const match = (existing || []).find((item) => item.name === preset.label || item.baseUrl === baseUrl);
 
-  // 写入 .vault_pass 文件让工作台重启后自动解锁
+  // 写入 .vault_pass 文件让工作台重启后自动解锁。
+  // 护栏（platform-reliability-plan #3 延伸）：已存在且口令不同时警告——测试/环境漂移
+  // 曾把测试口令写进生产路径，导致重启后自动解锁失败、工作台起不来。
   const passFile = path.join(process.env.WORKBENCH_DATA_DIR || path.join(os.homedir(), '.dsh-workbench'), '.vault_pass');
   fs.mkdirSync(path.dirname(passFile), { recursive: true, mode: 0o700 });
+  const existingPass = fs.existsSync(passFile) ? fs.readFileSync(passFile, 'utf8').trim() : '';
+  if (existingPass && existingPass !== passphrase) {
+    console.error('⚠ .vault_pass 已存在且口令不同，本次已覆盖。若那台工作台用的是旧口令，请立即确认（auto-unlock 会随本文件失效）。');
+  }
   fs.writeFileSync(passFile, passphrase, { mode: 0o600 });
 
   // 3) 写入加密凭据（已有则原地更新）

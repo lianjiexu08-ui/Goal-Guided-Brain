@@ -35,7 +35,7 @@ async function start(t) {
     fs.rmSync(dir, { recursive: true, force: true });
     fs.rmSync(sessionDir, { recursive: true, force: true });
   });
-  return { app, base, env: { DSH_SESSION_DIR: sessionDir } };
+  return { app, base, env: { DSH_SESSION_DIR: sessionDir, WORKBENCH_DATA_DIR: path.join(dir, 'data') } };
 }
 
 test('ggb login 把密钥写入加密凭据库并启用供应商，重复登录复用同一凭据', async t => {
