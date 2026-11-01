@@ -67,6 +67,9 @@ function nodeChecks(root, warnings) {
     ['typecheck', '类型检查', ['typecheck', 'type-check', 'tsc']],
     ['lint', 'Lint', ['lint']],
     ['test', '测试', ['test', 'tests']],
+    // E2E 档（platform-reliability-plan #5）：真实浏览器行为验证（如 Playwright 加载
+    // Chrome 插件打 mock 站点）。独立于单测档——失败同样计入 verified/failed。
+    ['e2e', '端到端', ['e2e', 'test:e2e']],
     ['build', '构建', ['build']],
   ]) {
     const script = names.find((name) => typeof scripts[name] === 'string');
@@ -79,7 +82,7 @@ function nodeChecks(root, warnings) {
       command: bin,
       args,
       // test 脚本常见 watch 模式，CI 下必须单次执行。
-      env: id === 'test' ? { CI: '1' } : {},
+      env: id === 'test' || id === 'e2e' ? { CI: '1' } : {},
     });
   }
   if (!checks.length) warnings.push('package.json 没有 test / lint / typecheck / build 脚本，未生成检查。');
