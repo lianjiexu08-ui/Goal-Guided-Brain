@@ -37,8 +37,7 @@ test('团队 workspace 变更重绑会话', async (t) => {
   // 模拟招募会话绑定旧目录
   const control = app.platform.control;
   const store = control.store;
-  const session = store.saveSession(null, { title: '招募' }) || null;
-  // 用 db 直建一条 session（saveSession 需要 id）
+  // 直建一条招募会话绑定旧目录
   const sessionId = 'sess-' + Math.random().toString(36).slice(2);
   store.db.prepare('INSERT INTO sessions (id, role, workspace, title, createdAt) VALUES (?,?,?,?,?)')
     .run(sessionId, 'project_manager', dir, '招募', new Date().toISOString());
