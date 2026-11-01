@@ -7,6 +7,19 @@ import { migrate } from './migrations.mjs';
 import { Records } from './records.mjs';
 import { DEFAULT_PROFILE, profileContext, validateProfile } from './profile.mjs';
 
+/** 任务标题：取 prompt 首个非空行，放宽到 120 字符（原 65 字符在任务列表里不可辨）。 */
+function taskTitleFromPrompt(prompt) {
+  const text = String(prompt || '');
+  let firstLine = '';
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed) { firstLine = trimmed; break; }
+  }
+  if (!firstLine) firstLine = text.trim().slice(0, 120) || '（空任务）';
+  return firstLine.slice(0, 120);
+}
+
+
 export const ROLES = {
   project_manager: {
     name: '项目经理',
@@ -1052,7 +1065,7 @@ export class Store {
           sessionId,
           role,
           workspace,
-          prompt.slice(0, 65),
+          taskTitleFromPrompt(prompt),
           prompt,
           'queued',
           sourceTaskId || null,

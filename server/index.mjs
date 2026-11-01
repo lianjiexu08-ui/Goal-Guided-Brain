@@ -48,6 +48,7 @@ export function createWorkbench({
   const mcp = createOrchestrationHandler({
     control: platform.control,
     capabilities: platform.capabilities,
+    platform,
   });
   const publicTeamTimeline = (spaceId, options = {}) => store
     .teamTimeline(spaceId, options.limit, options.before)

@@ -42,7 +42,7 @@ test('团队 workspace 变更重绑会话', async (t) => {
   const sessionId = 'sess-' + Math.random().toString(36).slice(2);
   store.db.prepare('INSERT INTO sessions (id, role, workspace, title, createdAt) VALUES (?,?,?,?,?)')
     .run(sessionId, 'project_manager', dir, '招募', new Date().toISOString());
-  store.saveTeamSpace({ recruitment: { ...(team.recruitment || {}), sessionId, phase: 'confirmed' } }, team.id);
+  store.saveTeamSpace({ recruitment: { ...team.recruitment, sessionId, phase: 'confirmed' } }, team.id);
 
   // PUT 换目录 → 会话应重绑
   const { body: updated } = await api(`/teams/${team.id}`, {

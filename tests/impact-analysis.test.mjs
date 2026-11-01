@@ -99,3 +99,26 @@ test('汇总文本包含等级、文件统计与原因', async t => {
   assert.match(text, /数据库/);
   assert.match(text, /需要所有者确认/);
 });
+
+// ── 降噪：package.json 纯版本号 bump 不触发「依赖变更」因子（platform-reliability-plan #4）──
+test('package.json 纯元数据变更不判依赖变更', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ggb-impact-meta-'));
+  const git = (...args) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' }).toString();
+  git('init', '-q'); git('config', 'user.email', 't@t'); git('config', 'user.name', 't');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'x', version: '0.1.0', dependencies: { a: '^1.0.0' } }));
+  fs.writeFileSync(path.join(dir, 'app.js'), 'ok');
+  git('add', '-A'); git('commit', '-qm', 'base');
+  const baseCommit = git('rev-parse', 'HEAD').trim();
+  // 只改版本号
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'x', version: '0.2.0', dependencies: { a: '^1.0.0' } }));
+  const meta = await analyzeImpact({ path: dir, baseCommit, kind: 'worktree' });
+  assert.notEqual(meta.risk, 'unknown', 'diff 应可读取（baseCommit 需 trim）');
+  assert.ok(meta.files.includes('package.json'), '变更文件应包含 package.json');
+  assert.ok(!meta.categories.some(c => c.id === 'deps'), '纯版本号 bump 不应触发 deps 因子');
+
+  // 改依赖 → deps 因子恢复
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'x', version: '0.2.0', dependencies: { a: '^2.0.0', b: '^1.0.0' } }));
+  const dep = await analyzeImpact({ path: dir, baseCommit, kind: 'worktree' });
+  assert.ok(dep.categories.some(c => c.id === 'deps'), '依赖实质变化应触发 deps 因子');
+  fs.rmSync(dir, { recursive: true, force: true });
+});

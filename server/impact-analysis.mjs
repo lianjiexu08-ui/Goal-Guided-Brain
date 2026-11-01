@@ -1,4 +1,6 @@
 import { command } from './workspaces.mjs';
+import { readFile as readFileAsync } from 'node:fs/promises';
+import path from 'node:path';
 
 /**
  * 变更影响分析：根据工作树相对基准提交的差异，判定风险等级与通知范围。
@@ -28,6 +30,27 @@ const RULES = [
 const RISK_ORDER = { unknown: 0, low: 1, medium: 2, high: 3 };
 const RISK_LABEL = { low: '低', medium: '中', high: '高', unknown: '未知' };
 
+/**
+ * package.json 的依赖是否实质变化：分别取基准版与工作区版做结构化比较。
+ * 返回 true=依赖变了 / false=依赖未变 / null=无法判定（任一侧不可解析时保守放行原判定）。
+ */
+async function detectManifestDependencyChange(workspace, run) {
+  try {
+    const baseRaw = await run('git', ['show', `${workspace.baseCommit}:package.json`], { cwd: workspace.path, timeout: 30000 });
+    // 工作区版本直接读文件（index 可能滞后于未暂存改动）
+    const headRaw = await readFileAsync(path.join(workspace.path, 'package.json'), 'utf8');
+    const base = JSON.parse(baseRaw);
+    const head = JSON.parse(headRaw);
+    const depKeys = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies', 'scripts'];
+    for (const key of depKeys) {
+      if (JSON.stringify(base[key] ?? null) !== JSON.stringify(head[key] ?? null)) return true;
+    }
+    return false;
+  } catch {
+    return null; // 新文件/不可解析：无法判定，保留原判定
+  }
+}
+
 const classify = (files) => {
   const categories = new Map();
   for (const file of files) {
@@ -45,6 +68,7 @@ const classify = (files) => {
  * @param {{ path: string, baseCommit?: string|null, kind?: string, branch?: string|null }} workspace
  */
 export async function analyzeImpact(workspace, { run = command, largeChange = 25, hugeChange = 80 } = {}) {
+  if (workspace && typeof workspace.baseCommit === 'string') workspace = { ...workspace, baseCommit: workspace.baseCommit.trim() };
   if (!workspace?.path) return { risk: 'unknown', requiresAck: false, requiresNotice: false, reasons: ['执行目录不存在'], categories: [], files: [], baseCommit: null };
   if (!workspace.baseCommit || !['worktree', 'integration'].includes(workspace.kind || 'worktree')) {
     if (!workspace.baseCommit) {
@@ -77,6 +101,18 @@ export async function analyzeImpact(workspace, { run = command, largeChange = 25
   }
 
   const categories = classify(files);
+  // 降噪：package.json 只有版本号/描述等元数据变化、依赖实质未变时，不触发「依赖变更」因子。
+  // 证据：JustClick 迭代验收中纯 version bump 被误判 high，每次都要人工 ack（狼来了效应）。
+  const pkgChanged = files.some((file) => /(^|\/)package\.json$/i.test(file));
+  if (pkgChanged) {
+    const depsChanged = await detectManifestDependencyChange(workspace, run);
+    if (depsChanged === false) {
+      const depsIndex = categories.findIndex((category) => category.id === 'deps');
+      if (depsIndex >= 0) {
+        categories.splice(depsIndex, 1);
+      }
+    }
+  }
   const reasons = categories.map((category) => category.reason);
   let risk = 'low';
   for (const category of categories) {

@@ -93,6 +93,7 @@ const tools = [
   { name: 'submit_artifact', description: '提交产物位置、版本和验证证据；不会自动合并代码或发布。', inputSchema: objectSchema({ title: string, location: string, content: string, commit: string, evidence: string }, ['title', 'location', 'evidence']) },
   { name: 'read_board', description: '读取当前任务组的共享任务板和版本。', inputSchema: objectSchema() },
   { name: 'read_shared_context', description: '读取当前团队及双向协作团队共享的跨团队上下文（决定、发现、状态、产物索引）。只读，只返回已建立双向协作关系团队的内容。', inputSchema: objectSchema() },
+  { name: 'sync_delivery', description: '把指定已完成任务的交付快照（hash manifest）按平台侧复制同步到当前执行目录。用于接手前一轮交付的代码，禁止手工转录。入参：sourceTaskId（必填，交付来源任务）。', inputSchema: objectSchema({ sourceTaskId: string }, ['sourceTaskId']) },
   { name: 'share_context', description: '发布一条跨团队共享上下文（如关键决定、可复用结论、产物位置），供与本团队双向协作的其他团队阅读。同一 key 重复发布视为更新。', inputSchema: objectSchema({ key: string, title: string, content: string, kind: { type: 'string', enum: ['decision', 'finding', 'status', 'artifact', 'note'] }, expectedRevision: { type: 'integer', minimum: 1 } }, ['key', 'title', 'content']) },
   { name: 'update_board', description: '保存共享结论；更新已有记录必须使用读取到的 revision，避免覆盖并发修改。', inputSchema: objectSchema({ id: string, title: string, content: string, expectedRevision: { type: 'integer', minimum: 1 } }, ['title', 'content']) },
   { name: 'request_attention', description: '向所有者报告需要决定、凭据或人工核验的阻塞事项。', inputSchema: objectSchema({ title: string, content: string, kind: string }, ['title', 'content']) },
@@ -102,7 +103,7 @@ const tools = [
   { name: 'complete_operation', description: '保存外部操作结果和证据。无法确认是否已执行时标为 unknown。', inputSchema: objectSchema({ id: string, status: { type: 'string', enum: ['succeeded', 'failed', 'unknown'] }, evidence: string }, ['id', 'status', 'evidence']) },
 ];
 
-export function createOrchestrationServer({ control, token, capabilities }) {
+export function createOrchestrationServer({ control, token, capabilities, platform } = {}) {
   // eslint-disable-next-line typescript/no-deprecated -- The low-level server accepts the shared JSON tool schemas directly.
   const server = new Server({ name: 'dsh-workbench-orchestration', version: '1.0.0' }, { capabilities: { tools: {} } });
   server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -313,6 +314,13 @@ export function createOrchestrationServer({ control, token, capabilities }) {
         case 'select_sample': response = control.selectSample(input, principal); break;
         case 'submit_artifact': response = control.saveScoped('artifacts', input, principal); break;
         case 'read_board': response = { items: control.records.list('board').filter(record => record.groupId === principal.groupId).slice(0, 100) }; break;
+        case 'sync_delivery': {
+          if (!platform?.syncDelivery) { response = { error: '平台未启用交付快照同步。' }; break; }
+          try {
+            response = platform.syncDelivery(typeof input.sourceTaskId === 'string' ? input.sourceTaskId : '', principal?.taskId || '');
+          } catch (error) { response = { error: String(error.message || error).slice(0, 300) }; }
+          break;
+        }
         case 'read_shared_context': response = control.readSharedContext(principal); break;
         case 'share_context': response = control.shareContext(input, principal); break;
         case 'update_board': response = control.saveScoped('board', input, principal, input.id); break;
@@ -339,7 +347,7 @@ export function createOrchestrationServer({ control, token, capabilities }) {
   return server;
 }
 
-export function createOrchestrationHandler({ control, capabilities }) {
+export function createOrchestrationHandler({ control, capabilities, platform } = {}) {
   return async (req, res, parsedBody) => {
     const token = bearer(req);
     try { control.validateInstanceToken(token); }
@@ -348,7 +356,7 @@ export function createOrchestrationHandler({ control, capabilities }) {
       res.end(JSON.stringify({ error: error.message }));
       return;
     }
-    const server = createOrchestrationServer({ control, token, capabilities });
+    const server = createOrchestrationServer({ control, token, capabilities, platform });
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     try {
       await server.connect(transport);
