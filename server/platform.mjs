@@ -42,6 +42,31 @@ const statuses = new Set(['queued', 'running', 'waiting', 'state_unknown']);
 const publicNode = ({ tokenHash: _token, ...node }) => node;
 const shellQuote = (value) => `'${String(value).replace(/'/g, `'"'"'`)}'`;
 
+/**
+ * Decide whether the most recent tool calls are the same call repeated.
+ *
+ * `recent` must be ordered newest first: `records.listByTask` returns
+ * `createdAt DESC`, and the caller slices the head of that list. Passing the
+ * tail (oldest events) silently disabled the circuit breaker, because the
+ * current call was then compared against history rather than against itself.
+ */
+export function loopDetected(recent, signature, window = 4) {
+  if (!signature || recent.length < window) return false;
+  const signatures = recent
+    .slice(0, window)
+    .map((item) => toolCallSignature(item.data));
+  return signatures.every((value) => value && value === signature);
+}
+
+/** Stable identity of a tool call: tool name plus its arguments. */
+export function toolCallSignature(data) {
+  const payload = data || {};
+  const name = payload.name || payload.tool || payload.toolName || '';
+  if (!name) return null;
+  const args = JSON.stringify(payload.arguments ?? payload.args ?? payload.input ?? {});
+  return createHash('sha1').update(`${name}:${args}`).digest('hex');
+}
+
 export function createPlatform({
   store,
   dataDir,
@@ -711,11 +736,7 @@ export function createPlatform({
   const LOOP_WINDOW = 4;
   function eventSignature(clean) {
     if (clean.type !== 'tool/call') return null;
-    const data = clean.data || {};
-    const name = data.name || data.tool || data.toolName || '';
-    if (!name) return null;
-    const args = JSON.stringify(data.arguments ?? data.args ?? data.input ?? {});
-    return createHash('sha1').update(`${name}:${args}`).digest('hex');
+    return toolCallSignature(clean.data);
   }
   function detectLoop(task, clean) {
     const signature = eventSignature(clean);
@@ -726,13 +747,14 @@ export function createPlatform({
     if (!job || ['paused', 'cancelled', 'completed', 'failed', 'blocked'].includes(job.status)) return;
     const execution = records.get('executions', task.id);
     if (!execution || execution.status !== 'running') return;
+    // listByTask returns newest first, so the window is the *head* of the list.
+    // Taking the tail compared the current call against the oldest events in
+    // the task, which meant a genuine loop was never detected.
     const recent = records
       .listByTask('task-events', task.id)
       .filter((item) => item.type === 'tool/call')
-      .slice(-LOOP_WINDOW);
-    if (recent.length < LOOP_WINDOW) return;
-    const signatures = recent.map((item) => eventSignature({ type: 'tool/call', data: item.data }));
-    if (!signatures.every((value) => value && value === signature)) return;
+      .slice(0, LOOP_WINDOW);
+    if (!loopDetected(recent, signature, LOOP_WINDOW)) return;
     // 触发熔断：暂停任务并撤销执行权限，等待所有者处理，而不是任由空转烧 token。
     const toolName = (clean.data || {}).name || (clean.data || {}).tool || 'unknown';
     control.attention({
