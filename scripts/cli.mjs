@@ -834,37 +834,6 @@ const deliverUsage = `用法：
  * 识别「验收标准/验收/验收要求/Definition of Done」标题下的列表项与编号项，
  * 取前 20 条；找不到验收章节则回退空数组（门禁对无清单任务不生效）。
  */
-export function extractAcceptanceFromWorkspaceForTesting(workspace) {
-  return extractAcceptanceFromWorkspace(workspace);
-}
-
-function extractAcceptanceFromWorkspace(workspace) {
-  const items = [];
-  for (const name of ['PRD.md', 'prd.md', 'README.md', '需求.md']) {
-    const file = path.join(workspace, name);
-    if (!fs.existsSync(file)) continue;
-    const text = fs.readFileSync(file, 'utf8');
-    const lines = text.split('\n');
-    let inSection = false;
-    for (const line of lines) {
-      const heading = line.match(/^#{1,4}\s*(.*)$/);
-      if (heading) {
-        inSection = /验收|acceptance|DoD|交付标准/i.test(heading[1]);
-        continue;
-      }
-      if (!inSection) continue;
-      const entry = line.match(/^\s*(?:[-*•]|\d+[.、)])\s+(.*)$/);
-      if (!entry) continue;
-      const requirement = entry[1].replace(/`/g, '').trim();
-      if (requirement.length < 4 || requirement.length > 300) continue;
-      items.push({ id: `ac-${items.length + 1}`, requirement, verifyHint: '' });
-      if (items.length >= 20) break;
-    }
-    if (items.length) break;
-  }
-  return items;
-}
-
 async function deliver(args) {
   const goal = args.filter(arg => !arg.startsWith('--') && arg !== valueAfter(args, '--workspace', '\0') && arg !== valueAfter(args, '--team', '\0') && arg !== valueAfter(args, '--timeout', '\0')).join(' ').trim();
   if (!goal) { console.log(deliverUsage); return; }
@@ -976,20 +945,7 @@ async function deliver(args) {
   const taskId = messageResult.taskId;
   console.error(`  ✓ 已派活（任务 ${taskId || '异步'}）`);
 
-  // Step 4.5: 结构化验收清单（platform-reliability-plan #1）——从工作区 PRD 提取
-  // 验收标准自动登记，未全绿时 accept 会被门禁拦下。没有清单 = 门禁不生效，
-  // 所以「自动登记」是门禁默认生效的前提。
-  if (taskId) {
-    try {
-      const items = extractAcceptanceFromWorkspace(workspace);
-      if (items.length) {
-        await workbenchFetch(args, `tasks/${taskId}/checklist`, { method: 'POST', body: { items } });
-        console.error(`  ✓ 已登记验收清单（${items.length} 条，来自 PRD 验收标准）`);
-      }
-    } catch (error) {
-      console.error(`  ⚠ 验收清单登记失败：${error.message}（不影响派活）`);
-    }
-  }
+  // 结构化验收清单已由服务端在派活时自动登记（PRD 验收章节提取，platform-reliability-plan #1）。
 
   // Step 5: 跟踪进展
   if (watch || !taskId) {

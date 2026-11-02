@@ -86,8 +86,7 @@ test('生命周期：CLI 脚本引用的 child_process 方法必须已导入（s
 });
 
 test('生命周期：deliver 验收清单提取器——PRD 验收章节 → 条目（无章节回退空）', async () => {
-  // 提取函数经 cli.mjs 显式导出（避免 implied eval）
-  const { extractAcceptanceFromWorkspaceForTesting: extract } = await import('../scripts/cli.mjs');
+  const extract = (await import('../server/acceptance-extract.mjs')).extractAcceptanceFromWorkspace;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ggb-accept-prd-'));
   try {
     fs.writeFileSync(path.join(dir, 'PRD.md'), [
@@ -100,13 +99,13 @@ test('生命周期：deliver 验收清单提取器——PRD 验收章节 → 条
       '## 其他',
       '- 这条不应被收集',
     ].join('\n'));
-    const items = extract(dir, fs, path);
+    const items = extract(dir);
     assert.equal(items.length, 3);
     assert.match(items[0].requirement, /A 功能/);
     assert.deepEqual(items.map((item) => item.id), ['ac-1', 'ac-2', 'ac-3']);
     // 无验收章节 → 空（门禁不生效但不报错）
     fs.writeFileSync(path.join(dir, 'PRD.md'), '# 项目\n- 普通列表\n');
-    assert.equal(extract(dir, fs, path).length, 0);
+    assert.equal(extract(dir).length, 0);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

@@ -91,3 +91,53 @@ test('验收清单：登记/挂证据/门禁拦截/force 留痕', async (t) => {
   });
   assert.equal(evidence2.body.items[0].evidence.hash, 'a'.repeat(64));
 });
+
+test('验收清单：团队消息派活自动登记 PRD 验收章节（服务端统一收口）', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ggb-checklist-auto-'));
+  const ws = path.join(dir, 'proj');
+  fs.mkdirSync(ws, { recursive: true });
+  fs.writeFileSync(path.join(ws, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0' }));
+  fs.writeFileSync(path.join(ws, 'PRD.md'), [
+    '# 功能',
+    '## 验收标准',
+    '- 支持自动登记验收清单',
+    '- 门禁未全绿阻止验收',
+  ].join('\n'));
+  fs.writeFileSync(path.join(dir, 'secrets.json'), JSON.stringify({ apiKey: 'k' }), { mode: 0o600 });
+  const app = createWorkbench({ dataDir: dir, workspace: ws });
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  t.after(async () => {
+    await app.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  await app.ready;
+  const api = async (endpoint, options = {}) => {
+    const response = await fetch(`${base}/api${endpoint}`, {
+      headers: { 'Content-Type': 'application/json' },
+      ...options,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+    const text = await response.text();
+    return { status: response.status, body: text ? JSON.parse(text) : null };
+  };
+
+  const { body: team } = await api('/teams', {
+    method: 'POST',
+    body: { name: '清单自动登记', goal: 'g', purpose: 'p', pmRoleId: 'project_manager', memberRoleIds: ['project_manager'] },
+  });
+  assert.ok(team?.id);
+  await api(`/teams/${team.id}`, { method: 'PUT', body: { workspace: ws } });
+
+  const { body: message } = await api(`/teams/${team.id}/messages`, {
+    method: 'POST',
+    body: { clientMessageId: 'auto-checklist-1', content: '开发功能' },
+  });
+  const taskId = message?.taskId;
+  assert.ok(taskId, '消息派活应产生任务');
+
+  const view = await api(`/tasks/${taskId}/checklist`);
+  assert.equal(view.status, 200, '顶层任务应自动登记验收清单');
+  assert.equal(view.body.items.length, 2, 'PRD 验收章节 2 条应全部登记');
+  assert.match(view.body.items[0].requirement, /自动登记/);
+});

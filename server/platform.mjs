@@ -10,6 +10,7 @@ import { assessCapabilityRisk, CapabilityService, inspectBundle } from './capabi
 import { AutomationService, scheduleNextTimes, runCheck } from './automation.mjs';
 import { WorkspaceManager } from './workspaces.mjs';
 import { command } from './workspaces.mjs';
+import { extractAcceptanceFromWorkspace } from './acceptance-extract.mjs';
 import { backupDatabase } from './migrations.mjs';
 import {
   createCapabilityGateway,
@@ -178,6 +179,15 @@ export function createPlatform({
     if (nodeId !== 'local' && !records.get('nodes', nodeId))
       throw new Error('执行节点不存在。');
     const task = store.createTask({ ...input, workspace });
+    // 自动登记验收清单（platform-reliability-plan #1 收口）：
+    // 顶层任务 + 工作区有 PRD 验收章节 → 自动提取登记（幂等），门禁默认生效。
+    // 子任务（delegate_task 派生）不自动登记，避免小任务被顶层清单绑架；PM 可显式登记。
+    if (!input.parentTaskId) {
+      try {
+        const autoItems = extractAcceptanceFromWorkspace(workspace);
+        if (autoItems.length) setAcceptanceChecklist(task.id, autoItems);
+      } catch { /* 清单提取失败不影响派活 */ }
+    }
     const acceptance = typeof input.acceptance === 'string' ? input.acceptance.slice(0, 20000) : '';
     if (!input.jobId)
       records.save(
