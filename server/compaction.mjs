@@ -13,6 +13,29 @@
 
 const CHARS_PER_TOKEN = 4;
 
+/**
+ * Sort entries oldest-first.
+ *
+ * The timestamp field varies by collection (`createdAt` on records, `at` on
+ * session entries, `updatedAt` as a fallback). Entries with no usable
+ * timestamp keep their incoming relative order, so an already-ordered list is
+ * left untouched and a list with mixed metadata stays stable.
+ */
+export function chronological(entries) {
+  const list = Array.isArray(entries) ? entries : [];
+  const at = (entry) =>
+    String(entry?.createdAt || entry?.at || entry?.updatedAt || '');
+  return list
+    .map((entry, index) => ({ entry, index, key: at(entry) }))
+    .sort((a, b) => {
+      if (a.key && b.key && a.key !== b.key) return a.key < b.key ? -1 : 1;
+      if (a.key && !b.key) return -1;
+      if (!a.key && b.key) return 1;
+      return a.index - b.index;
+    })
+    .map(({ entry }) => entry);
+}
+
 export function estimateTokens(value) {
   return Math.ceil((typeof value === 'string' ? value : JSON.stringify(value ?? '')).length / CHARS_PER_TOKEN);
 }
@@ -47,10 +70,15 @@ export function compactContext(entries, options = {}) {
     keepRecentCheckpoints = 4,
     maxBoardEntries = 40,
   } = options;
+  // Callers read these lists straight out of SQLite, where records order by
+  // createdAt DESC (newest first). "Keep the most recent N" below assumes
+  // conversation order, so normalize here rather than relying on every caller:
+  // with a reversed list the function kept the *oldest* entries verbatim and
+  // summarized the newest, which is exactly backwards.
   const source = {
-    checkpoints: Array.isArray(entries?.checkpoints) ? entries.checkpoints : [],
-    board: Array.isArray(entries?.board) ? entries.board : [],
-    messages: Array.isArray(entries?.messages) ? entries.messages : [],
+    checkpoints: chronological(entries?.checkpoints),
+    board: chronological(entries?.board),
+    messages: chronological(entries?.messages),
   };
   const tokensBefore = estimateTokens(source);
   const totalEntries = source.checkpoints.length + source.board.length + source.messages.length;

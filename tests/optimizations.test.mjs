@@ -39,6 +39,43 @@ test('compactContext：预算内不压缩，超限后保留最近条目全文并
   assert.ok(context.messages[0].content.length < messages[0].content.length);
 });
 
+test('compactContext：接受最新在前的列表，仍保留真正的最近条目', () => {
+  // contextFor feeds records.list() output straight in, which is createdAt DESC.
+  // Before normalizing, "keep the most recent N" kept the *oldest* N verbatim
+  // and summarized the newest ones — backwards from the stated contract.
+  const newestFirst = Array.from({ length: 20 }, (_, i) => {
+    const n = 19 - i;
+    return {
+      id: `m${n}`,
+      createdAt: `2026-01-01T00:${String(n).padStart(2, '0')}:00.000Z`,
+      content: `内容${n} `.repeat(60),
+    };
+  });
+  const { context, compaction } = compactContext(
+    { checkpoints: [], board: [], messages: newestFirst },
+    { maxTokens: 100, keepRecentMessages: 3 },
+  );
+  assert.ok(compaction);
+  const kept = context.messages.filter((entry) => !entry.compacted).map((entry) => entry.id);
+  assert.deepEqual(kept, ['m17', 'm18', 'm19'], '保留的是时间上最新的三条');
+  assert.equal(compaction.firstKeptMessageId, 'm17');
+  assert.equal(compaction.summarizedMessages, 17);
+  assert.equal(context.messages[0].compacted, true, '更早的条目被摘要');
+});
+
+test('compactContext：缺时间戳时保持传入顺序', () => {
+  const noTimestamps = Array.from({ length: 30 }, (_, i) => ({ id: `x${i}`, content: `c${i} `.repeat(80) }));
+  const { context, compaction } = compactContext(
+    { checkpoints: [], board: [], messages: noTimestamps },
+    { maxTokens: 100, keepRecentMessages: 4 },
+  );
+  assert.ok(compaction);
+  assert.deepEqual(
+    context.messages.filter((entry) => !entry.compacted).map((entry) => entry.id),
+    ['x26', 'x27', 'x28', 'x29'],
+  );
+});
+
 test('compactContext：强制收敛与空输入', () => {
   const forced = compactContext({ checkpoints: [], board: [], messages: Array.from({ length: 500 }, (_, i) => ({ id: `m${i}` })) }, { maxTokens: 0 });
   assert.ok(forced.compaction);
