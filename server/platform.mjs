@@ -1164,7 +1164,15 @@ export function createPlatform({
   function forkTask(taskId, { uptoEntryId, title } = {}, _principal = { type: 'owner' }) {
     const task = store.task(taskId);
     if (!task) throw new Error('源任务不存在。');
-    const entries = records.listByTask('session-entries', taskId);
+    // listByTask returns newest-first, but a branch summary needs conversation
+    // order: it reads the goal from the first message and keeps the *last*
+    // tool pairs. Feeding it a reversed list picked the latest message as the
+    // goal, and `uptoEntryId` then sliced from the wrong end (keeping the newer
+    // half instead of everything up to the fork point).
+    const entries = records
+      .listByTask('session-entries', taskId)
+      .sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')) ||
+        String(a.id).localeCompare(String(b.id)));
     if (!entries.length) throw new Error('源任务没有可分叉的会话记录。');
     let scoped = entries;
     if (uptoEntryId) {

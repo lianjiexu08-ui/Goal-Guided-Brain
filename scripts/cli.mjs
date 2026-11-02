@@ -471,7 +471,10 @@ function renderTeamStatus(team, tasksOptions = [], options = {}) {
   console.log(`团队：${team.name} (${team.id})  阶段：${team.recruitment?.phase || 'unknown'}  状态：${team.status}`);
   if (team.goal) console.log(`目标：${team.goal}`);
   const messages = team.messages || [];
-  const recent = messages.slice(-8);
+  // team.messages is newest-first (records.list orders createdAt DESC); take
+  // the head for the most recent messages, then restore chronological order
+  // so the transcript still reads top-to-bottom.
+  const recent = messages.slice(0, 8).slice().reverse();
   if (recent.length) {
     console.log('\n最近消息：');
     for (const message of recent) {
@@ -1422,7 +1425,7 @@ async function events(args) {
       if (signature !== last) {
         last = signature;
         print({ ...task, type: 'task', at: task.updatedAt });
-        for (const event of (task.events || []).slice(-5))
+        for (const event of (task.events || []).slice(0, 5).reverse())
           print({ ...event, type: event.type || 'event' });
         if (once) break;
       }
@@ -2276,7 +2279,9 @@ async function logsCommand(args) {
   const events = data.events || [];
   if (events.length) {
     console.log(`\n事件（最近 ${Math.min(tail, events.length)} 条）：`);
-    for (const event of events.slice(-tail)) {
+    // data.events is newest-first; the newest `tail` entries are the head, and
+    // reversing keeps the printed list ascending like the log above it.
+    for (const event of events.slice(0, tail).reverse()) {
       const type = event.type || 'event';
       const at = event.at || '';
       const detail = JSON.stringify(event.data || {}).slice(0, 120);

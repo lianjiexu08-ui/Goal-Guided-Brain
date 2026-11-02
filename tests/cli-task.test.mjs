@@ -259,3 +259,50 @@ test('ggb task session 查看 fork 创建分支', async t => {
   assert.equal(forkedMeta.forkedFrom, created.id);
   assert.match(String(forkedMeta.contextExtra || ''), /分支摘要/);
 });
+
+test('ggb task fork 按会话顺序生成分支摘要，分叉点取历史而非新半段', async t => {
+  // records.listByTask returns session entries newest-first. branchSummary
+  // expects conversation order: it takes the goal from the first message and
+  // keeps the *last* tool pairs. Before the fix the fork summarized the wrong
+  // half of the conversation and used the newest message as the goal.
+  let started = false;
+  const { base, env, app } = await startWorkbench(t, options => ({
+    options,
+    start(_prompt) {
+      started = true;
+      const baseTime = Date.parse('2026-01-01T00:00:00.000Z');
+      for (let i = 1; i <= 8; i++) {
+        options.sessionLog?.({
+          id: `m${i}`,
+          parentId: i === 1 ? null : `m${i - 1}`,
+          taskId: options.task.id,
+          type: 'message',
+          data: { text: `消息${i}` },
+          at: new Date(baseTime + i * 1000).toISOString(),
+        });
+      }
+    },
+    cancel() { options.onDone('cancelled', ''); },
+    enqueue() { return { queued: true, id: 'q' }; },
+  }));
+  const created = await (await fetch(`${base}/api/tasks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role: 'developer', prompt: '分叉顺序测试' }),
+  })).json();
+  await waitFor(() => started);
+  await waitFor(() => (app.store.records.listByTask('session-entries', created.id).length >= 8));
+
+  // 在 m4 处分叉：摘要应覆盖 m1..m4，goal 为第一条消息。
+  const fork = await runCli(['task', 'fork', created.id, '--entry', 'm4', '--title', '分支继续', '--api', base], { env });
+  assert.equal(fork.code, 0, fork.stderr);
+  const forkedTaskId = fork.stdout.match(/新任务 ([\w-]+)/)?.[1];
+  assert.ok(forkedTaskId);
+
+  const meta = app.store.records.get('task-meta', forkedTaskId);
+  const contextExtra = String(meta.contextExtra || '');
+  assert.match(contextExtra, /分支摘要/);
+  assert.equal(meta.forkEntryId, 'm4');
+  assert.match(contextExtra, /"entryCount":4/, '摘要应只包含分叉点及之前的历史');
+  assert.match(contextExtra, /"goal":"消息1"/, 'goal 取会话第一条消息，而不是最新一条');
+});
