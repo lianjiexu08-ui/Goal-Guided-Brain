@@ -9,18 +9,36 @@ import { createServer } from 'node:http';
 
 const cli = path.resolve('scripts/cli.mjs');
 
-function runCli(args, { env = {}, input = '', timeoutMs = 20000 } = {}) {
+function runCli(args, { env = {}, input = '', timeoutMs = 60000 } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cli, ...args], {
       env: { ...process.env, PATH: process.env.PATH, ...env },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-    let stdout = '', stderr = '';
+    let stdout = '', stderr = '', settled = false;
     child.stdout.on('data', chunk => { stdout += chunk; });
     child.stderr.on('data', chunk => { stderr += chunk; });
-    child.on('error', reject);
-    const timer = setTimeout(() => { try { child.kill('SIGKILL'); } catch {} resolve({ code: null, stdout, stderr }); }, timeoutMs);
-    child.on('close', code => { clearTimeout(timer); resolve({ code, stdout, stderr }); });
+    child.on('error', error => { settled = true; reject(error); });
+    // A timeout used to resolve with `code: null`, which made a slow start under
+    // parallel load surface as a bogus assertion failure in whatever the test
+    // checked next.  Fail loudly instead, with the details needed to tell a
+    // genuinely hung CLI from a merely slow one.
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try { child.kill('SIGKILL'); } catch {}
+      const tail = value => (value.length > 800 ? `…${value.slice(-800)}` : value) || '(空)';
+      reject(new Error(
+        `CLI 在 ${timeoutMs}ms 内没有退出：ggb ${args.join(' ')}\n` +
+        `--- stdout ---\n${tail(stdout)}\n--- stderr ---\n${tail(stderr)}`,
+      ));
+    }, timeoutMs);
+    child.on('close', code => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ code, stdout, stderr });
+    });
     if (input) child.stdin.end(input);
     else child.stdin.end();
   });

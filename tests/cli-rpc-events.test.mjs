@@ -15,14 +15,33 @@ function runCli(args, { env = {}, input = '', timeoutMs = 15000 } = {}) {
       env: { ...process.env, PATH: process.env.PATH, ...env },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-    let stdout = '', stderr = '';
+    let stdout = '', stderr = '', settled = false;
     child.stdout.on('data', chunk => { stdout += chunk; });
     child.stderr.on('data', chunk => { stderr += chunk; });
-    child.on('error', reject);
-    const timer = setTimeout(() => { child.kill('SIGKILL'); resolve({ code: null, stdout, stderr, killed: true }); }, timeoutMs);
-    child.on('close', code => { clearTimeout(timer); resolve({ code, stdout, stderr }); });
+    child.on('error', error => { settled = true; reject(error); });
+    // Resolving with `code: null` hid hangs behind unrelated assertion
+    // failures; fail with the command and both streams instead.  Tests that
+    // end a long-lived stream on purpose settle themselves before this fires.
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill('SIGKILL');
+      reject(new Error(timeoutMessage(args, timeoutMs, stdout, stderr)));
+    }, timeoutMs);
+    child.on('close', code => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ code, stdout, stderr });
+    });
     child.stdin.end(input);
   });
+}
+
+function timeoutMessage(args, timeoutMs, stdout, stderr) {
+  const tail = value => (value.length > 800 ? `…${value.slice(-800)}` : value) || '(空)';
+  return `CLI 在 ${timeoutMs}ms 内没有退出：ggb ${args.join(' ')}\n` +
+    `--- stdout ---\n${tail(stdout)}\n--- stderr ---\n${tail(stderr)}`;
 }
 
 async function start(t) {
@@ -119,18 +138,38 @@ test('ggb events --team 使用团队事件流输出任务与消息', async t => 
       env: { ...process.env, PATH: process.env.PATH, ...env },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-    let stdout = '', stderr = '';
+    let stdout = '', stderr = '', settled = false;
     child.stdout.on('data', chunk => {
       stdout += chunk;
-      if (/事件流内容|hello|team/.test(stdout)) {
+      if (!settled && /事件流内容|hello|team/.test(stdout)) {
+        settled = true;
+        clearTimeout(timer);
         child.kill('SIGKILL');
         resolve({ code: null, stdout, stderr, killed: true });
       }
     });
     child.stderr.on('data', chunk => { stderr += chunk; });
-    child.on('error', reject);
-    const timer = setTimeout(() => { child.kill('SIGKILL'); resolve({ code: null, stdout, stderr, killed: true }); }, 15000);
-    child.on('close', code => { clearTimeout(timer); resolve({ code, stdout, stderr }); });
+    child.on('error', error => { settled = true; reject(error); });
+    // The stream never ends by itself: hitting the match above is the normal
+    // path.  If that never happens the run is genuinely broken (no connection,
+    // wrong event format), so fail instead of resolving with `killed: true`
+    // and leaving the assertion below to report it as a mismatched string.
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill('SIGKILL');
+      reject(new Error(
+        `事件流在 15s 内没有输出预期内容：ggb ${['events', '--team', team.id].join(' ')}\n` +
+        `--- stdout ---\n${stdout.slice(-800) || '(空)'}\n` +
+        `--- stderr ---\n${stderr.slice(-800) || '(空)'}`,
+      ));
+    }, 15000);
+    child.on('close', code => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ code, stdout, stderr });
+    });
   });
   // 事件流不会自行结束（kill 后 code=null），只要输出包含事件即可
   assert.match(result.stdout, /事件流内容|hello|team/);
