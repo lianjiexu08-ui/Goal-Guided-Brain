@@ -34,12 +34,18 @@ if (fs.existsSync(pidFile)) {
   }
 }
 fs.writeFileSync(pidFile, String(process.pid), { mode: 0o600 });
+const childrenFile = path.join(dataDir, 'service.children.json');
+// Spawn with absolute paths: `ps` then shows which checkout a process belongs
+// to, so scripts/stop.mjs can verify ownership before terminating anything it
+// finds left over.
+const apiScript = path.join(process.cwd(), 'server', 'index.mjs');
+const uiScript = path.join(process.cwd(), 'node_modules', 'vinext', 'dist', 'cli.js');
 const children = [
-  spawn(process.execPath, ['server/index.mjs'], { stdio: 'inherit' }),
+  spawn(process.execPath, [apiScript], { stdio: 'inherit' }),
   spawn(
     process.execPath,
     [
-      'node_modules/vinext/dist/cli.js',
+      uiScript,
       'start',
       '--hostname',
       '127.0.0.1',
@@ -49,6 +55,23 @@ const children = [
     { stdio: 'inherit' },
   ),
 ];
+// The UI child is recorded nowhere else (only the API writes control.lock), so
+// without this file an abruptly killed supervisor strands it holding the UI
+// port with nothing left pointing at it.  Deliberately *not* removed by the
+// exit handler below unless the children are really gone — it has to outlive
+// an abnormal exit to be useful.
+try {
+  fs.writeFileSync(
+    childrenFile,
+    JSON.stringify(children.map((child, index) => ({
+      pid: child.pid,
+      script: index === 0 ? apiScript : uiScript,
+    }))),
+    { mode: 0o600 },
+  );
+} catch {
+  /* Recovery metadata is best-effort; never block startup on it. */
+}
 let stopping = false;
 function stop(code = 0) {
   if (stopping) return;
@@ -61,6 +84,12 @@ process.on('exit', () => {
     if (fs.readFileSync(pidFile, 'utf8') === String(process.pid))
       fs.unlinkSync(pidFile);
   } catch {}
+  // Only drop the child record once the children are really gone; on an
+  // abnormal exit it is the sole trace of the orphaned UI process.
+  try {
+    if (children.every((child) => child.exitCode !== null || child.signalCode))
+      fs.unlinkSync(childrenFile);
+  } catch {}
 });
 for (const child of children) {
   child.on('error', (error) => {
@@ -71,3 +100,8 @@ for (const child of children) {
 }
 process.on('SIGINT', () => stop());
 process.on('SIGTERM', () => stop());
+// Closing the terminal sends SIGHUP.  Node's default action terminates the
+// process without running stop(), which left the children re-parented to init
+// while the exit handler above removed service.pid — a state that neither
+// `npm run stop` nor `npm start` could recover from.
+process.on('SIGHUP', () => stop());
