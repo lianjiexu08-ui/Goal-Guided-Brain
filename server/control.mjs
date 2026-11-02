@@ -971,7 +971,14 @@ export class ControlPlane {
         latestVerificationId: delivery.latestVerificationId,
         latestVerificationAt: delivery.latestVerificationAt,
       },
-      messages: this.store.teamMessages(target.id).filter(message => message.taskId === task.id).slice(-20),
+      // teamMessages comes from records.list() (newest first), so the most
+      // recent handoff context is the head of the list.  Slicing the tail
+      // showed the earliest messages of the delegated task instead.
+      messages: this.store
+        .teamMessages(target.id)
+        .filter((message) => message.taskId === task.id)
+        .slice(0, 20)
+        .reverse(),
     };
   }
   sendMessage(body, principal) {

@@ -200,6 +200,35 @@ function collaboratingTeam(t, fixture, sourceTeam) {
   return { team: store.teamSpace(other.id), principal };
 }
 
+test('跨团队读取任务回传最近的消息，且按时间正序', t => {
+  // teamMessages comes from records.list() (createdAt DESC). readTeamTask used
+  // to slice the tail, so the handoff preview showed the delegated task's
+  // *earliest* messages instead of its latest progress.
+  const fixture = confirmedTeam(t);
+  const { store, control, team, principal } = fixture;
+  const other = collaboratingTeam(t, fixture, team);
+
+  const job = control.createJob({ role: other.team.pmRoleId, prompt: '协作任务', teamId: other.team.id, spaceId: other.team.id });
+  const taskId = job.taskId;
+  for (let i = 1; i <= 25; i += 1) {
+    store.saveTeamMessage({
+      spaceId: other.team.id,
+      taskId,
+      content: `进展${String(i).padStart(2, '0')}`,
+      senderType: 'team',
+    }, `handoff-msg-${String(i).padStart(2, '0')}`);
+  }
+
+  const read = control.readTeamTask({ taskId }, principal);
+  assert.equal(read.taskId, taskId);
+  assert.equal(read.messages.length, 20, '最多回传 20 条');
+  // 最新一条必须在列，最早一条被截断——这正是旧实现反过来的地方。
+  assert.equal(read.messages.at(-1).content, '进展25');
+  assert.equal(read.messages[0].content, '进展06');
+  const times = read.messages.map((message) => String(message.createdAt || ''));
+  assert.deepEqual(times, [...times].sort((a, b) => a.localeCompare(b)), '按时间正序返回，便于直接展示');
+});
+
 test('跨团队共享上下文：双向协作团队可读，未授权团队不可见', t => {
   const fixture = confirmedTeam(t);
   const { store, control, team, principal } = fixture;
