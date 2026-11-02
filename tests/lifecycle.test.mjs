@@ -84,3 +84,33 @@ test('生命周期：CLI 脚本引用的 child_process 方法必须已导入（s
   }
   assert.ok(used.has('spawn'), '脚本应仍在使用 spawn（restart 依赖）；若移除请同步更新本卫兵');
 });
+
+test('生命周期：deliver 验收清单提取器——PRD 验收章节 → 条目（无章节回退空）', () => {
+  // 从 cli.mjs 源码取出提取函数直接驱动（未导出，用 new Function 隔离执行）
+  const source = read('../scripts/cli.mjs');
+  const fnSource = source.match(/function extractAcceptanceFromWorkspace\(workspace\) \{[\s\S]*?\n\}/)?.[0];
+  assert.ok(fnSource, '提取函数应存在');
+  const extract = new Function('workspace', 'fs', 'path', `${fnSource}; return extractAcceptanceFromWorkspace(workspace);`);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ggb-accept-prd-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'PRD.md'), [
+      '# 项目',
+      '## 验收标准',
+      '- 实现 A 功能并通过单测',
+      '2. B 页面填充后高亮 2 秒',
+      '* 开放问题必须为空',
+      '',
+      '## 其他',
+      '- 这条不应被收集',
+    ].join('\n'));
+    const items = extract(dir, fs, path);
+    assert.equal(items.length, 3);
+    assert.match(items[0].requirement, /A 功能/);
+    assert.deepEqual(items.map((item) => item.id), ['ac-1', 'ac-2', 'ac-3']);
+    // 无验收章节 → 空（门禁不生效但不报错）
+    fs.writeFileSync(path.join(dir, 'PRD.md'), '# 项目\n- 普通列表\n');
+    assert.equal(extract(dir, fs, path).length, 0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
