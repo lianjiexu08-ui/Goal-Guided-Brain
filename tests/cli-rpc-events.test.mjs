@@ -25,7 +25,7 @@ function runCli(args, { env = {}, input = '', timeoutMs = 15000 } = {}) {
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      child.kill('SIGKILL');
+      try { child.kill('SIGKILL'); } catch {}
       reject(new Error(timeoutMessage(args, timeoutMs, stdout, stderr)));
     }, timeoutMs);
     child.on('close', code => {
@@ -144,7 +144,7 @@ test('ggb events --team 使用团队事件流输出任务与消息', async t => 
       if (!settled && /事件流内容|hello|team/.test(stdout)) {
         settled = true;
         clearTimeout(timer);
-        child.kill('SIGKILL');
+        try { child.kill('SIGKILL'); } catch {}
         resolve({ code: null, stdout, stderr, killed: true });
       }
     });
@@ -157,7 +157,7 @@ test('ggb events --team 使用团队事件流输出任务与消息', async t => 
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      child.kill('SIGKILL');
+      try { child.kill('SIGKILL'); } catch {}
       reject(new Error(
         `事件流在 15s 内没有输出预期内容：ggb ${['events', '--team', team.id].join(' ')}\n` +
         `--- stdout ---\n${stdout.slice(-800) || '(空)'}\n` +
