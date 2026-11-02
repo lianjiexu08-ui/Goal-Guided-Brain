@@ -70,6 +70,7 @@ CI（GitHub Actions）对每次推送跑三阶段：quality / unit / e2e，必�
 
 ## 已知边界
 
+- **`dsh` 是 GGB 自己 CLI 的 bin 别名，也是原生执行引擎的可执行文件名**：`findDsh()` 必须靠 `resolvesToOwnCli()` 把自身别名排除掉，否则 `npm link` 后 GGB 会把自己当执行引擎拉起（子进程打印用法后 exit 0，任务只报 `DSH 意外退出（0）`，11 项 DSH 测试从 skip 变 fail）。改动 `package.json` 的 `bin` 或发现逻辑时要一起维护。
 - `server/store.mjs saveTeamSpace` 对 review/recruitment 等做字段白名单归一化——新增团队字段要同步白名单。
 - task-meta 在裸 `ControlPlane`（单测）下字段不全（workspaceMode 等），完整链路只在 platform 的 `newTask` 落盘。
 - `records.list()` 按集合全量返回（DESC）；按 taskId 的热点查询用 `listByTask`。

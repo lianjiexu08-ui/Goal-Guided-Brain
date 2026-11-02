@@ -11,6 +11,72 @@ import { providerEndpoint } from './providers.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
+ * GGB publishes `dsh` as a compatibility alias for its own CLI (see the `bin`
+ * block in package.json).  After `npm link` or a global install that alias
+ * lands on PATH, so the plain name probe below would otherwise select GGB
+ * itself as the "native DSH runtime": the child prints its usage banner, exits
+ * 0, and every task fails with an unexplained `DSH 意外退出（0）`.
+ *
+ * `resolvesToOwnCli` recognises those aliases so discovery can skip them.
+ */
+const OWN_CLI = path.join(root, 'scripts', 'cli.mjs');
+
+let ownPackageName;
+function selfPackageName() {
+  if (ownPackageName === undefined) {
+    try {
+      ownPackageName = String(
+        JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).name || '',
+      );
+    } catch {
+      ownPackageName = '';
+    }
+  }
+  return ownPackageName;
+}
+
+const normalizePath = (value) => String(value).replace(/\\/g, '/').toLowerCase();
+
+export function resolvesToOwnCli(candidate, {
+  selfPath = OWN_CLI,
+  packageName = selfPackageName(),
+  realpath = (value) => fs.realpathSync(value),
+  readFile = (value) => fs.readFileSync(value, 'utf8'),
+} = {}) {
+  if (!candidate) return false;
+  let resolved = candidate;
+  try {
+    // POSIX and `npm link` on Windows both produce symlinks we can follow.
+    resolved = realpath(candidate);
+  } catch {
+    /* Unreadable candidates are handled by the access check in findDsh. */
+  }
+  if (normalizePath(path.resolve(resolved)) === normalizePath(path.resolve(selfPath))) return true;
+  // npm's Windows shims (.cmd/.bat/.ps1) are generated batch files rather than
+  // symlinks, so realpath stops at the shim.  Match the target it embeds.
+  if (!/\.(cmd|bat|ps1)$/i.test(String(resolved))) return false;
+  if (!packageName) return false;
+  try {
+    return normalizePath(readFile(resolved)).includes(
+      `/${normalizePath(packageName)}/scripts/cli.mjs`,
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Candidates that exist and are executable but are GGB's own CLI alias.
+ * Used to turn "dsh not found" into an actionable diagnosis.
+ */
+export function ownCliAliases(options = {}) {
+  const access = options.access || defaultAccess(options.platform || process.platform);
+  return dshCandidates(options).filter(
+    (candidate) => access(candidate) && resolvesToOwnCli(candidate, options),
+  );
+}
+
+/**
  * Return the executable names we will probe for the native DSH runtime.
  *
  * npm creates `.cmd` shims on Windows and a normal Windows installation may
@@ -48,9 +114,8 @@ export function dshCandidates({
   ].filter(Boolean))];
 }
 
-export function findDsh(options = {}) {
-  const platform = options.platform || process.platform;
-  const access = options.access || ((filename) => {
+function defaultAccess(platform) {
+  return (filename) => {
     if (!filename) return false;
     try {
       // Windows does not use executable permission bits.  Checking F_OK also
@@ -60,8 +125,16 @@ export function findDsh(options = {}) {
     } catch {
       return false;
     }
-  });
-  return dshCandidates(options).find((candidate) => access(candidate)) || '';
+  };
+}
+
+export function findDsh(options = {}) {
+  const platform = options.platform || process.platform;
+  const access = options.access || defaultAccess(platform);
+  const isOwnCli = options.isOwnCli || ((candidate) => resolvesToOwnCli(candidate, options));
+  return dshCandidates(options).find(
+    (candidate) => access(candidate) && !isOwnCli(candidate),
+  ) || '';
 }
 
 export function terminateProcessTree(
@@ -356,6 +429,7 @@ export class DshRun {
     this.finalReason = null;
     this.result = '';
     this.stderr = '';
+    this.executable = '';
     this.queue = [];
     this.finishing = null;
     this.closed = false;
@@ -365,8 +439,18 @@ export class DshRun {
     this.started = true;
     try {
       const executable = findDsh();
-      if (!executable)
-        throw new Error('未找到 dsh，请先安装 @deepseek-ai/dsh。');
+      if (!executable) {
+        // Distinguish "nothing installed" from "only GGB's own `dsh` alias is
+        // on PATH" — the latter used to silently win the probe and fail later
+        // with an unexplained exit code.
+        const [alias] = ownCliAliases();
+        throw new Error(
+          alias
+            ? `未找到 DSH 执行引擎：PATH 上的 ${alias} 是 GGB 自己的兼容别名（npm link / 全局安装产生），不是 @deepseek-ai/dsh。请安装 @deepseek-ai/dsh，或用 DSH_EXECUTABLE 指定真实可执行文件路径。`
+            : '未找到 dsh，请先安装 @deepseek-ai/dsh（或用 DSH_EXECUTABLE 指定可执行文件路径）。',
+        );
+      }
+      this.executable = executable;
       const apiKey =
         this.route?.secret ||
         this.extraEnv.DEEPSEEK_API_KEY ||
@@ -457,7 +541,10 @@ export class DshRun {
         if (!this.finishing)
           this.finishing = {
             status: 'failed',
-            error: `DSH 意外退出（${signal || code}）。${this.stderr.slice(-1600)}`,
+            error: `DSH 意外退出（${signal || code}）。${
+              this.stderr.slice(-1600) ||
+              `可执行文件：${this.executable || '未知'}；进程未输出任何诊断信息。`
+            }`,
           };
         this.complete();
       });

@@ -109,10 +109,20 @@ npm run dev
 npm run stop
 ```
 
+### DSH 执行引擎
+
+网页和 CLI 不依赖执行引擎就能启动，但**团队成员真正跑任务需要原生 DSH**（`@deepseek-ai/dsh`）。
+GGB 按下列顺序查找它：`DSH_EXECUTABLE` → `~/.local/bin/dsh` → `PATH` 上的 `dsh`。
+`ggb doctor` 会报告是否找到；API 的健康检查用 `dshReady` 字段表示。
+
+> `dsh` 同时是 GGB 自己 CLI 的兼容别名。`npm link` 或全局安装会把这个别名放到 PATH 上，
+> 但发现逻辑会识别并跳过它（否则 GGB 会把自己当成执行引擎，任务只报
+> `DSH 意外退出（0）`）。真实引擎装在别处时用 `DSH_EXECUTABLE` 显式指定。
+
 首次使用建议：
 
 1. 在“模型管理”中初始化加密凭据库，配置至少一个普通聊天模型。
-2. 确认工作目录和 DSH 执行引擎可用。
+2. 确认工作目录和 DSH 执行引擎可用（`ggb doctor`）。
 3. 返回“团队招募”，直接描述你要完成的目标。
 4. 检查项目经理生成的 Team Charter、成员职责、模型和能力绑定。
 5. 点击“确认创建团队”，再开始执行任务。

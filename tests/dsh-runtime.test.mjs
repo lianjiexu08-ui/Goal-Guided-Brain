@@ -4,7 +4,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { DshRun, dshCandidates, findDsh, terminateProcessTree } from '../server/runtime.mjs';
+import { DshRun, dshCandidates, findDsh, ownCliAliases, resolvesToOwnCli, terminateProcessTree } from '../server/runtime.mjs';
 import { ROLES } from '../server/store.mjs';
 
 test('runtime discovery includes npm Windows shims and platform-aware termination uses taskkill', () => {
@@ -21,6 +21,51 @@ test('runtime discovery includes npm Windows shims and platform-aware terminatio
     kill: () => { throw new Error('fallback should not run'); },
   }), true);
   assert.deepEqual(calls, [{ executable: 'taskkill.exe', args: ['/pid', '42', '/t', '/f'] }]);
+});
+
+test('discovery rejects GGB\'s own `dsh` alias instead of running itself as the engine', () => {
+  // package.json maps `dsh` to scripts/cli.mjs, so `npm link` puts a GGB alias
+  // on PATH.  Selecting it makes every task die with `DSH 意外退出（0）`.
+  const selfPath = '/repo/scripts/cli.mjs';
+  const aliasLink = '/npm/bin/dsh';
+  const realDsh = '/usr/local/bin/dsh';
+  const options = {
+    platform: 'linux',
+    homeDir: '/home/fixture',
+    pathValue: '/npm/bin:/usr/local/bin',
+    configured: '',
+    selfPath,
+    access: (value) => value === aliasLink || value === realDsh,
+    realpath: (value) => (value === aliasLink ? selfPath : value),
+  };
+
+  assert.equal(resolvesToOwnCli(aliasLink, options), true);
+  assert.equal(resolvesToOwnCli(realDsh, options), false);
+  // The alias sorts first on PATH but must lose to the real engine.
+  assert.equal(findDsh(options), realDsh);
+  assert.deepEqual(ownCliAliases(options), [aliasLink]);
+
+  // With only the alias installed, discovery reports "not found" rather than
+  // handing back a binary that cannot speak the DSH protocol.
+  const aliasOnly = { ...options, pathValue: '/npm/bin', access: (value) => value === aliasLink };
+  assert.equal(findDsh(aliasOnly), '');
+  assert.deepEqual(ownCliAliases(aliasOnly), [aliasLink]);
+});
+
+test('discovery rejects the Windows npm shim form of the alias', () => {
+  // npm generates .cmd batch shims on Windows rather than symlinks, so the
+  // target has to be read out of the shim body.
+  const shim = 'C:\\npm\\dsh.cmd';
+  const body = '@"%_prog%" "%dp0%\\..\\lib\\node_modules\\goal-guided-brain\\scripts\\cli.mjs" %*';
+  const options = {
+    platform: 'win32',
+    packageName: 'goal-guided-brain',
+    selfPath: 'C:\\repo\\scripts\\cli.mjs',
+    realpath: (value) => value,
+    readFile: (value) => (value === shim ? body : ''),
+  };
+  assert.equal(resolvesToOwnCli(shim, options), true);
+  assert.equal(resolvesToOwnCli('C:\\Tools\\dsh.cmd', options), false);
 });
 
 test(
