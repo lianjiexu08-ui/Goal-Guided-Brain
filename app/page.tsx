@@ -10,6 +10,31 @@ import {
   managementNavigation,
 } from './management';
 import { api, entityList, entityText, PROVIDER_PRESETS, type Entity, type SearchResults } from './workbench-api';
+import {
+  capabilityKindLabels,
+  DRAFT_CACHE_KEY,
+  formatBytes,
+  formatTime,
+  isActive,
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENTS,
+  mergeDraftAttachments,
+  mergeDraftText,
+  modelDisplayName,
+  parseDraftCache,
+  parseRouteCache,
+  ROUTE_CACHE_KEY,
+  statusLabels,
+  taskNeedsAttention,
+  taskNeedsOwnerAction,
+  taskVerification,
+  verificationLabels,
+  type Attachment,
+  type DraftBase,
+  type DraftCache,
+  type ProviderModel,
+  type RouteCache,
+} from './page-logic';
 import { ErrorMessage } from './management';
 import {
   AssistantEditor,
@@ -110,28 +135,6 @@ type Task = {
   attachmentIds?: string[];
   attachments?: Attachment[];
 };
-type Attachment = {
-  id: string;
-  name: string;
-  mime: string;
-  size: number;
-};
-type DraftCache = {
-  drafts?: Record<string, string>;
-  attachments?: Record<string, Attachment[]>;
-  updatedAt?: Record<string, string>;
-  revisions?: Record<string, number>;
-  bases?: Record<string, DraftBase>;
-};
-type DraftBase = {
-  content: string;
-  attachmentIds: string[];
-};
-type DraftTextChange = {
-  start: number;
-  end: number;
-  replacement: string;
-};
 type DraftConflict = {
   key: string;
   spaceId: string | null;
@@ -151,11 +154,6 @@ type ServerDraft = {
   attachments: Attachment[];
   revision?: number;
   updatedAt?: string;
-};
-type RouteCache = {
-  spaceId?: string;
-  role?: string;
-  view?: string;
 };
 type Session = {
   id: string;
@@ -416,13 +414,6 @@ type Capability = {
     toolCount?: number | null;
   } | null;
 };
-type ProviderModel = {
-  id: string;
-  name: string;
-  tools: boolean;
-  vision: boolean;
-  contextWindow: number;
-};
 type Provider = {
   id: string;
   name: string;
@@ -451,185 +442,14 @@ type State = {
   teamTemplates: TeamTemplate[];
   config: Config;
 };
-const modelDisplayName = (model: ProviderModel) =>
-  model.name === model.id ? model.name : `${model.name} · ${model.id}`;
-const statusLabels: Record<string, string> = {
-  queued: '排队中',
-  running: '进行中',
-  completed: '已完成',
-  failed: '失败',
-  cancelled: '已停止',
-  interrupted: '已中断',
-  state_unknown: '状态未知',
-  blocked: '等待处理',
-  paused: '已暂停',
-  budget_exceeded: '预算超限',
-  'budget-exceeded': '预算超限',
-  accepted: '已交付',
-  'awaiting-owner': '待你验收',
-  rejected: '已退回复核',
-  'pending-review': '待复核',
-};
-const verificationLabels: Record<string, string> = {
-  verified: '已验收',
-  failed: '验证失败',
-  'pending-review': '待验收',
-  'needs-review': '需要复核',
-  'awaiting-owner': '待你验收',
-  accepted: '已交付',
-  rejected: '已退回复核',
-  stale: '验收已失效',
-};
-const capabilityKindLabels: Record<string, string> = {
-  mcp: 'MCP',
-  skill: 'Skill',
-  plugin: 'Plugin',
-};
-const isActive = (t: Task) => ['queued', 'running'].includes(t.status);
-const taskVerification = (task: Task) => {
-  if (task.deliveryStatus)
-    return statusLabels[task.deliveryStatus] || verificationLabels[task.deliveryStatus] || task.deliveryStatus;
-  return task.verificationStatus
-    ? verificationLabels[task.verificationStatus] || task.verificationStatus
-    : task.status === 'completed'
-      ? '待验收'
-      : '';
-};
-const taskNeedsOwnerAction = (task: Task) =>
-  ['pending-review', 'awaiting-owner', 'rejected'].includes(
-    task.deliveryStatus || task.verificationStatus || '',
-  );
-const taskNeedsAttention = (task: Task) =>
-  ['blocked', 'failed', 'interrupted', 'state_unknown', 'budget-exceeded', 'budget_exceeded'].includes(task.status) ||
-  (task.status !== 'completed' && Boolean(task.error));
-const formatTime = (s: string) =>
-  new Date(s).toLocaleString('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-const formatBytes = (bytes: number) =>
-  bytes < 1024 * 1024
-    ? `${Math.max(1, Math.round(bytes / 1024))} KB`
-    : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-const DRAFT_CACHE_KEY = 'ggb.composer-drafts.v1';
-const ROUTE_CACHE_KEY = 'ggb.workspace-route.v1';
-const ROUTE_VIEWS = new Set([
-  'workspace',
-  'recruitment',
-  'team',
-  'assistants',
-  'tasks',
-  'knowledge',
-  'jobs',
-  'models',
-  'resources',
-  'nodes',
-  'capabilities',
-  'schedules',
-  'attention',
-  'backups',
-]);
-const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
-const MAX_ATTACHMENTS = 20;
 function readDraftCache(): DraftCache {
   if (typeof window === 'undefined') return {};
-  try {
-    const value = JSON.parse(window.localStorage.getItem(DRAFT_CACHE_KEY) || '{}') as DraftCache;
-    const drafts = value?.drafts && typeof value.drafts === 'object' && !Array.isArray(value.drafts)
-      ? Object.fromEntries(Object.entries(value.drafts).filter(([, draft]) => typeof draft === 'string'))
-      : {};
-    const attachments = value?.attachments && typeof value.attachments === 'object' && !Array.isArray(value.attachments)
-      ? Object.fromEntries(Object.entries(value.attachments).map(([key, items]) => [
-          key,
-          Array.isArray(items)
-            ? items.filter((item): item is Attachment =>
-                !!item && typeof item === 'object' &&
-                typeof item.id === 'string' && typeof item.name === 'string' &&
-                typeof item.mime === 'string' && Number.isFinite(item.size),
-              ).slice(0, MAX_ATTACHMENTS)
-            : [],
-        ]))
-      : {};
-    const updatedAt = value?.updatedAt && typeof value.updatedAt === 'object' && !Array.isArray(value.updatedAt)
-      ? Object.fromEntries(Object.entries(value.updatedAt).filter(([, timestamp]) => typeof timestamp === 'string'))
-      : {};
-    const revisions = value?.revisions && typeof value.revisions === 'object' && !Array.isArray(value.revisions)
-      ? Object.fromEntries(Object.entries(value.revisions).filter(([, revision]) => Number.isSafeInteger(revision)))
-      : {};
-    const bases = value?.bases && typeof value.bases === 'object' && !Array.isArray(value.bases)
-      ? Object.fromEntries(Object.entries(value.bases).filter(([, base]) =>
-          !!base && typeof base === 'object' && !Array.isArray(base) &&
-          typeof (base as DraftBase).content === 'string' &&
-          Array.isArray((base as DraftBase).attachmentIds) &&
-          (base as DraftBase).attachmentIds.every((id) => typeof id === 'string'),
-        ).map(([key, base]) => [key, {
-          content: (base as DraftBase).content,
-          attachmentIds: (base as DraftBase).attachmentIds.slice(0, MAX_ATTACHMENTS),
-        }]))
-      : {};
-    return { drafts, attachments, updatedAt, revisions, bases };
-  } catch {
-    return {};
-  }
+  return parseDraftCache(window.localStorage.getItem(DRAFT_CACHE_KEY) || '{}');
 }
 
-function draftChangeFromBase(base: string, next: string): DraftTextChange | null {
-  if (base === next) return null;
-  let start = 0;
-  while (start < base.length && start < next.length && base[start] === next[start]) start += 1;
-  let baseEnd = base.length;
-  let nextEnd = next.length;
-  while (baseEnd > start && nextEnd > start && base[baseEnd - 1] === next[nextEnd - 1]) {
-    baseEnd -= 1;
-    nextEnd -= 1;
-  }
-  return { start, end: baseEnd, replacement: next.slice(start, nextEnd) };
-}
-
-function draftRangesOverlap(a: DraftTextChange, b: DraftTextChange) {
-  if (a.start === a.end && b.start === b.end) return a.start === b.start;
-  if (a.start === a.end) return a.start >= b.start && a.start <= b.end;
-  if (b.start === b.end) return b.start >= a.start && b.start <= a.end;
-  return a.start < b.end && b.start < a.end;
-}
-
-function mergeDraftText(base: string, local: string, remote: string) {
-  if (local === remote) return { content: local, conflict: false };
-  if (local === base) return { content: remote, conflict: false };
-  if (remote === base) return { content: local, conflict: false };
-  const localChange = draftChangeFromBase(base, local);
-  const remoteChange = draftChangeFromBase(base, remote);
-  if (!localChange || !remoteChange) return { content: localChange ? local : remote, conflict: false };
-  if (localChange.start === remoteChange.start && localChange.end === remoteChange.end &&
-      localChange.replacement === remoteChange.replacement) {
-    return { content: local, conflict: false };
-  }
-  if (draftRangesOverlap(localChange, remoteChange)) return { content: local, conflict: true };
-  const changes = [localChange, remoteChange].sort((a, b) => b.start - a.start);
-  let content = base;
-  for (const change of changes) content = content.slice(0, change.start) + change.replacement + content.slice(change.end);
-  return { content, conflict: false };
-}
-
-function mergeDraftAttachments(local: Attachment[], remote: Attachment[]) {
-  const merged = new Map<string, Attachment>();
-  for (const attachment of [...local, ...remote]) merged.set(attachment.id, attachment);
-  return [...merged.values()].slice(0, MAX_ATTACHMENTS);
-}
 function readRouteCache(): RouteCache {
   if (typeof window === 'undefined') return {};
-  try {
-    const value = JSON.parse(window.localStorage.getItem(ROUTE_CACHE_KEY) || '{}') as RouteCache;
-    return {
-      ...(typeof value?.spaceId === 'string' ? { spaceId: value.spaceId } : {}),
-      ...(typeof value?.role === 'string' ? { role: value.role } : {}),
-      ...(typeof value?.view === 'string' && ROUTE_VIEWS.has(value.view) ? { view: value.view } : {}),
-    };
-  } catch {
-    return {};
-  }
+  return parseRouteCache(window.localStorage.getItem(ROUTE_CACHE_KEY) || '{}');
 }
 function Choice({
   value,
