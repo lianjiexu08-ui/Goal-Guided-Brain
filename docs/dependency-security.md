@@ -87,3 +87,67 @@ devDependencies and require breaking tooling upgrades tracked separately:
 
 None of these ship in the production runtime paths served by
 `server/index.mjs`; they affect local development and build tooling only.
+
+## 2026-11-02 Audit Follow-up
+
+### Production tree regression found
+
+The 2026-10-26 note stated the remaining advisories lived "exclusively in
+devDependencies". That had stopped being true: `npm audit --omit=dev` reported
+**15 advisories (5 high)** in the production tree.
+
+Root cause: `shadcn` — the scaffolding CLI, not the component source — was
+declared in `dependencies`. It has **zero runtime imports** (`components/ui/*`
+imports the separate `@shadcn/react` package), but it pulled
+`@dotenvx/dotenvx` → `systeminformation` (high, Linux `networkStats()` path
+traversal) plus `zod`, `ts-morph` and `deepmerge` into the production graph.
+It is now a devDependency.
+
+### Changes
+
+| Package | From | To | Reason |
+| --- | --- | --- | --- |
+| `shadcn` | dep `4.18.0` | **devDep** `4.23.0` | Scaffolding CLI, never imported at runtime; removes `systeminformation`/`zod`/`ts-morph` from the production tree |
+| `oxfmt` | `0.61.0` | `0.75.0` | `tinypool` prototype-pollution RCE gadget (critical) |
+| `@cloudflare/vite-plugin` | `1.37.1` | `1.67.0` | `esbuild`/`ws` chain (the upgrade the previous note deferred) |
+| `wrangler` | `4.92.0` | `4.156.1` | Required by the plugin bump; drags `miniflare`/`sharp` forward |
+| `@cloudflare/workers-types` | `4.20260515.1` | `5.20261102.1` | `wrangler@4.156` peer requirement |
+| `vite` | `8.0.16` | `8.3.5` | `launch-editor` Windows `escapeCmdArgs()` argument injection (high) |
+| `postcss` (override) | — | `8.5.32` | Vite 8.3 nested its own copy; the duplicate broke `tsc --noEmit` with two incompatible `postcss` type identities |
+
+`npm audit fix` (in-range only, no `--force`) was applied on top.
+
+### Result
+
+| Scope | Before | After |
+| --- | --- | --- |
+| Full tree | 23 (2 critical, 8 high) | **12 (0 critical, 1 high)** |
+| Production (`--omit=dev`) | 15 (5 high) | **4 (0 high, all moderate)** |
+
+### Deliberately not taken
+
+- **`oxlint` 1.76 → 1.90.** Carries no advisory fix, and 1.90 removed the
+  `react/react-compiler` rule entirely (absent from its
+  `configuration_schema.json`, not renamed), so `.oxlintrc.json` fails to parse
+  and the project silently loses React Compiler checking on a React 19
+  codebase. Kept at `1.76.0` with `oxlint-tsgolint@7.0.2001`.
+- **`shadcn` 4.23 → 1.0.0.** npm's "fix" is a semver-major downgrade-looking
+  retag of the CLI. Now dev-only, so its 2 remaining advisories do not reach
+  production.
+- **`vinext` 1.0.0-beta.9 → 1.4.1.** This would clear all 4 remaining
+  production advisories (`@vercel/og`, `satori`, `fast-uri`, `vinext`), but it
+  is the web framework and the jump crosses beta → stable. It needs its own
+  change with a full E2E run and a re-review of the Image Parser Limitation
+  section above, which is written against beta.9. Tracked separately.
+
+### Validation
+
+`npm run lint`, `npm run typecheck`, `npm test` (305 tests, 0 fail, 12 skipped
+— the documented platform-guard baseline), `npm run test:ui` (21 passed) and
+`npm run build` all passed after a clean `node_modules` + `package-lock.json`
+reinstall.
+
+> `tsconfig.json` sets `incremental: true`. After a dependency change, a stale
+> `tsconfig.tsbuildinfo` makes `tsc --noEmit` report type errors against
+> `node_modules` paths that no longer exist. Delete it before trusting a
+> typecheck failure that names a package directory.
