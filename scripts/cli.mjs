@@ -834,6 +834,10 @@ const deliverUsage = `用法：
  * 识别「验收标准/验收/验收要求/Definition of Done」标题下的列表项与编号项，
  * 取前 20 条；找不到验收章节则回退空数组（门禁对无清单任务不生效）。
  */
+export function extractAcceptanceFromWorkspaceForTesting(workspace) {
+  return extractAcceptanceFromWorkspace(workspace);
+}
+
 function extractAcceptanceFromWorkspace(workspace) {
   const items = [];
   for (const name of ['PRD.md', 'prd.md', 'README.md', '需求.md']) {

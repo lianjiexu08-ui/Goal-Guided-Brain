@@ -85,12 +85,9 @@ test('生命周期：CLI 脚本引用的 child_process 方法必须已导入（s
   assert.ok(used.has('spawn'), '脚本应仍在使用 spawn（restart 依赖）；若移除请同步更新本卫兵');
 });
 
-test('生命周期：deliver 验收清单提取器——PRD 验收章节 → 条目（无章节回退空）', () => {
-  // 从 cli.mjs 源码取出提取函数直接驱动（未导出，用 new Function 隔离执行）
-  const source = read('../scripts/cli.mjs');
-  const fnSource = source.match(/function extractAcceptanceFromWorkspace\(workspace\) \{[\s\S]*?\n\}/)?.[0];
-  assert.ok(fnSource, '提取函数应存在');
-  const extract = new Function('workspace', 'fs', 'path', `${fnSource}; return extractAcceptanceFromWorkspace(workspace);`);
+test('生命周期：deliver 验收清单提取器——PRD 验收章节 → 条目（无章节回退空）', async () => {
+  // 提取函数经 cli.mjs 显式导出（避免 implied eval）
+  const { extractAcceptanceFromWorkspaceForTesting: extract } = await import('../scripts/cli.mjs');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ggb-accept-prd-'));
   try {
     fs.writeFileSync(path.join(dir, 'PRD.md'), [
