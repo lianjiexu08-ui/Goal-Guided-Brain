@@ -36,7 +36,9 @@ async function start(t) {
     fs.rmSync(dir, { recursive: true, force: true });
     fs.rmSync(sessionDir, { recursive: true, force: true });
   });
-  return { app, base, env: { DSH_SESSION_DIR: sessionDir }, dir };
+  // 必须把 CLI 指向本测试的工作台：不带 --api 的命令默认连 127.0.0.1:3089，
+  // 会读到开发者真实工作台的数据，并因代码指纹不同把它自动重启（打断正在执行的任务）。
+  return { app, base, env: { DSH_SESSION_DIR: sessionDir, GGB_API_URL: base, GGB_NO_AUTOSTART: '1', GGB_NO_AUTORESTART: '1' }, dir };
 }
 
 test('ggb models 列出内置供应商与上下文窗口，并叠加 models.json', async t => {

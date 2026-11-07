@@ -59,13 +59,14 @@ export const OWNER_TOOLS = [
   {
     name: 'ggb_message_team',
     description: '给团队项目经理发消息（交代目标、回答澄清问题、追加要求）。项目经理会拆解并分派给成员。建议在 content 里写清楚：目标、约束、交付物、验收标准（可逐条列出，会被登记为验收清单）。项目经理忙时默认把内容插话注入当前执行；steerIfBusy=false 时会返回冲突。返回消息和对应的项目经理任务 ID。',
-    inputSchema: obj({ teamId: str, content: str, steerIfBusy: { type: 'boolean' }, providerId: str, model: str }, ['teamId', 'content']),
+    inputSchema: obj({ teamId: str, content: str, acceptance: { type: 'array', items: str, maxItems: 50, description: '逐条验收标准，会登记为任务验收清单；验收门禁要求每条都挂证据' }, steerIfBusy: { type: 'boolean' }, providerId: str, model: str }, ['teamId', 'content']),
   },
   {
     name: 'ggb_dispatch_task',
     description: '绕过项目经理，直接把一个任务派给指定角色执行，可指定模型。teamId 给定时使用团队工作目录，且该团队必须已确认、角色必须是团队成员；不给 teamId 时在工作台默认目录执行。适合 Claude 自己拆好任务后点对点派发。prompt 应自包含：背景、具体改动、约束、验证命令和验收标准。',
     inputSchema: obj({
       role: str, prompt: str, teamId: str, providerId: str, model: str,
+      acceptance: { type: 'array', items: str, maxItems: 50, description: '逐条验收标准，会登记为任务验收清单；验收门禁要求每条都挂证据' },
       workspaceMode: { type: 'string', enum: ['isolated', 'worktree', 'snapshot', 'shared'] },
       budgetTokens: int(1000, 100_000_000),
       autoVerify: { type: 'boolean' },
@@ -75,6 +76,30 @@ export const OWNER_TOOLS = [
     name: 'ggb_get_task',
     description: '读取任务详情：状态、实际模型、执行目录、结果、错误、最新验证输出、变更影响面、验收清单和产物。验收前必须先看这里的证据。',
     inputSchema: obj({ taskId: str, includeLog: { type: 'boolean' } }, ['taskId']),
+  },
+  {
+    name: 'ggb_diff',
+    description: '查看任务执行目录相对基准提交的改动（文件统计与 git status），并返回执行目录路径、分支和基准提交——可直接在该路径下读文件或运行 git diff <baseCommit> 做逐行审查。',
+    inputSchema: obj({ taskId: str }, ['taskId']),
+  },
+  {
+    name: 'ggb_verify',
+    description: '在任务执行目录中运行验证命令，结果作为当前需求版本的验证证据保存（验收门禁依赖它）。给 command + args（如 command="npm", args=["test"]），或 auto=true 让工作台按项目类型自动探测并运行检查。任务运行中不能验证。',
+    inputSchema: obj({ taskId: str, command: str, args: { type: 'array', items: str, maxItems: 50 }, auto: { type: 'boolean' } }, ['taskId']),
+  },
+  {
+    name: 'ggb_commit',
+    description: '把 worktree 执行目录中的改动提交到该任务分支（codex/task-<id>）。该分支与源仓库共享引用，提交后可在源仓库中审查并合并：git -C <source> merge <branch>。建议在验证通过后再提交。',
+    inputSchema: obj({ taskId: str, message: str }, ['taskId', 'message']),
+  },
+  {
+    name: 'ggb_checklist',
+    description: '读取或维护任务验收清单。action=get 读取；action=set 用 items（[{requirement, id?, verifyHint?}]）登记/替换清单；action=evidence 为条目挂证据（items: [{id, test?, command?, note?}]）——只在你亲自核实过该条（如 ggb_verify 通过、读过代码）后再挂。',
+    inputSchema: obj({
+      taskId: str,
+      action: { type: 'string', enum: ['get', 'set', 'evidence'] },
+      items: { type: 'array', maxItems: 50, items: { type: 'object', properties: { id: str, requirement: str, verifyHint: str, test: str, command: str, note: str }, additionalProperties: false } },
+    }, ['taskId', 'action']),
   },
   {
     name: 'ggb_list_tasks',
@@ -93,7 +118,7 @@ export const OWNER_TOOLS = [
   },
   {
     name: 'ggb_retry',
-    description: '重试失败/中断/取消的任务（新执行实例，隔离目录）。可用 providerIds 换模型。',
+    description: '重试失败/中断/取消的任务（新执行实例，隔离目录）。注意：重试沿用原任务的模型名，providerIds 换到不提供该模型的供应商会因"没有满足能力要求的模型"失败——跨供应商换模型请改用 ggb_update_team 改团队默认模型后重新 ggb_dispatch_task。',
     inputSchema: obj({ taskId: str, providerIds: { type: 'array', items: str } }, ['taskId']),
   },
   {
@@ -216,6 +241,14 @@ function taskDetail(task, checklist, includeLog) {
   };
 }
 
+function acceptanceItems(input) {
+  if (input.acceptance === undefined) return null;
+  if (!Array.isArray(input.acceptance)) throw new Error('acceptance 需要是字符串数组。');
+  const items = input.acceptance.map(item => String(item || '').trim()).filter(Boolean);
+  if (!items.length) return null;
+  return items.map((requirement, index) => ({ id: `ac-${index + 1}`, requirement }));
+}
+
 /**
  * 构造工具处理器。api(route, { method, body }) 返回解析后的 JSON，非 2xx 时抛错（与 CLI 的 workbenchFetch 一致）。
  */
@@ -224,26 +257,30 @@ export function createOwnerToolHandler(api, { now = () => Date.now(), wait = sle
 
   const handlers = {
     async ggb_status() {
-      const [health, state, providers, manage] = await Promise.all([
+      const [health, state, providers, manage, credentials] = await Promise.all([
         api('health').catch(error => ({ error: error.message })),
         api('state'),
         api('providers').catch(() => []),
         api('manage').catch(() => ({})),
+        api('credentials').catch(() => null),
       ]);
+      const credentialIds = credentials ? new Set(listOf(credentials).map(item => item.id)) : null;
       const teams = listOf(state.spaces);
       return {
-        health: { ok: !health.error, dshReady: health.dshReady ?? null, error: health.error },
+        health: { ok: !health.error, dshReady: state.config?.dshReady ?? null, hasCredential: state.config?.hasApiKey ?? null, error: health.error },
         providers: listOf(providers).map(provider => ({
           id: provider.id,
           name: provider.name,
           enabled: provider.enabled !== false,
           protocol: provider.protocol,
+          // 供应商引用的凭据已不在凭据库时，任务会直接失败（"供应商凭据不存在"）——提前标出来，不要选它。
+          credentialMissing: credentialIds && provider.credentialId ? !credentialIds.has(provider.credentialId) : undefined,
           models: (provider.models || []).map(model => ({ id: model.id, tools: Boolean(model.tools), contextWindow: model.contextWindow })),
         })),
         roles: listOf(state.roles).filter(role => !role.archived).map(role => ({ id: role.id, name: role.name })),
         teams: teams.map(teamBrief),
         openAttention: listOf(manage.attention).filter(item => item.status === 'open').length,
-        note: '执行任务需要支持工具调用（tools=true）的模型；默认工作目录：' + (state.config?.workspace || '未设置'),
+        note: '执行任务需要支持工具调用（tools=true）且 credentialMissing 不为 true 的模型；换供应商时同时指定 model（团队默认模型不会随供应商自动切换）。默认工作目录：' + (state.config?.workspace || '未设置'),
       };
     },
 
@@ -330,6 +367,7 @@ export function createOwnerToolHandler(api, { now = () => Date.now(), wait = sle
     async ggb_message_team(input) {
       const teamId = need(input, 'teamId');
       const content = need(input, 'content');
+      const items = acceptanceItems(input);
       const message = await api(`teams/${enc(teamId)}/messages`, {
         method: 'POST',
         body: {
@@ -340,22 +378,35 @@ export function createOwnerToolHandler(api, { now = () => Date.now(), wait = sle
           ...(input.model ? { model: input.model } : {}),
         },
       });
+      const taskId = message.steered ? message.steerTaskId : message.taskId || null;
+      let checklist = null;
+      if (items && taskId && !message.steered) {
+        checklist = await api(`tasks/${enc(taskId)}/checklist`, { method: 'POST', body: { items } })
+          .then(saved => saved.items.length)
+          .catch(error => `登记失败：${error.message}`);
+      }
       return {
         messageId: message.id,
-        taskId: message.steered ? message.steerTaskId : message.taskId || null,
+        taskId,
         steered: Boolean(message.steered),
         status: message.status,
+        checklistItems: checklist ?? (items && message.steered ? '插话不会登记新清单' : null),
         next: '用 ggb_wait(teamId) 等待项目经理处理，再用 ggb_get_team 查看回复。',
       };
     },
 
     async ggb_dispatch_task(input) {
       const body = { role: need(input, 'role'), prompt: need(input, 'prompt') };
+      const items = acceptanceItems(input);
       for (const key of ['teamId', 'providerId', 'model', 'workspaceMode']) if (input[key]) body[key] = input[key];
       if (input.budgetTokens !== undefined) body.budgetTokens = input.budgetTokens;
       if (input.autoVerify === false) body.autoVerify = false;
       const task = await api('tasks', { method: 'POST', body });
-      return { task: taskBrief(task), next: `用 ggb_wait(taskId="${task.id}") 等待完成。` };
+      // 显式验收标准覆盖从 PRD.md 自动提取的清单（若有）。
+      const checklist = items
+        ? await api(`tasks/${enc(task.id)}/checklist`, { method: 'POST', body: { items } }).then(saved => saved.items.length).catch(error => `登记失败：${error.message}`)
+        : null;
+      return { task: { ...taskBrief(task), teamId: taskBrief(task).teamId || body.teamId || null }, checklistItems: checklist, next: `用 ggb_wait(taskId="${task.id}") 等待完成。` };
     },
 
     async ggb_get_task(input) {
@@ -365,6 +416,66 @@ export function createOwnerToolHandler(api, { now = () => Date.now(), wait = sle
         api(`tasks/${enc(taskId)}/checklist`).catch(() => null),
       ]);
       return taskDetail(task, checklist, input.includeLog === true);
+    },
+
+    async ggb_diff(input) {
+      const taskId = need(input, 'taskId');
+      const [task, diff] = await Promise.all([api(`tasks/${enc(taskId)}`), api(`workspaces/${enc(taskId)}`)]);
+      const workspace = task.executionWorkspace || {};
+      return {
+        kind: diff.kind,
+        path: workspace.path || null,
+        source: workspace.source || null,
+        branch: workspace.branch || null,
+        baseCommit: workspace.baseCommit || null,
+        state: workspace.state || null,
+        stat: clip(diff.diff, 6000),
+        status: clip(diff.status, 4000),
+        message: diff.message,
+        hint: workspace.path && workspace.baseCommit
+          ? `逐行审查：git -C ${workspace.path} diff ${workspace.baseCommit}（未跟踪的新文件用 git -C ${workspace.path} status 查看后直接读取）`
+          : undefined,
+      };
+    },
+
+    async ggb_verify(input) {
+      const taskId = need(input, 'taskId');
+      let body;
+      if (input.auto === true) body = { auto: true };
+      else {
+        const command = need(input, 'command');
+        const args = Array.isArray(input.args) ? input.args.map(String) : [];
+        body = { command, args };
+      }
+      const result = await api(`workspaces/${enc(taskId)}/verify`, { method: 'POST', body });
+      return { ...result, output: clip(result.output, 4000) };
+    },
+
+    async ggb_commit(input) {
+      const taskId = need(input, 'taskId');
+      const result = await api(`workspaces/${enc(taskId)}/commit`, { method: 'POST', body: { message: need(input, 'message') } });
+      const task = await api(`tasks/${enc(taskId)}`).catch(() => null);
+      const workspace = task?.executionWorkspace || {};
+      return {
+        commit: result.commit || null,
+        branch: workspace.branch || null,
+        source: workspace.source || null,
+        next: workspace.source && workspace.branch
+          ? `在源仓库审查并合并：git -C ${workspace.source} log --oneline ${workspace.baseCommit || 'HEAD'}..${workspace.branch}；git -C ${workspace.source} merge ${workspace.branch}`
+          : undefined,
+      };
+    },
+
+    async ggb_checklist(input) {
+      const taskId = need(input, 'taskId');
+      const items = Array.isArray(input.items) ? input.items : [];
+      if (input.action === 'get') {
+        return api(`tasks/${enc(taskId)}/checklist`).catch(error => ({ items: [], note: error.message }));
+      }
+      if (!items.length) throw new Error('set / evidence 需要 items。');
+      if (input.action === 'set') return api(`tasks/${enc(taskId)}/checklist`, { method: 'POST', body: { items } });
+      if (input.action === 'evidence') return api(`tasks/${enc(taskId)}/checklist-evidence`, { method: 'POST', body: { items } });
+      throw new Error('action 必须是 get、set 或 evidence。');
     },
 
     async ggb_list_tasks(input) {
@@ -482,7 +593,7 @@ export function createOwnerMcpServer(api, options = {}) {
     capabilities: { tools: {} },
     instructions: [
       'GGB（Goal-Guided Brain）多模型智能体工作台的所有者接口。你是「大脑」：负责拆解目标、写清验收标准、派活、盯进度、核对证据、做验收决定。',
-      '推荐流程：ggb_status 选模型 → ggb_create_team（workspace 指向项目目录）或复用已有团队 → ggb_message_team 交代目标与逐条验收标准（或 ggb_dispatch_task 点对点派活）→ ggb_wait → ggb_get_task 核对验证输出、影响面、验收清单 → ggb_steer / ggb_retry 纠偏，或 ggb_decide_delivery 验收。',
+      '推荐流程：ggb_status 选模型（tools=true 且凭据存在）→ ggb_create_team（workspace 指向项目 git 仓库）或复用已有团队 → ggb_message_team 交代目标与逐条验收标准（或 ggb_dispatch_task 点对点派活）→ ggb_wait → ggb_get_task / ggb_diff 审查结果与改动 → ggb_verify 运行验证留证据 → ggb_decide_delivery 验收（或 ggb_steer / 重新派活纠偏）→ ggb_commit 提交到任务分支 → 在源仓库 git merge 该分支落地。',
       '任务 completed 不等于验收通过；验收前必须看过验证证据。高风险外部操作用 ggb_list_operations / ggb_review_operation 处理，批准前说明理由。',
     ].join('\n'),
   });

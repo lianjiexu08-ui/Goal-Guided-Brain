@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { execFileSync } from 'node:child_process';
 import { createWorkbench } from '../server/index.mjs';
 import { OWNER_TOOLS, createOwnerToolHandler } from '../server/owner-mcp.mjs';
 
@@ -73,6 +74,7 @@ test('ggb mcp 通过 stdio 暴露所有者工具，且不提供凭据类工具',
 
   const status = await call('ggb_status');
   assert.equal(status.health.ok, true);
+  assert.equal(typeof status.health.dshReady, 'boolean', 'dshReady 应来自 /api/state 的 config');
   assert.ok(status.roles.some(role => role.id === 'developer'));
   assert.ok(status.roles.some(role => role.id === 'project_manager'));
 
@@ -185,4 +187,58 @@ test('ggb_decide_delivery 在 ackImpact 时先确认影响面再验收，审核�
   await assert.rejects(() => handle('ggb_review_operation', { operationId: 'op1', decision: 'approve' }), /rationale/);
   await handle('ggb_review_operation', { operationId: 'op1', decision: 'approve', rationale: '已核对回滚方案' });
   assert.deepEqual(calls.at(-1), ['operations/op1/review', 'POST', { decision: 'approve', rationale: '已核对回滚方案' }]);
+});
+
+test('落地闭环：带验收标准派活 → diff → verify → 清单证据 → 验收 → commit 到任务分支', async t => {
+  const { base, runs, workspace } = await startWorkbench(t);
+  const git = (...args) => execFileSync('git', ['-C', workspace, ...args], { encoding: 'utf8' });
+  git('init', '-q');
+  git('-c', 'user.email=t@t', '-c', 'user.name=t', 'add', '-A');
+  git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'init');
+  const { call } = await connect(t, base);
+
+  const created = await call('ggb_create_team', { name: '落地组', goal: '修 README', workspace });
+  const teamId = created.team.id;
+  const dispatched = await call('ggb_dispatch_task', {
+    role: 'developer', teamId, prompt: '在 README 追加 usage 段落', autoVerify: false,
+    acceptance: ['README 包含 usage 段落', 'node -e 退出码为 0'],
+  });
+  assert.equal(dispatched.checklistItems, 2);
+  assert.equal(dispatched.task.teamId, teamId);
+  const taskId = dispatched.task.id;
+  await waitFor(() => runs.length === 1);
+  const executionPath = runs[0].options.task.workspace;
+  assert.ok(executionPath && fs.existsSync(executionPath), `执行目录应存在：${executionPath}`);
+  fs.appendFileSync(path.join(executionPath, 'README.md'), '\n## usage\n');
+  runs[0].complete('已追加 usage。');
+  await call('ggb_wait', { taskId, timeoutSeconds: 10, pollSeconds: 1 });
+
+  const diff = await call('ggb_diff', { taskId });
+  assert.equal(diff.kind, 'worktree');
+  assert.match(diff.status, /README\.md/);
+  assert.match(diff.branch, /^codex\/task-/);
+
+  const checklist = await call('ggb_checklist', { taskId, action: 'get' });
+  assert.equal(checklist.items.length, 2);
+
+  const verified = await call('ggb_verify', { taskId, command: process.execPath, args: ['-e', 'process.exit(0)'] });
+  assert.equal(verified.verified, true);
+
+  // 已验证但清单未挂证据：门禁仍拦。
+  const blocked = await call('ggb_decide_delivery', { taskId, decision: 'accept', note: '验证通过' });
+  assert.match(blocked.error || '', /验收清单还有 2\/2 条未确认/);
+
+  await call('ggb_checklist', { taskId, action: 'evidence', items: [
+    { id: 'ac-1', note: '已读 README，含 ## usage' },
+    { id: 'ac-2', command: 'node -e "process.exit(0)"', note: 'ggb_verify 通过' },
+  ] });
+  const accepted = await call('ggb_decide_delivery', { taskId, decision: 'accept', note: '清单全部挂证据' });
+  assert.equal(accepted.error, undefined, accepted.error);
+
+  const committed = await call('ggb_commit', { taskId, message: 'docs: add usage' });
+  assert.match(committed.commit, /^[0-9a-f]{40}$/);
+  assert.equal(committed.branch, diff.branch);
+  // 任务分支在源仓库可见，可直接合并。
+  git('-c', 'user.email=t@t', '-c', 'user.name=t', 'merge', '-q', committed.branch);
+  assert.match(fs.readFileSync(path.join(workspace, 'README.md'), 'utf8'), /## usage/);
 });
