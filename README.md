@@ -155,6 +155,7 @@ CLI 支持：
   - `ggb models [--json]`：列出供应商、协议、上下文窗口与凭据状态；自定义供应商写入 `~/.ggb/models.json`（可用 `GGB_MODELS_FILE` 指定）。
   - `ggb login <providerId>`：把 API Key 写入**加密凭据库**并在工作台启用该供应商（团队任务与 CLI 共用）；重复登录复用同一凭据。
   - `ggb logout <providerId>`：移除该供应商的凭据与配置。
+  - `ggb mcp`：**所有者侧 MCP 服务器（stdio）**，让 Claude Code 等外部智能体当"大脑"：查看模型与团队、建团队、给项目经理交代目标或点对点派活、等待进度、读取验证证据、插话纠偏、重试、验收/退回、处理高风险操作评审。所有门禁仍由服务端执行；不提供凭据类工具；默认不因代码更新自动重启工作台（`--autorestart` 开启）。注册：`claude mcp add --scope user ggb -- node /绝对路径/scripts/cli.mjs mcp`。
   - `ggb rpc`：JSONL 机器协议，stdin 每行一个消息（prompt / follow_up / set_model / abort / session / ping），stdout 每行一个事件（text_delta / turn_end / error 等），适合脚本与工具集成。
   - `ggb events <taskId> | --team <teamId> [--once] [--json]`：订阅任务或团队事件流。
   - `ggb node --control-url <url> --workspace 名称=/绝对路径`：把本机作为远程执行节点接入控制平面。

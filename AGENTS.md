@@ -37,6 +37,7 @@ CI（GitHub Actions）对每次推送跑三阶段：quality / unit / e2e，必�
 | `app/page.tsx` | 网页工作台主界面（团队招募/对话/时间线） |
 | `app/management.tsx` | 管理界面（模型/能力/集成出口/任务详情含插话与会话分叉） |
 | `scripts/cli.mjs` | `ggb` CLI |
+| `server/owner-mcp.mjs` | 所有者侧 MCP（`ggb mcp`）：外部大脑智能体经工作台 HTTP API 以所有者身份派活/验收；只做薄封装，不绕过服务端门禁，不暴露凭据 |
 | `tests/*.test.mjs` | 后端确定性测试（node:test，每文件独立进程） |
 | `tests/e2e/` | Playwright 基线（真实后端，desktop+mobile 两个 project） |
 
