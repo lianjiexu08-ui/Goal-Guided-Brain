@@ -108,6 +108,7 @@ const usage = `用法：
   ggb usage [--teamId id] [--since ISO]  # 模型用量报告（token/成本/延迟/验证）
   ggb wb start|stop|status|restart       # 工作台生命周期管理
   ggb rpc                        # JSONL 机器协议（prompt/follow_up/set_model/abort）
+  ggb mcp [--api http://127.0.0.1:3089] [--autorestart]  # 所有者侧 MCP（stdio）：让 Claude Code 等外部智能体当大脑派活
   ggb events <taskId> | --team <id> [--once] [--json]
   ggb node --control-url https://… --workspace 名称=/绝对路径
   ggb login <providerId>         # 把 API Key 写入加密凭据库，并在工作台启用供应商
@@ -2958,6 +2959,7 @@ async function main() {
   if (command === 'logs') return logsCommand(args);
   if (command === 'login') return loginCommand(args);
   if (command === 'rpc') return rpc(args);
+  if (command === 'mcp') return ownerMcp(args);
   if (command === 'events') return events(args);
   if (command === 'node') return runNode(args);
   if (command === 'logout') return logoutCommand(args);
@@ -2990,6 +2992,26 @@ async function main() {
     });
     throw error;
   }
+}
+
+/**
+ * 所有者侧 MCP（stdio）。stdout 只能输出 JSON-RPC，所以把本进程的 console.log/info 改道到 stderr，
+ * 避免自动拉起工作台、凭据库解锁等提示污染协议流。
+ */
+async function ownerMcp(args) {
+  // 常驻 MCP 进程不应因为代码指纹变化就重启工作台——那会打断大脑刚派出去的任务。需要时显式传 --autorestart。
+  if (!has(args, '--autorestart') && !has(args, '--no-autorestart')) args = [...args, '--no-autorestart'];
+  console.log = (...items) => console.error(...items);
+  console.info = (...items) => console.error(...items);
+  const { createOwnerMcpServer } = await import('../server/owner-mcp.mjs');
+  const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
+  const server = createOwnerMcpServer((route, options) => workbenchFetch(args, route, options));
+  await server.connect(new StdioServerTransport());
+  await new Promise(resolve => {
+    process.stdin.on('close', resolve);
+    process.stdin.on('end', resolve);
+  });
+  await server.close().catch(() => {});
 }
 
 main().catch(error => fail(error.message));
